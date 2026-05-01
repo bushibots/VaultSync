@@ -49,13 +49,28 @@ def dashboard():
     if not current_user.is_authenticated:
         return "Database is setting up, please refresh the page!"
 
-    all_categories = Category.query.all()
-    all_expenses = Expense.query.order_by(Expense.date.desc()).all()
+    # --- NEW FILTERING LOGIC ---
+    import calendar
+    from sqlalchemy import extract
     
+    # Get month/year from URL args, default to current date if none provided
+    current_date = datetime.utcnow()
+    selected_month = request.args.get('month', current_date.month, type=int)
+    selected_year = request.args.get('year', current_date.year, type=int)
+    
+    # Filter expenses by the selected month and year
+    all_expenses = Expense.query.filter(
+        extract('year', Expense.date) == selected_year,
+        extract('month', Expense.date) == selected_month
+    ).order_by(Expense.date.desc()).all()
+    
+    all_categories = Category.query.all()
+    
+    # Math is now isolated to the selected month!
     total_spent = sum(exp.amount for exp in all_expenses)
     monthly_income = 170000 
     projected_savings = monthly_income - total_spent
-
+    
     chart_labels = []
     chart_data = []
     chart_colors = []
@@ -66,17 +81,20 @@ def dashboard():
             chart_labels.append(cat.name)
             chart_data.append(cat_total)
             chart_colors.append(cat.color)
-
+            
     return render_template('dashboard.html', 
-                           user=current_user,
-                           expenses=all_expenses,
-                           categories=all_categories,
-                           total_spent=total_spent,
-                           income=monthly_income,
-                           projected=projected_savings,
-                           chart_labels=chart_labels,
-                           chart_data=chart_data,
-                           chart_colors=chart_colors)
+                            user=current_user,
+                            expenses=all_expenses,
+                            categories=all_categories,
+                            total_spent=total_spent,
+                            income=monthly_income,
+                            projected=projected_savings,
+                            chart_labels=chart_labels,
+                            chart_data=chart_data,
+                            chart_colors=chart_colors,
+                            selected_month=selected_month,
+                            selected_year=selected_year,
+                            month_name=calendar.month_name[selected_month])
 
 # --- NEW ROUTE: PERSONAL SPENDING TAB ---
 @app.route('/my_spendings')
