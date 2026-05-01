@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultSync | Family Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { transition: background-color 0.2s ease, color 0.2s ease; }
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+        
+        /* Mobile-first responsive utilities */
+        @media (max-width: 640px) {
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.active { transform: translateX(0); }
+        }
+        
+        .sidebar-nav a {
+            position: relative;
+            overflow: hidden;
+        }
+        .sidebar-nav a::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: width 0.3s ease;
+        }
+        .sidebar-nav a:hover::before {
+            width: 100%;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        .form-input {
+            transition: all 0.2s ease;
+            background-color: #f9fafb;
+        }
+        .form-input:focus {
+            background-color: #ffffff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .form-input::placeholder {
+            color: #d1d5db;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        .table-row {
+            transition: all 0.2s ease;
+        }
+        .table-row:hover {
+            background-color: #f0f4ff;
+        }
+        @media (max-width: 768px) {
+            .table-row:hover {
+                transform: none;
+            }
+        }
+        .category-badge {
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .category-badge:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .delete-btn, .edit-btn {
+            transition: all 0.2s ease;
+        }
+        .delete-btn:hover {
+            color: #dc2626;
+        }
+        .edit-btn:hover {
+            color: #0ea5e9;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-in {
+            animation: slideIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .modal {
+            animation: fadeIn 0.2s ease;
+        }
+        /* Sidebar overlay for mobile */
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 39;
+            display: none;
+        }
+        .sidebar-overlay.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="font-sans flex h-screen overflow-hidden bg-gray-100">
+
+    <!-- Mobile Menu Toggle -->
+    <div class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 p-4 flex items-center justify-between md:hidden">
+        <h1 class="text-lg font-bold text-blue-600">VaultSync</h1>
+        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900">
+            <i class="fas fa-bars text-2xl"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Overlay (Mobile) -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300">
+        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg">
+            <i class="fas fa-times text-xl"></i>
+        </button>
+        
+        <div class="mb-8 mt-8 md:mt-0">
+            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                <i class="fas fa-vault mr-2"></i>VaultSync
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+        </div>
+        <nav class="flex-1 space-y-2 sidebar-nav">
+            <a href="#" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
+                <i class="fas fa-home mr-3"></i><span class="hidden sm:inline">Dashboard</span>
+            </a>
+        </nav>
+        <div class="mt-auto bg-slate-700/30 rounded-lg p-4 border border-slate-600">
+            <p class="text-xs text-slate-400 mb-1">Logged in as</p>
+            <p class="font-bold text-white truncate">{{ user.username }}</p>
+            <p class="text-xs text-blue-300 mt-1">
+                <i class="fas fa-user-tag mr-1"></i>{{ user.role }}
+            </p>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto pt-16 md:pt-0">
+        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
+            <header class="mb-6 md:mb-8 animate-slide-in">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                        <p class="text-xs md:text-sm text-blue-600 font-semibold mb-1">
+                            <i class="fas fa-calendar-alt mr-2"></i>May 2026 Overview
+                        </p>
+                        <h1 class="text-2xl md:text-4xl font-bold text-slate-800">Welcome back, {{ user.username }}!</h1>
+                    </div>
+                    <div class="text-right text-slate-600 text-sm">
+                        <p>
+                            <i class="fas fa-clock mr-1"></i><span id="current-time"></span>
+                        </p>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Top Stat Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 mb-6 md:mb-8">
+                <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-blue-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Family Income</h3>
+                        <i class="fas fa-wallet text-blue-400 text-lg"></i>
+                    </div>
+                    <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
+                    <p class="text-xs text-slate-400 mt-2">This month</p>
+                </div>
+                <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-red-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Spent</h3>
+                        <i class="fas fa-credit-card text-red-400 text-lg"></i>
+                    </div>
+                    <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
+                    <p class="text-xs text-slate-400 mt-2">
+                        <i class="fas fa-arrow-up text-red-400 mr-1"></i>
+                        {% if total_spent > 0 %}{{ "{:.1f}".format((total_spent/income)*100) }}% of income{% else %}No expenses{% endif %}
+                    </p>
+                </div>
+                <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Projected Savings</h3>
+                        <i class="fas fa-piggy-bank text-green-400 text-lg"></i>
+                    </div>
+                    <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-green-600">{{ "{:,.0f}".format(projected) }}</span></p>
+                    <p class="text-xs text-slate-400 mt-2">
+                        <i class="fas fa-arrow-up text-green-400 mr-1"></i>
+                        {% if projected > 0 %}Safe to spend{% else %}Overspent!{% endif %}
+                    </p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 mb-6 md:mb-8">
+                
+                <div class="flex flex-col gap-6">
+                    <!-- Expense Entry Form -->
+                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                        <div class="flex items-center mb-6">
+                            <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
+                                <i class="fas fa-plus text-blue-600"></i>
+                            </div>
+                            <h2 class="text-lg md:text-xl font-bold text-slate-800">Log New Expense</h2>
+                        </div>
+                        <form action="/add_expense" method="POST" class="space-y-4">
+                            <div>
+                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-tag mr-1 text-blue-500"></i>Expense Name
+                                </label>
+                                <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., Mattress, Train Tickets" required>
+                            </div>
+                            <div>
+                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-list mr-1 text-blue-500"></i>Category
+                                </label>
+                                <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
+                                    {% for cat in categories %}
+                                    <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-rupee-sign mr-1 text-blue-500"></i>Amount
+                                </label>
+                                <input type="number" name="amount" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., 500" step="0.01" required>
+                            </div>
+                            <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 duration-200 mt-2 flex items-center justify-center gap-2 text-sm md:text-base">
+                                <i class="fas fa-check"></i>Add to Tracker
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Create Custom Category Form -->
+                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                        <div class="flex items-center mb-4">
+                            <div class="bg-slate-800 rounded-full p-3 mr-3 flex-shrink-0">
+                                <i class="fas fa-palette text-white"></i>
+                            </div>
+                            <h2 class="text-lg md:text-lg font-bold text-slate-800">Create Category</h2>
+                        </div>
+                        <form action="/add_category" method="POST" class="flex flex-col gap-4">
+                            <div>
+                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-folder-plus mr-1 text-slate-600"></i>Name
+                                </label>
+                                <input type="text" name="name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-slate-800 focus:outline-none" placeholder="e.g., Family Events" required>
+                            </div>
+                            <div class="flex gap-3">
+                                <div class="flex-1">
+                                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Color</label>
+                                    <input type="color" name="color" class="h-11 w-full border-2 border-gray-200 rounded-lg cursor-pointer hover:border-slate-800 duration-200" value="#0ea5e9" required>
+                                </div>
+                                <div class="flex items-end">
+                                    <button type="submit" class="bg-slate-800 text-white font-bold py-3 px-4 md:px-6 rounded-lg hover:bg-slate-700 duration-200 h-11 flex items-center gap-2 text-sm">
+                                        <i class="fas fa-plus text-sm"></i><span class="hidden sm:inline">Add</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Categories Management -->
+                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                        <div class="flex items-center mb-4">
+                            <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
+                                <i class="fas fa-layer-group text-orange-600"></i>
+                            </div>
+                            <h2 class="text-lg md:text-lg font-bold text-slate-800">Categories</h2>
+                        </div>
+                        <div class="space-y-2 max-h-64 overflow-y-auto">
+                            {% for cat in categories %}
+                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <span class="inline-block w-4 h-4 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}"></span>
+                                    <span class="font-medium text-slate-800 truncate text-sm md:text-base">{{ cat.name }}</span>
+                                </div>
+                                <div class="flex gap-2 flex-shrink-0">
+                                    <button onclick="openEditModal({{ cat.id }}, '{{ cat.name }}', '{{ cat.color }}')" class="edit-btn text-blue-500 hover:text-blue-700 p-2" title="Edit">
+                                        <i class="fas fa-edit text-sm"></i>
+                                    </button>
+                                    <a href="/delete_category/{{ cat.id }}" class="delete-btn text-red-500 hover:text-red-700 p-2" title="Delete" onclick="return confirm('Delete this category?')">
+                                        <i class="fas fa-trash-alt text-sm"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Interactive Chart -->
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 flex flex-col justify-center">
+                    <div class="flex items-center mb-6">
+                        <div class="bg-indigo-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-chart-doughnut text-indigo-600"></i>
+                        </div>
+                        <h2 class="text-lg md:text-xl font-bold text-slate-800">Spending Breakdown</h2>
+                    </div>
+                    <div class="flex justify-center items-center">
+                        <div class="w-full max-w-xs">
+                            <canvas id="expenseChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activity Table -->
+            <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-8">
+                <div class="flex items-center mb-6">
+                    <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
+                        <i class="fas fa-history text-purple-600"></i>
+                    </div>
+                    <h2 class="text-lg md:text-xl font-bold text-slate-800">Recent Activity</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    {% if expenses %}
+                    <table class="min-w-full text-left text-xs md:text-sm text-gray-600">
+                        <thead>
+                            <tr class="border-b-2 border-gray-200">
+                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
+                                    <i class="fas fa-calendar-alt mr-1 md:mr-2 text-blue-500"></i><span class="hidden sm:inline">Date</span>
+                                </th>
+                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
+                                    <i class="fas fa-user mr-1 md:mr-2 text-green-500"></i><span class="hidden sm:inline">Spender</span>
+                                </th>
+                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
+                                    <i class="fas fa-shopping-cart mr-1 md:mr-2 text-orange-500"></i><span class="hidden sm:inline">Item</span>
+                                </th>
+                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
+                                    <i class="fas fa-folder mr-1 md:mr-2 text-indigo-500"></i><span class="hidden sm:inline">Category</span>
+                                </th>
+                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
+                                    <i class="fas fa-rupee-sign mr-1 md:mr-2 text-red-500"></i><span class="hidden sm:inline">Amount</span>
+                                </th>
+                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
+                                    <i class="fas fa-cog mr-1 md:mr-2 text-gray-500"></i><span class="hidden sm:inline">Action</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for exp in expenses %}
+                            <tr class="table-row border-b border-gray-100 hover:shadow-sm duration-200">
+                                <td class="px-3 md:px-6 py-3 md:py-4 text-slate-700">
+                                    <span class="inline-flex items-center gap-1 md:gap-2">
+                                        <i class="fas fa-calendar text-blue-400 text-xs hidden sm:inline"></i>
+                                        <span class="text-xs md:text-sm">{{ exp.date.strftime('%b %d') }}</span>
+                                    </span>
+                                </td>
+                                <td class="px-3 md:px-6 py-3 md:py-4 font-semibold text-slate-800 text-xs md:text-sm">
+                                    <span class="inline-flex items-center gap-1 md:gap-2 bg-blue-50 px-2 md:px-3 py-1 rounded-full">
+                                        <i class="fas fa-user-circle text-blue-500 text-xs hidden sm:inline"></i>
+                                        {{ exp.spender.username|truncate(8, True) }}
+                                    </span>
+                                </td>
+                                <td class="px-3 md:px-6 py-3 md:py-4 font-bold text-blue-600 text-xs md:text-sm truncate">{{ exp.item_name|truncate(15, True) }}</td>
+                                <td class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
+                                    <span class="category-badge px-2 md:px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
+                                        <i class="fas fa-folder-open text-xs hidden sm:inline"></i>
+                                        <span class="hidden md:inline">{{ exp.category.name|truncate(12, True) }}</span>
+                                        <span class="md:hidden">{{ exp.category.name|truncate(8, True) }}</span>
+                                    </span>
+                                </td>
+                                <td class="px-3 md:px-6 py-3 md:py-4 text-red-500 font-bold text-xs md:text-sm">₹{{ "{:,.0f}".format(exp.amount)|truncate(10, True) }}</td>
+                                <td class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
+                                    <a href="/delete_expense/{{ exp.id }}" class="delete-btn text-red-500 hover:text-red-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 duration-200" onclick="return confirm('Delete this expense?')">
+                                        <i class="fas fa-trash-alt text-xs"></i><span class="hidden sm:inline">Delete</span>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="text-center py-12">
+                        <div class="text-5xl md:text-6xl mb-4">💸</div>
+                        <p class="text-gray-500 text-base md:text-lg font-semibold">No expenses logged yet</p>
+                        <p class="text-gray-400 text-xs md:text-sm mt-1">Start tracking your family expenses above!</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center text-slate-500 text-xs md:text-sm">
+                <p><i class="fas fa-shield-alt mr-1"></i>VaultSync © 2026 - Your Family's Financial Hub</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Edit Category Modal -->
+    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="modal bg-white rounded-xl md:rounded-2xl shadow-lg max-w-md w-full p-6 md:p-8">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg md:text-2xl font-bold text-slate-800">Edit Category</h3>
+                <button onclick="closeEditModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <form id="editForm" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Category Name</label>
+                    <input type="text" id="editName" name="name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
+                </div>
+                <div>
+                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Color</label>
+                    <input type="color" id="editColor" name="color" class="h-12 w-full border-2 border-gray-200 rounded-lg cursor-pointer" required>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button type="submit" class="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 duration-200 text-sm md:text-base">
+                        <i class="fas fa-save mr-2"></i>Save Changes
+                    </button>
+                    <button type="button" onclick="closeEditModal()" class="flex-1 bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg hover:bg-gray-400 duration-200 text-sm md:text-base">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Chart.js Configuration -->
+    <script>
+        // Mobile menu toggle
+        document.getElementById('menu-toggle').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.add('active');
+            document.getElementById('sidebar-overlay').classList.add('active');
+        });
+
+        document.getElementById('close-menu').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.remove('active');
+            document.getElementById('sidebar-overlay').classList.remove('active');
+        });
+
+        document.getElementById('sidebar-overlay').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.remove('active');
+            document.getElementById('sidebar-overlay').classList.remove('active');
+        });
+
+        // Edit modal functions
+        function openEditModal(id, name, color) {
+            document.getElementById('editName').value = name;
+            document.getElementById('editColor').value = color;
+            const form = document.getElementById('editForm');
+            form.action = `/edit_category/${id}`;
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.add('hidden');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('editModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('editModal')) {
+                closeEditModal();
+            }
+        });
+
+        // Update current time
+        function updateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            document.getElementById('current-time').textContent = timeStr;
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+
+        // Python dynamically injects the categories, data, and colors!
+        const dynamicLabels = {{ chart_labels | tojson | safe }};
+        const dynamicData = {{ chart_data | safe }};
+        const dynamicColors = {{ chart_colors | tojson | safe }};
+        
+        const ctx = document.getElementById('expenseChart').getContext('2d');
+        const expenseChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: dynamicLabels,
+                datasets: [{
+                    data: dynamicData,
+                    backgroundColor: dynamicColors,
+                    borderWidth: 0,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            font: { size: 11, weight: 'bold' },
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: 12,
+                        titleFont: { size: 13, weight: 'bold' },
+                        bodyFont: { size: 11 },
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((context.raw / total) * 100).toFixed(1);
+                                return `₹${context.raw.toLocaleString('en-IN')} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '65%'
+            }
+        });
+    </script>
+</body>
+</html>
