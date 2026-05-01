@@ -1,11 +1,15 @@
-# Database
-*.db
-instance/
-
-# Python cache
+# Python
 __pycache__/
-*.pyc
-
-# Virtual environments (if you use them later)
-venv/
+*.py[cod]
+*$py.class
+.venv/
 env/
+venv/
+.env
+
+# Database
+instance/
+*.db
+
+# OS
+.DS_Store
