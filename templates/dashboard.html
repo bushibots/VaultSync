@@ -7,146 +7,41 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * { transition: background-color 0.2s ease, color 0.2s ease; }
-        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
-        
-        /* Mobile-first responsive utilities */
-        @media (max-width: 640px) {
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.active { transform: translateX(0); }
-        }
-        
-        .sidebar-nav a {
-            position: relative;
-            overflow: hidden;
-        }
-        .sidebar-nav a::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            height: 100%;
-            width: 0;
-            background-color: rgba(255, 255, 255, 0.1);
-            transition: width 0.3s ease;
-        }
-        .sidebar-nav a:hover::before {
-            width: 100%;
-        }
-        .stat-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        }
-        .form-input {
-            transition: all 0.2s ease;
-            background-color: #f9fafb;
-        }
-        .form-input:focus {
-            background-color: #ffffff;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        .form-input::placeholder {
-            color: #d1d5db;
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-            transition: all 0.3s ease;
-        }
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
-        }
-        .btn-primary:active {
-            transform: translateY(0);
-        }
-        .table-row {
-            transition: all 0.2s ease;
-        }
-        .table-row:hover {
-            background-color: #f0f4ff;
-        }
-        @media (max-width: 768px) {
-            .table-row:hover {
-                transform: none;
-            }
-        }
-        .category-badge {
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .category-badge:hover {
-            transform: scale(1.05);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        .delete-btn, .edit-btn {
-            transition: all 0.2s ease;
-        }
-        .delete-btn:hover {
-            color: #dc2626;
-        }
-        .edit-btn:hover {
-            color: #0ea5e9;
-        }
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-slide-in {
-            animation: slideIn 0.3s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        .modal {
-            animation: fadeIn 0.2s ease;
-        }
-        /* Sidebar overlay for mobile */
-        .sidebar-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 39;
-            display: none;
-        }
-        .sidebar-overlay.active {
-            display: block;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body class="font-sans flex h-screen overflow-hidden bg-gray-100">
+<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
+    <!-- Skip to content link for accessibility -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
 
     <!-- Mobile Menu Toggle -->
     <div class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 p-4 flex items-center justify-between md:hidden">
         <h1 class="text-lg font-bold text-blue-600">VaultSync</h1>
-        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900">
-            <i class="fas fa-bars text-2xl"></i>
+        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900 p-2" aria-label="Open menu" aria-expanded="false">
+            <i class="fas fa-bars text-2xl" aria-hidden="true"></i>
         </button>
     </div>
 
     <!-- Sidebar Overlay (Mobile) -->
-    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+    <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
 
     <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300">
-        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg">
-            <i class="fas fa-times text-xl"></i>
+    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
+        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg" aria-label="Close menu">
+            <i class="fas fa-times text-xl" aria-hidden="true"></i>
         </button>
-        
+
         <div class="mb-8 mt-8 md:mt-0">
             <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                <i class="fas fa-vault mr-2"></i>VaultSync
+                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
             </h2>
             <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
         </div>
         <nav class="flex-1 space-y-2 sidebar-nav">
             <a href="/" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-home mr-3"></i><span class="hidden sm:inline">Dashboard</span>
+                <i class="fas fa-home mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Dashboard</span>
+            </a>
+            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Archive</span>
             </a>
         </nav>
         <div class="mt-auto space-y-4">
@@ -155,19 +50,19 @@
                 <p class="text-xs text-slate-400 mb-1">Logged in as</p>
                 <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
                 <p class="text-xs text-blue-300 mt-1">
-                    <i class="fas fa-user-tag mr-1"></i>{{ user.role }}
+                    <i class="fas fa-user-tag mr-1" aria-hidden="true"></i>{{ user.role }}
                 </p>
                 <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
             </div>
             <!-- Logout Button -->
             <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
-                <i class="fas fa-sign-out-alt mr-2"></i><span class="hidden sm:inline">Logout</span>
+                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i><span class="hidden sm:inline">Logout</span>
             </a>
         </div>
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-y-auto pt-16 md:pt-0">
+    <main id="main-content" class="flex-1 overflow-y-auto pt-16 md:pt-0" role="main">
         <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
             <header class="mb-6 md:mb-8 animate-slide-in">
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -210,7 +105,7 @@
                 <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-blue-100">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Family Income</h3>
-                        <i class="fas fa-wallet text-blue-400 text-lg"></i>
+                        <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
                     </div>
                     <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">This month</p>
@@ -218,22 +113,22 @@
                 <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-red-100">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Spent</h3>
-                        <i class="fas fa-credit-card text-red-400 text-lg"></i>
+                        <i class="fas fa-credit-card text-red-400 text-lg" aria-hidden="true"></i>
                     </div>
                     <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">
-                        <i class="fas fa-arrow-up text-red-400 mr-1"></i>
+                        <i class="fas fa-arrow-up text-red-400 mr-1" aria-hidden="true"></i>
                         {% if total_spent > 0 %}{{ "{:.1f}".format((total_spent/income)*100) }}% of income{% else %}No expenses{% endif %}
                     </p>
                 </div>
                 <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Projected Savings</h3>
-                        <i class="fas fa-piggy-bank text-green-400 text-lg"></i>
+                        <i class="fas fa-piggy-bank text-green-400 text-lg" aria-hidden="true"></i>
                     </div>
                     <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-green-600">{{ "{:,.0f}".format(projected) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">
-                        <i class="fas fa-arrow-up text-green-400 mr-1"></i>
+                        <i class="fas fa-arrow-up text-green-400 mr-1" aria-hidden="true"></i>
                         {% if projected > 0 %}Safe to spend{% else %}Overspent!{% endif %}
                     </p>
                 </div>
@@ -246,20 +141,20 @@
                     <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-6">
                             <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-plus text-blue-600"></i>
+                                <i class="fas fa-plus text-blue-600" aria-hidden="true"></i>
                             </div>
                             <h2 class="text-lg md:text-xl font-bold text-slate-800">Log New Expense</h2>
                         </div>
-                        <form action="/add_expense" method="POST" class="space-y-4">
+                        <form action="/add_expense" method="POST" class="space-y-4" data-loading>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-tag mr-1 text-blue-500"></i>Expense Name
+                                    <i class="fas fa-tag mr-1 text-blue-500" aria-hidden="true"></i>Expense Name
                                 </label>
                                 <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., Mattress, Train Tickets" required>
                             </div>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-list mr-1 text-blue-500"></i>Category
+                                    <i class="fas fa-list mr-1 text-blue-500" aria-hidden="true"></i>Category
                                 </label>
                                 <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
                                     {% for cat in categories %}
@@ -269,12 +164,12 @@
                             </div>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-rupee-sign mr-1 text-blue-500"></i>Amount
+                                    <i class="fas fa-rupee-sign mr-1 text-blue-500" aria-hidden="true"></i>Amount
                                 </label>
                                 <input type="number" name="amount" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., 500" step="0.01" required>
                             </div>
                             <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 duration-200 mt-2 flex items-center justify-center gap-2 text-sm md:text-base">
-                                <i class="fas fa-check"></i>Add to Tracker
+                                <i class="fas fa-check" aria-hidden="true"></i>Add to Tracker
                             </button>
                         </form>
                     </div>
@@ -283,14 +178,14 @@
                     <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-4">
                             <div class="bg-slate-800 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-palette text-white"></i>
+                                <i class="fas fa-palette text-white" aria-hidden="true"></i>
                             </div>
                             <h2 class="text-lg md:text-lg font-bold text-slate-800">Create Category</h2>
                         </div>
-                        <form action="/add_category" method="POST" class="flex flex-col gap-4">
+                        <form action="/add_category" method="POST" class="flex flex-col gap-4" data-loading>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-folder-plus mr-1 text-slate-600"></i>Name
+                                    <i class="fas fa-folder-plus mr-1 text-slate-600" aria-hidden="true"></i>Name
                                 </label>
                                 <input type="text" name="name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-slate-800 focus:outline-none" placeholder="e.g., Family Events" required>
                             </div>
@@ -301,7 +196,7 @@
                                 </div>
                                 <div class="flex items-end">
                                     <button type="submit" class="bg-slate-800 text-white font-bold py-3 px-4 md:px-6 rounded-lg hover:bg-slate-700 duration-200 h-11 flex items-center gap-2 text-sm">
-                                        <i class="fas fa-plus text-sm"></i><span class="hidden sm:inline">Add</span>
+                                        <i class="fas fa-plus text-sm" aria-hidden="true"></i><span class="hidden sm:inline">Add</span>
                                     </button>
                                 </div>
                             </div>
@@ -312,7 +207,7 @@
                     <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-4">
                             <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-layer-group text-orange-600"></i>
+                                <i class="fas fa-layer-group text-orange-600" aria-hidden="true"></i>
                             </div>
                             <h2 class="text-lg md:text-lg font-bold text-slate-800">Categories</h2>
                         </div>
@@ -320,17 +215,23 @@
                             {% for cat in categories %}
                             <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
                                 <div class="flex items-center gap-3 flex-1 min-w-0">
-                                    <span class="inline-block w-4 h-4 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}"></span>
+                                    <span class="inline-block w-4 h-4 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}" aria-hidden="true"></span>
                                     <span class="font-medium text-slate-800 truncate text-sm md:text-base">{{ cat.name }}</span>
                                 </div>
                                 <div class="flex gap-2 flex-shrink-0">
-                                    <button onclick="openEditModal({{ cat.id }}, '{{ cat.name }}', '{{ cat.color }}')" class="edit-btn text-blue-500 hover:text-blue-700 p-2" title="Edit">
-                                        <i class="fas fa-edit text-sm"></i>
+                                    <button onclick="openEditModal({{ cat.id }}, '{{ cat.name }}', '{{ cat.color }}')" class="edit-btn text-blue-500 hover:text-blue-700 p-2" title="Edit" aria-label="Edit {{ cat.name }} category">
+                                        <i class="fas fa-edit text-sm" aria-hidden="true"></i>
                                     </button>
-                                    <a href="/delete_category/{{ cat.id }}" class="delete-btn text-red-500 hover:text-red-700 p-2" title="Delete" onclick="return confirm('Delete this category?')">
-                                        <i class="fas fa-trash-alt text-sm"></i>
+                                    <a href="/delete_category/{{ cat.id }}" class="delete-btn text-red-500 hover:text-red-700 p-2" title="Delete" aria-label="Delete {{ cat.name }} category" onclick="return confirmDialog('Are you sure you want to delete the \'{{ cat.name }}\' category? This action cannot be undone.')">
+                                        <i class="fas fa-trash-alt text-sm" aria-hidden="true"></i>
                                     </a>
                                 </div>
+                            </div>
+                            {% else %}
+                            <div class="empty-state">
+                                <div class="empty-state-icon"><i class="fas fa-folder-open"></i></div>
+                                <p class="empty-state-title">No categories yet</p>
+                                <p class="empty-state-description">Create your first category above</p>
                             </div>
                             {% endfor %}
                         </div>
@@ -341,13 +242,13 @@
                 <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 flex flex-col justify-center">
                     <div class="flex items-center mb-6">
                         <div class="bg-indigo-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-chart-doughnut text-indigo-600"></i>
+                            <i class="fas fa-chart-pie text-indigo-600" aria-hidden="true"></i>
                         </div>
                         <h2 class="text-lg md:text-xl font-bold text-slate-800">Spending Breakdown</h2>
                     </div>
                     <div class="flex justify-center items-center">
                         <div class="w-full max-w-xs">
-                            <canvas id="expenseChart"></canvas>
+                            <canvas id="expenseChart" role="img" aria-label="Pie chart showing spending breakdown by category"></canvas>
                         </div>
                     </div>
                 </div>

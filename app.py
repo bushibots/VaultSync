@@ -1,54 +1,20 @@
 from flask import Flask, render_template, request, redirect, jsonify, Response, flash, url_for
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin, LoginManager, login_required, current_user, login_user, logout_user
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 import csv
 from io import StringIO
 from datetime import datetime
+from sqlalchemy import func
+from models import db, User, Category, Expense
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///vaultsync.db'
-db = SQLAlchemy(app)
+db.init_app(app)
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access this page.'
 login_manager.login_message_category = 'info'
-
-# --- DATABASE MODELS ---
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False, index=True)
-    email = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), default='Member')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    def set_password(self, password):
-        """Hash and set the user's password"""
-        self.password_hash = generate_password_hash(password)
-    
-    def check_password(self, password):
-        """Check if the provided password matches the hash"""
-        return check_password_hash(self.password_hash, password) 
-
-class Category(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
-    color = db.Column(db.String(20), nullable=False) 
-
-class Expense(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
-    item_name = db.Column(db.String(100), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    
-    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
-    category = db.relationship('Category')
-    
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    spender = db.relationship('User')
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -145,32 +111,46 @@ def dashboard():
 
     # --- NEW FILTERING LOGIC ---
     import calendar
-    from sqlalchemy import extract
-    
+
     # Get month/year from URL args, default to current date if none provided
     current_date = datetime.utcnow()
     selected_month = request.args.get('month', current_date.month, type=int)
     selected_year = request.args.get('year', current_date.year, type=int)
-    
+
+    # Normalize strings for SQLite strftime comparisons
+    month_str = f"{selected_month:02d}"
+    year_str = str(selected_year)
+
     # Filter expenses by the selected month and year
     all_expenses = Expense.query.filter(
-        extract('year', Expense.date) == selected_year,
-        extract('month', Expense.date) == selected_month
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str
     ).order_by(Expense.date.desc()).all()
-    
+
     all_categories = Category.query.all()
-    
+
     # Math is now isolated to the selected month!
     total_spent = sum(exp.amount for exp in all_expenses)
-    monthly_income = 170000 
+    monthly_income = 170000
     projected_savings = monthly_income - total_spent
-    
+
+    # Compute per-category totals using a grouped query to ensure accuracy
+    totals = db.session.query(
+        Expense.category_id,
+        func.coalesce(func.sum(Expense.amount), 0).label('total')
+    ).filter(
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str
+    ).group_by(Expense.category_id).all()
+
+    totals_map = {int(cat_id): float(total) for cat_id, total in totals}
+
     chart_labels = []
     chart_data = []
     chart_colors = []
-    
+
     for cat in all_categories:
-        cat_total = sum(exp.amount for exp in all_expenses if exp.category_id == cat.id)
+        cat_total = totals_map.get(cat.id, 0.0)
         if cat_total > 0:
             chart_labels.append(cat.name)
             chart_data.append(cat_total)
@@ -186,9 +166,34 @@ def dashboard():
                             chart_labels=chart_labels,
                             chart_data=chart_data,
                             chart_colors=chart_colors,
+                            category_spent=totals_map,
                             selected_month=selected_month,
                             selected_year=selected_year,
                             month_name=calendar.month_name[selected_month])
+
+
+@app.route('/archive')
+@login_required
+def archive():
+    """Show a monthly archive of months/years that contain expense data."""
+    import calendar
+
+    rows = db.session.query(
+        func.strftime('%Y', Expense.date).label('year'),
+        func.strftime('%m', Expense.date).label('month'),
+        func.count(Expense.id).label('count')
+    ).group_by('year', 'month').order_by(func.strftime('%Y', Expense.date).desc(), func.strftime('%m', Expense.date).desc()).all()
+
+    months = []
+    for year, month, count in rows:
+        months.append({
+            'year': int(year),
+            'month': int(month),
+            'month_name': calendar.month_name[int(month)],
+            'count': int(count)
+        })
+
+    return render_template('archive.html', user=current_user, months=months)
 
 # --- NEW ROUTE: PERSONAL SPENDING TAB ---
 @app.route('/my_spendings')
