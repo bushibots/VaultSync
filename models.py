@@ -11,7 +11,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False, index=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), default='Member')
+    role = db.Column(db.String(20), default='member')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expenses = db.relationship('Expense', backref='spender', lazy=True)
 
@@ -38,3 +38,14 @@ class Expense(db.Model):
     category = db.relationship('Category')
     
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+
+class ExpectedExpense(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    is_paid = db.Column(db.Boolean, default=False, nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    category = db.relationship('Category')
+    month = db.Column(db.Integer, nullable=False)
+    year = db.Column(db.Integer, nullable=False)

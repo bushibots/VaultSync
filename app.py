@@ -4,7 +4,8 @@ import csv
 from io import StringIO
 from datetime import datetime
 from sqlalchemy import func
-from models import db, User, Category, Expense
+from models import db, User, Category, Expense, ExpectedExpense
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
@@ -60,7 +61,7 @@ def register():
             return redirect(url_for('register'))
         
         # Create new user
-        user = User(username=username, email=email, role='Member')
+        user = User(username=username, email=email, role='member')
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -156,10 +157,14 @@ def dashboard():
             chart_data.append(cat_total)
             chart_colors.append(cat.color)
             
+    # Fetch expected expenses for the selected month/year
+    expected_expenses = ExpectedExpense.query.filter_by(month=selected_month, year=selected_year).order_by(ExpectedExpense.amount.desc()).all()
+
     return render_template('dashboard.html', 
                             user=current_user,
                             expenses=all_expenses,
                             categories=all_categories,
+                            expected_expenses=expected_expenses,
                             total_spent=total_spent,
                             income=monthly_income,
                             projected=projected_savings,
@@ -239,6 +244,48 @@ def add_expense():
     # Send them back to wherever they submitted the form from
     return redirect(request.referrer)
 
+
+@app.route('/add_expected', methods=['POST'])
+@login_required
+def add_expected():
+    # Admin-only access
+    if not current_user.is_authenticated or (hasattr(current_user, 'role') and current_user.role != 'admin'):
+        flash('Unauthorized: admin only', 'error')
+        return redirect(request.referrer)
+
+    name = request.form.get('name')
+    amount = request.form.get('amount')
+    category_id = request.form.get('category_id')
+    month = request.form.get('month')
+    year = request.form.get('year')
+
+    if not (name and amount and category_id and month and year):
+        flash('Please provide name, amount, category, month and year.', 'error')
+        return redirect(request.referrer)
+
+    new_expected = ExpectedExpense(
+        name=name.strip(),
+        amount=float(amount),
+        category_id=int(category_id),
+        month=int(month),
+        year=int(year)
+    )
+    db.session.add(new_expected)
+    db.session.commit()
+    return redirect(request.referrer)
+
+
+@app.route('/toggle_expected/<int:id>')
+@login_required
+def toggle_expected(id):
+    if not current_user.is_authenticated or (hasattr(current_user, 'role') and current_user.role != 'admin'):
+        flash('Unauthorized: admin only', 'error')
+        return redirect(request.referrer)
+    ee = ExpectedExpense.query.get_or_404(id)
+    ee.is_paid = not ee.is_paid
+    db.session.commit()
+    return redirect(request.referrer)
+
 @app.route('/add_category', methods=['POST'])
 @login_required
 def add_category():
@@ -308,10 +355,10 @@ if __name__ == '__main__':
         db.create_all()
         
         # Seed default Users (with hashed passwords)
-        dad = User(username='Dad', email='dad@family.com', role='Admin')
+        dad = User(username='Dad', email='dad@family.com', role='admin')
         dad.set_password('password123')
         
-        arish = User(username='Mohd Arish', email='arish@family.com', role='Member')
+        arish = User(username='Mohd Arish', email='arish@family.com', role='member')
         arish.set_password('password123')
         
         db.session.add(dad)
