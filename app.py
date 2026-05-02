@@ -1,16 +1,18 @@
 from flask import Flask, render_template, request, redirect, jsonify, Response, flash, url_for
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
+from flask_migrate import Migrate
 import csv
 from io import StringIO
 from datetime import datetime
 from sqlalchemy import func
-from models import db, User, Category, Expense, ExpectedExpense
+from models import db, User, Category, Expense, ExpectedExpense, Family
 
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///vaultsync.db'
 db.init_app(app)
+migrate = Migrate(app, db)
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
@@ -60,9 +62,11 @@ def register():
             flash('Email already registered. Please log in instead.', 'error')
             return redirect(url_for('register'))
         
-        # Create new user
-        user = User(username=username, email=email, role='member')
+        # Create a new family for this user
+        family = Family(name=f"{username}'s Family")
+        user = User(username=username, email=email, role='member', family=family)
         user.set_password(password)
+        db.session.add(family)
         db.session.add(user)
         db.session.commit()
         
@@ -122,13 +126,14 @@ def dashboard():
     month_str = f"{selected_month:02d}"
     year_str = str(selected_year)
 
-    # Filter expenses by the selected month and year
+    # Filter expenses by the selected month, year, AND family
     all_expenses = Expense.query.filter(
         func.strftime('%Y', Expense.date) == year_str,
-        func.strftime('%m', Expense.date) == month_str
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == current_user.family_id
     ).order_by(Expense.date.desc()).all()
 
-    all_categories = Category.query.all()
+    all_categories = Category.query.filter_by(family_id=current_user.family_id).all()
 
     # Math is now isolated to the selected month!
     total_spent = sum(exp.amount for exp in all_expenses)
@@ -141,7 +146,8 @@ def dashboard():
         func.coalesce(func.sum(Expense.amount), 0).label('total')
     ).filter(
         func.strftime('%Y', Expense.date) == year_str,
-        func.strftime('%m', Expense.date) == month_str
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == current_user.family_id
     ).group_by(Expense.category_id).all()
 
     totals_map = {int(cat_id): float(total) for cat_id, total in totals}
@@ -157,8 +163,12 @@ def dashboard():
             chart_data.append(cat_total)
             chart_colors.append(cat.color)
             
-    # Fetch expected expenses for the selected month/year
-    expected_expenses = ExpectedExpense.query.filter_by(month=selected_month, year=selected_year).order_by(ExpectedExpense.amount.desc()).all()
+    # Fetch expected expenses for the selected month/year and family
+    expected_expenses = ExpectedExpense.query.filter_by(
+        month=selected_month, 
+        year=selected_year, 
+        family_id=current_user.family_id
+    ).order_by(ExpectedExpense.amount.desc()).all()
 
     return render_template('dashboard.html', 
                             user=current_user,
@@ -187,6 +197,8 @@ def archive():
         func.strftime('%Y', Expense.date).label('year'),
         func.strftime('%m', Expense.date).label('month'),
         func.count(Expense.id).label('count')
+    ).filter(
+        Expense.family_id == current_user.family_id
     ).group_by('year', 'month').order_by(func.strftime('%Y', Expense.date).desc(), func.strftime('%m', Expense.date).desc()).all()
 
     months = []
@@ -204,9 +216,12 @@ def archive():
 @app.route('/my_spendings')
 @login_required
 def my_spendings():
-    all_categories = Category.query.all()
-    # Fetch ONLY the logged-in user's expenses
-    my_expenses = Expense.query.filter_by(user_id=current_user.id).order_by(Expense.date.desc()).all()
+    all_categories = Category.query.filter_by(family_id=current_user.family_id).all()
+    # Fetch ONLY the logged-in user's expenses in their family
+    my_expenses = Expense.query.filter_by(
+        user_id=current_user.id, 
+        family_id=current_user.family_id
+    ).order_by(Expense.date.desc()).all()
     
     my_total = sum(exp.amount for exp in my_expenses)
 
@@ -236,7 +251,8 @@ def add_expense():
         item_name=item_name, 
         amount=float(amount), 
         category_id=int(category_id), 
-        user_id=current_user.id
+        user_id=current_user.id,
+        family_id=current_user.family_id
     )
     db.session.add(new_expense)
     db.session.commit()
@@ -268,7 +284,8 @@ def add_expected():
         amount=float(amount),
         category_id=int(category_id),
         month=int(month),
-        year=int(year)
+        year=int(year),
+        family_id=current_user.family_id
     )
     db.session.add(new_expected)
     db.session.commit()
@@ -281,7 +298,10 @@ def toggle_expected(id):
     if not current_user.is_authenticated or (hasattr(current_user, 'role') and current_user.role != 'admin'):
         flash('Unauthorized: admin only', 'error')
         return redirect(request.referrer)
-    ee = ExpectedExpense.query.get_or_404(id)
+    ee = ExpectedExpense.query.filter_by(
+        id=id, 
+        family_id=current_user.family_id
+    ).first_or_404()
     ee.is_paid = not ee.is_paid
     db.session.commit()
     return redirect(request.referrer)
@@ -291,8 +311,9 @@ def toggle_expected(id):
 def add_category():
     name = request.form.get('name')
     color = request.form.get('color')
-    if not Category.query.filter_by(name=name).first():
-        new_cat = Category(name=name, color=color)
+    # Check if category already exists in this family
+    if not Category.query.filter_by(name=name, family_id=current_user.family_id).first():
+        new_cat = Category(name=name, color=color, family_id=current_user.family_id)
         db.session.add(new_cat)
         db.session.commit()
     return redirect(request.referrer)
@@ -300,12 +321,12 @@ def add_category():
 @app.route('/edit_category/<int:id>', methods=['POST'])
 @login_required
 def edit_category(id):
-    category = Category.query.get_or_404(id)
+    category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
     name = request.form.get('name')
     color = request.form.get('color')
     
-    # Check if new name already exists (but allow keeping same name)
-    existing = Category.query.filter_by(name=name).first()
+    # Check if new name already exists in this family (but allow keeping same name)
+    existing = Category.query.filter_by(name=name, family_id=current_user.family_id).first()
     if existing and existing.id != id:
         return redirect(request.referrer)
     
@@ -317,9 +338,9 @@ def edit_category(id):
 @app.route('/delete_category/<int:id>')
 @login_required
 def delete_category(id):
-    category = Category.query.get_or_404(id)
-    # Check if category has expenses
-    expenses_count = Expense.query.filter_by(category_id=id).count()
+    category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
+    # Check if category has expenses in this family
+    expenses_count = Expense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
     if expenses_count == 0:
         db.session.delete(category)
         db.session.commit()
@@ -328,7 +349,10 @@ def delete_category(id):
 @app.route('/delete_expense/<int:id>')
 @login_required
 def delete_expense(id):
-    expense_to_delete = Expense.query.get_or_404(id)
+    expense_to_delete = Expense.query.filter_by(
+        id=id, 
+        family_id=current_user.family_id
+    ).first_or_404()
     db.session.delete(expense_to_delete)
     db.session.commit()
     return redirect(request.referrer)
@@ -336,7 +360,7 @@ def delete_expense(id):
 @app.route('/export_ai_data')
 @login_required
 def export_ai_data():
-    expenses = Expense.query.all()
+    expenses = Expense.query.filter_by(family_id=current_user.family_id).all()
     def generate():
         data = StringIO()
         writer = csv.writer(data)
@@ -348,36 +372,71 @@ def export_ai_data():
             data.truncate(0)
     return Response(generate(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=family_data.csv'})
 
+@app.route('/admin_panel', methods=['GET', 'POST'])
+@login_required
+def admin_panel():
+    """Admin panel for family management"""
+    if not current_user.is_authenticated or current_user.role != 'admin':
+        flash('Unauthorized: admin only', 'error')
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        member_username = request.form.get('member_username', '').strip()
+        
+        # Find user by username in the same family
+        member = User.query.filter_by(username=member_username, family_id=current_user.family_id).first()
+        if not member:
+            flash(f'User "{member_username}" not found in your family.', 'error')
+        else:
+            flash(f'User "{member_username}" is already in your family.', 'info')
+        
+        return redirect(url_for('admin_panel'))
+    
+    # Fetch all members in this family
+    family_members = User.query.filter_by(family_id=current_user.family_id).all()
+    
+    return render_template('admin_panel.html', 
+                          user=current_user,
+                          family_members=family_members,
+                          invite_code=current_user.family.invite_code)
+
 if __name__ == '__main__':
     with app.app_context():
         # Drop all tables and recreate (for development - removes old schema)
         db.drop_all()
         db.create_all()
         
+        # Create a Family
+        family = Family(name='Demo Family')
+        db.session.add(family)
+        db.session.flush()  # Flush to get family.id
+        
         # Seed default Users (with hashed passwords)
-        dad = User(username='Dad', email='dad@family.com', role='admin')
+        dad = User(username='Dad', email='dad@family.com', role='admin', family_id=family.id)
         dad.set_password('password123')
         
-        arish = User(username='Mohd Arish', email='arish@family.com', role='member')
+        arish = User(username='Mohd Arish', email='arish@family.com', role='member', family_id=family.id)
         arish.set_password('password123')
         
         db.session.add(dad)
         db.session.add(arish)
         db.session.commit()
         
-        # Seed default Universal Categories
+        # Seed default Categories for the family
         db.session.add_all([
-            Category(name='Housing & Utilities', color='#3b82f6'),
-            Category(name='Groceries & Food', color='#10b981'),
-            Category(name='Healthcare', color='#ef4444'),
-            Category(name='Transportation', color='#f59e0b'),
-            Category(name='Debt Repayment', color='#8b5cf6'),
-            Category(name='Miscellaneous', color='#64748b')
+            Category(name='Housing & Utilities', color='#3b82f6', family_id=family.id),
+            Category(name='Groceries & Food', color='#10b981', family_id=family.id),
+            Category(name='Healthcare', color='#ef4444', family_id=family.id),
+            Category(name='Transportation', color='#f59e0b', family_id=family.id),
+            Category(name='Debt Repayment', color='#8b5cf6', family_id=family.id),
+            Category(name='Miscellaneous', color='#64748b', family_id=family.id)
         ])
         db.session.commit()
         
-        print("✓ Database initialized with demo users")
-        print("  Username: Dad / Mohd Arish")
+        print("✓ Database initialized with demo family and users")
+        print("  Family Name: Demo Family")
+        print("  Family Invite Code:", family.invite_code)
+        print("  Username: Dad (admin) / Mohd Arish (member)")
         print("  Password: password123")
     
     app.run(debug=True)
