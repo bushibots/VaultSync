@@ -130,17 +130,33 @@
 
         <nav class="flex-1 space-y-2 sidebar-nav">
             <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i>Dashboard
+                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
             </a>
             <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <span class="mr-3" aria-hidden="true">📓</span>Daily Diary
+                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
+            </a>
+            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
             </a>
             <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i>Archive
+                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
+            </a>
+            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
             </a>
         </nav>
 
         <div class="mt-auto space-y-4">
+            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
+                <button type="button" id="dark-mode-toggle" class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
+                </button>
+                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
+                <select id="language-select" class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                </select>
+            </div>
             <!-- User Profile Card -->
             <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
                 <p class="text-xs text-slate-400 mb-1">Logged in as</p>

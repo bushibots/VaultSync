@@ -19,6 +19,7 @@ class Family(db.Model):
     categories = db.relationship('Category', backref='family', lazy=True)
     expenses = db.relationship('Expense', backref='family', lazy=True)
     expected_expenses = db.relationship('ExpectedExpense', backref='family', lazy=True)
+    budget_suggestions = db.relationship('BudgetSuggestion', backref='family', lazy=True)
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -62,11 +63,34 @@ class ExpectedExpense(db.Model):
     name = db.Column(db.String(150), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     is_paid = db.Column(db.Boolean, default=False, nullable=False)
+    due_day = db.Column(db.Integer, default=1, nullable=False)
+    paid_at = db.Column(db.DateTime, nullable=True)
+    linked_expense_id = db.Column(db.Integer, db.ForeignKey('expense.id'), nullable=True)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     category = db.relationship('Category')
+    linked_expense = db.relationship('Expense', foreign_keys=[linked_expense_id])
     family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
     month = db.Column(db.Integer, nullable=False)
     year = db.Column(db.Integer, nullable=False)
+
+
+class BudgetSuggestion(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.relationship('User')
+    source_start_date = db.Column(db.Date, nullable=False)
+    source_end_date = db.Column(db.Date, nullable=False)
+    target_start_date = db.Column(db.Date, nullable=False)
+    target_end_date = db.Column(db.Date, nullable=False)
+    title = db.Column(db.String(160), nullable=False)
+    suggested_monthly_budget = db.Column(db.Float, nullable=True)
+    total_planned = db.Column(db.Float, default=0.0, nullable=False)
+    risk_level = db.Column(db.String(20), default='medium', nullable=False)
+    notes = db.Column(db.Text, default='')
+    raw_json = db.Column(db.Text, nullable=False)
+    is_applied = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class AuditLog(db.Model):

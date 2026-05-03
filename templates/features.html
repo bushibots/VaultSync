@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultSync | Feature Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <div class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 p-4 flex items-center justify-between md:hidden">
+        <h1 class="text-lg font-bold text-blue-600">Feature Guide</h1>
+        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900 p-2" aria-label="Open menu" aria-expanded="false">
+            <i class="fas fa-bars text-2xl" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
+        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg" aria-label="Close menu">
+            <i class="fas fa-times text-xl" aria-hidden="true"></i>
+        </button>
+
+        <div class="mb-8 mt-8 md:mt-0">
+            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+        </div>
+
+        <nav class="flex-1 space-y-2 sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
+            </a>
+            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
+            </a>
+            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
+            </a>
+            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
+            </a>
+            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
+                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
+            </a>
+        </nav>
+
+        <div class="mt-auto space-y-4">
+            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
+                <button type="button" id="dark-mode-toggle" class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
+                </button>
+                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
+                <select id="language-select" class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                </select>
+            </div>
+            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
+                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
+                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
+                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
+            </div>
+        </div>
+    </aside>
+
+    <main id="main-content" class="flex-1 overflow-y-auto pt-16 md:pt-0" role="main">
+        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
+            <header class="mb-8 animate-slide-in">
+                <p class="text-xs md:text-sm text-blue-600 font-semibold">VaultSync Manual</p>
+                <h1 class="text-3xl md:text-4xl font-bold text-slate-800 mt-2" data-i18n="guide_title">VaultSync Feature Guide</h1>
+                <p class="text-slate-500 text-sm mt-2 max-w-3xl" data-i18n="guide_subtitle">Every feature, what it does, and how to use it correctly.</p>
+            </header>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-gauge-high text-blue-600 mr-2"></i><span data-i18n="macro_title">Macro Dashboard</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="macro_body">Use the dashboard to view monthly spending, budget, projected savings, and the category chart.</p>
+                    <p class="text-slate-500 text-sm mt-3">Choose month/year at the top. Only expenses from that selected month and your family are included.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-book-open text-indigo-600 mr-2"></i><span data-i18n="diary_title">Daily Expense Diary</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="diary_body">Quickly add small everyday expenses. These are the same expenses that roll into the dashboard.</p>
+                    <p class="text-slate-500 text-sm mt-3">Use Previous Day, Today, and Next Day to review a focused chronological ledger.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-calendar-check text-teal-600 mr-2"></i><span data-i18n="plan_title">Expected Monthly Expenditure</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="plan_body">Write monthly bills in advance. They appear in charts and Recent Activity only after you mark them paid.</p>
+                    <p class="text-slate-500 text-sm mt-3">Use due day for bill timing, Mark Paid when money actually leaves, Unpost to move it back to upcoming, and Copy This Plan To Next Month for repeat bills.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-wand-magic-sparkles text-blue-600 mr-2"></i><span data-i18n="ai_feature_title">AI Budget Planner</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="ai_feature_body">Export a date or month window as AI-ready JSON, ask an AI to create the next budget, import the JSON answer, compare it with your current plan, then apply it.</p>
+                    <p class="text-slate-500 text-sm mt-3">The imported AI plan becomes Expected Monthly Expenditure, so it still only affects charts after you mark items paid.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-pen-to-square text-indigo-600 mr-2"></i>Complete Editing</h2>
+                    <p class="text-slate-600 text-sm leading-6">Expenses, planned expenses, and categories can be edited across all important fields instead of only partial details.</p>
+                    <p class="text-slate-500 text-sm mt-3">Editing a paid planned expense also updates the linked actual transaction, keeping the dashboard and plan in sync.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-layer-group text-orange-600 mr-2"></i><span data-i18n="categories_title">Recommended Categories</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="categories_body">Preset categories keep spending clean and organized. Add custom categories only when needed.</p>
+                    <p class="text-slate-500 text-sm mt-3">Recommended categories include groceries, rent/EMI, utilities, transport, healthcare, education, insurance, household, savings, and emergency.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-archive text-blue-600 mr-2"></i><span data-i18n="archive_title">Monthly Archive</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="archive_body">Open Archive to browse older months and click any month to review its dashboard.</p>
+                    <p class="text-slate-500 text-sm mt-3">The archive is built from real expenses, including paid budget-plan items.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-cog text-indigo-600 mr-2"></i><span data-i18n="admin_title">Admin Panel</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="admin_body">Family managers can update budget, members, and family settings.</p>
+                    <p class="text-slate-500 text-sm mt-3">The admin panel also shows member spending, planned upcoming totals, saved AI suggestions, category limits, preset category repair, and invite-code regeneration.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6 lg:col-span-2">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-language text-emerald-600 mr-2"></i><span data-i18n="dark_title">Dark Mode and Hindi</span></h2>
+                    <p class="text-slate-600 text-sm leading-6" data-i18n="dark_body">Dark Mode and Language controls live at the bottom of the sidebar. Your choice is saved in this browser.</p>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

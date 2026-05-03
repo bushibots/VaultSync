@@ -276,11 +276,15 @@ const EditModal = {
         });
     },
 
-    open(id, name, color) {
+    open(id, name, color, monthlyLimit = 0, isFixed = false) {
         if (!this.modal || !this.form) return;
 
         document.getElementById('editName').value = name;
         document.getElementById('editColor').value = color;
+        const monthlyLimitInput = document.getElementById('editMonthlyLimit');
+        const isFixedInput = document.getElementById('editIsFixed');
+        if (monthlyLimitInput) monthlyLimitInput.value = Number(monthlyLimit || 0).toFixed(2);
+        if (isFixedInput) isFixedInput.checked = Boolean(isFixed);
         const actionTemplate = this.form.dataset.actionTemplate || '/edit_category/0';
         this.form.action = actionTemplate.replace(/0$/, String(id));
         this.modal.classList.remove('hidden');
@@ -296,7 +300,7 @@ const EditModal = {
 };
 
 // Make openEditModal and closeEditModal globally available
-window.openEditModal = (id, name, color) => EditModal.open(id, name, color);
+window.openEditModal = (id, name, color, monthlyLimit, isFixed) => EditModal.open(id, name, color, monthlyLimit, isFixed);
 window.closeEditModal = () => EditModal.close();
 
 // ============================================
@@ -323,6 +327,129 @@ const CurrentTime = {
 };
 
 // ============================================
+// Preferences: Theme and Language
+// ============================================
+
+const Preferences = {
+    translations: {
+        en: {
+            nav_dashboard: 'Dashboard',
+            nav_diary: 'Daily Diary',
+            nav_ai_budget: 'AI Budget Planner',
+            nav_archive: 'Archive',
+            nav_features: 'Feature Guide',
+            dark_mode: 'Dark Mode',
+            light_mode: 'Light Mode',
+            language: 'Language',
+            guide_title: 'VaultSync Feature Guide',
+            guide_subtitle: 'Every feature, what it does, and how to use it correctly.',
+            macro_title: 'Macro Dashboard',
+            macro_body: 'Use the dashboard to view monthly spending, budget, projected savings, and the category chart.',
+            diary_title: 'Daily Expense Diary',
+            diary_body: 'Quickly add small everyday expenses. These are the same expenses that roll into the dashboard.',
+            plan_title: 'Expected Monthly Expenditure',
+            plan_body: 'Write monthly bills in advance. They appear in charts and Recent Activity only after you mark them paid.',
+            categories_title: 'Recommended Categories',
+            categories_body: 'Preset categories keep spending clean and organized. Add custom categories only when needed.',
+            archive_title: 'Monthly Archive',
+            archive_body: 'Open Archive to browse older months and click any month to review its dashboard.',
+            admin_title: 'Admin Panel',
+            admin_body: 'Family managers can update budget, members, and family settings.',
+            dark_title: 'Dark Mode and Hindi',
+            dark_body: 'Dark Mode and Language controls live at the bottom of the sidebar. Your choice is saved in this browser.',
+            ai_title: 'AI Budget Planner',
+            ai_subtitle: 'Export family spending as clean JSON, ask an AI for a budget, import the JSON answer, compare it, then apply the plan.',
+            ai_feature_title: 'AI Budget Planner',
+            ai_feature_body: 'Export a date or month window as AI-ready JSON, ask an AI to create the next budget, import the JSON answer, compare it with your current plan, then apply it.'
+        },
+        hi: {
+            nav_dashboard: 'डैशबोर्ड',
+            nav_diary: 'डेली डायरी',
+            nav_ai_budget: 'AI बजट प्लानर',
+            nav_archive: 'आर्काइव',
+            nav_features: 'फीचर गाइड',
+            dark_mode: 'डार्क मोड',
+            light_mode: 'लाइट मोड',
+            language: 'भाषा',
+            guide_title: 'VaultSync फीचर गाइड',
+            guide_subtitle: 'हर फीचर क्या करता है और उसे सही तरीके से कैसे इस्तेमाल करना है।',
+            macro_title: 'मैक्रो डैशबोर्ड',
+            macro_body: 'महीने का कुल खर्च, बजट, बचत और कैटेगरी चार्ट देखने के लिए डैशबोर्ड इस्तेमाल करें।',
+            diary_title: 'डेली एक्सपेंस डायरी',
+            diary_body: 'छोटे रोज़ाना खर्च जल्दी जोड़ें। ये वही खर्च हैं जो डैशबोर्ड में भी जुड़ते हैं।',
+            plan_title: 'Expected Monthly Expenditure',
+            plan_body: 'महीने के बिल पहले से लिखें। Mark Paid करने पर ही वे असली खर्च बनकर चार्ट और Recent Activity में दिखते हैं।',
+            categories_title: 'Recommended Categories',
+            categories_body: 'Preset categories खर्चों को साफ और व्यवस्थित रखते हैं। Custom category सिर्फ तब बनाएं जब सच में ज़रूरत हो।',
+            archive_title: 'Monthly Archive',
+            archive_body: 'पुराने महीनों का खर्च देखने के लिए Archive खोलें और महीने पर क्लिक करें।',
+            admin_title: 'Admin Panel',
+            admin_body: 'Family manager बजट, members और family settings संभाल सकता है।',
+            dark_title: 'Dark Mode and Hindi',
+            dark_body: 'Sidebar के नीचे Dark Mode और Language controls हैं। आपकी पसंद browser में save रहती है।',
+            ai_title: 'AI बजट प्लानर',
+            ai_subtitle: 'खर्च को JSON में export करें, AI से budget बनवाएं, JSON answer import करें, compare करें और plan apply करें।',
+            ai_feature_title: 'AI बजट प्लानर',
+            ai_feature_body: 'किसी date या month window को AI-ready JSON में export करें, AI से अगला budget बनवाएं, answer import करें, current plan से compare करें और apply करें।'
+        }
+    },
+
+    init() {
+        this.themeButton = document.getElementById('dark-mode-toggle');
+        this.languageSelect = document.getElementById('language-select');
+
+        document.querySelectorAll('[data-i18n]').forEach((el) => {
+            if (!el.dataset.en) el.dataset.en = el.textContent;
+        });
+
+        this.applyTheme(localStorage.getItem('vaultsync-theme') || 'light');
+        this.applyLanguage(localStorage.getItem('vaultsync-language') || 'en');
+
+        if (this.themeButton) {
+            this.themeButton.addEventListener('click', () => {
+                const next = document.body.classList.contains('dark-mode') ? 'light' : 'dark';
+                localStorage.setItem('vaultsync-theme', next);
+                this.applyTheme(next);
+            });
+        }
+
+        if (this.languageSelect) {
+            this.languageSelect.addEventListener('change', () => {
+                localStorage.setItem('vaultsync-language', this.languageSelect.value);
+                this.applyLanguage(this.languageSelect.value);
+            });
+        }
+    },
+
+    applyTheme(theme) {
+        const isDark = theme === 'dark';
+        document.body.classList.toggle('dark-mode', isDark);
+
+        if (this.themeButton) {
+            const label = this.themeButton.querySelector('[data-i18n]');
+            const icon = this.themeButton.querySelector('i');
+            if (label) label.dataset.i18n = isDark ? 'light_mode' : 'dark_mode';
+            if (icon) icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+        }
+
+        this.applyLanguage(localStorage.getItem('vaultsync-language') || 'en');
+    },
+
+    applyLanguage(language) {
+        if (this.languageSelect) this.languageSelect.value = language;
+
+        document.documentElement.lang = language === 'hi' ? 'hi' : 'en';
+        const dictionary = this.translations[language] || {};
+
+        document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.dataset.i18n;
+            if (dictionary[key]) el.textContent = dictionary[key];
+            else if (el.dataset.en) el.textContent = el.dataset.en;
+        });
+    }
+};
+
+// ============================================
 // Initialize on DOM Ready
 // ============================================
 
@@ -332,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
     PasswordToggle.init();
     CurrentTime.init();
     EditModal.init();
+    Preferences.init();
 
     // Process any flash messages from server
     if (window.flashMessages && window.flashMessages.length > 0) {

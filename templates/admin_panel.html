@@ -86,7 +86,7 @@
                 <i class="fas fa-tachometer-alt mr-2 text-blue-500"></i>Family Dashboard
             </h2>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
                 <!-- Budget Health Card -->
                 <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
                     <div class="flex items-center justify-between mb-4">
@@ -121,6 +121,24 @@
                             OVERSPENT
                         {% endif %}
                     </p>
+                </div>
+
+                <div class="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg p-6 border border-teal-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold text-gray-700">Planned Upcoming</h3>
+                        <i class="fas fa-calendar-check text-teal-600 text-2xl"></i>
+                    </div>
+                    <p class="text-3xl font-bold text-teal-600">&#8377;{{ "{:,.0f}".format(planned_unpaid_total) }}</p>
+                    <p class="text-xs text-gray-600 mt-1">Not posted yet</p>
+                </div>
+
+                <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-6 border border-purple-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold text-gray-700">AI Suggestions</h3>
+                        <i class="fas fa-wand-magic-sparkles text-purple-600 text-2xl"></i>
+                    </div>
+                    <p class="text-3xl font-bold text-purple-600">{{ ai_suggestions_count }}</p>
+                    <p class="text-xs text-gray-600 mt-1">Saved plans</p>
                 </div>
             </div>
 
@@ -157,6 +175,10 @@
                             <p class="text-lg font-bold text-gray-800">{{ family_members|length }}</p>
                         </div>
                         <div>
+                            <p class="text-xs text-gray-600 font-semibold">Categories</p>
+                            <p class="text-lg font-bold text-gray-800">{{ categories|length }}</p>
+                        </div>
+                        <div>
                             <p class="text-xs text-gray-600 font-semibold">Created</p>
                             <p class="text-lg font-bold text-gray-800">{{ family.created_at.strftime('%b %d, %Y') }}</p>
                         </div>
@@ -172,6 +194,11 @@
                         </button>
                     </div>
                     <p class="text-xs text-gray-600">Share this code with family members to invite them</p>
+                    <form method="POST" action="{{ url_for('regenerate_invite_code') }}" class="mt-4">
+                        <button type="submit" class="w-full bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 duration-200 text-sm" onclick="return confirm('Regenerate invite code? The old code will stop working.')">
+                            <i class="fas fa-rotate mr-1"></i>Regenerate Invite Code
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -218,6 +245,10 @@
                                 <div class="min-w-0 flex-1">
                                     <p class="font-semibold text-gray-800 truncate">{{ member.username }}</p>
                                     <p class="text-xs text-gray-600 truncate">{{ member.email }}</p>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        This month: <span class="font-bold">&#8377;{{ "{:,.0f}".format(member_stats.get(member.id, {}).get('total', 0)) }}</span>
+                                        · {{ member_stats.get(member.id, {}).get('count', 0) }} expense{% if member_stats.get(member.id, {}).get('count', 0) != 1 %}s{% endif %}
+                                    </p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-3 flex-shrink-0">
@@ -298,13 +329,54 @@
                 </form>
             </div>
 
-            <!-- Category Limits Info -->
+            <!-- Category Limits Manager -->
             <div class="bg-blue-50 rounded-lg p-6 border border-blue-200">
-                <h3 class="font-semibold text-gray-700 mb-4">Category Spending Limits</h3>
-                <p class="text-sm text-gray-700 mb-4">You can set spending limits for individual categories from the main Dashboard. This helps you track spending in specific areas of your budget.</p>
-                <a href="{{ url_for('dashboard') }}" class="inline-flex items-center gap-2 bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">
-                    <i class="fas fa-arrow-right"></i>Go to Dashboard
-                </a>
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="font-semibold text-gray-700">Category Spending Limits</h3>
+                        <p class="text-sm text-gray-600 mt-1">Edit every category limit and monitor current usage from one admin view.</p>
+                    </div>
+                    <form action="{{ url_for('apply_category_presets') }}" method="POST">
+                        <button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 text-sm">
+                            <i class="fas fa-wand-magic-sparkles mr-1"></i>Add Missing Presets
+                        </button>
+                    </form>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-blue-200 text-gray-700">
+                                <th class="py-3 pr-4">Category</th>
+                                <th class="py-3 pr-4">Spent</th>
+                                <th class="py-3 pr-4">Limit</th>
+                                <th class="py-3">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for category in categories %}
+                            {% set spent = category_spending.get(category.id, 0) %}
+                            <tr class="border-b border-blue-100">
+                                <td class="py-3 pr-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="h-3 w-3 rounded-full" style="background-color: {{ category.color }}"></span>
+                                        <span class="font-semibold text-gray-800">{{ category.name }}</span>
+                                        {% if category.is_fixed %}<span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Preset</span>{% endif %}
+                                    </div>
+                                </td>
+                                <td class="py-3 pr-4 font-bold {% if category.monthly_limit and spent > category.monthly_limit %}text-red-600{% else %}text-gray-800{% endif %}">&#8377;{{ "{:,.0f}".format(spent) }}</td>
+                                <td class="py-3 pr-4">
+                                    <input form="category-limit-form-{{ category.id }}" type="number" name="monthly_limit" value="{{ category.monthly_limit or 0 }}" min="0" step="0.01" class="w-32 border-2 border-gray-200 rounded-lg p-2 text-sm">
+                                </td>
+                                <td class="py-3">
+                                    <form id="category-limit-form-{{ category.id }}" method="POST" action="{{ url_for('update_category_limit', category_id=category.id) }}"></form>
+                                    <button form="category-limit-form-{{ category.id }}" type="submit" class="bg-slate-800 text-white font-bold py-2 px-3 rounded-lg hover:bg-slate-700 text-xs">Save</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 

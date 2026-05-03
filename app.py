@@ -1,12 +1,15 @@
 from flask import Flask, render_template, request, redirect, jsonify, Response, flash, url_for
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 from flask_migrate import Migrate
+import calendar
 import csv
+import json
 import os
+import secrets
 from io import StringIO
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from sqlalchemy import func
-from models import db, User, Category, Expense, ExpectedExpense, Family
+from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion
 
 
 app = Flask(__name__)
@@ -21,6 +24,21 @@ login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access this page.'
 login_manager.login_message_category = 'info'
 
+PRESET_CATEGORIES = [
+    ('Groceries', '#16a34a', 0),
+    ('Rent / EMI', '#2563eb', 0),
+    ('Utilities', '#f59e0b', 0),
+    ('Transport', '#0ea5e9', 0),
+    ('Healthcare', '#dc2626', 0),
+    ('Education', '#7c3aed', 0),
+    ('Insurance', '#0891b2', 0),
+    ('Dining Out', '#ea580c', 0),
+    ('Household', '#64748b', 0),
+    ('Savings', '#059669', 0),
+    ('Emergency', '#be123c', 0),
+    ('Personal Care', '#db2777', 0),
+]
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -28,6 +46,368 @@ def load_user(user_id):
 def back_or(endpoint):
     """Redirect back to the submitting page, falling back to a known route."""
     return redirect(request.referrer or url_for(endpoint))
+
+
+def ensure_preset_categories(family_id):
+    """Create the recommended starter category set for a family if missing."""
+    if not family_id:
+        return 0
+
+    existing_names = {
+        name.lower()
+        for (name,) in Category.query.with_entities(Category.name).filter_by(
+            family_id=family_id
+        ).all()
+    }
+
+    created = 0
+    for name, color, monthly_limit in PRESET_CATEGORIES:
+        if name.lower() in existing_names:
+            continue
+        db.session.add(Category(
+            name=name,
+            color=color,
+            monthly_limit=monthly_limit,
+            is_fixed=True,
+            family_id=family_id
+        ))
+        created += 1
+
+    return created
+
+
+def expected_expense_date(expected_expense):
+    last_day = calendar.monthrange(expected_expense.year, expected_expense.month)[1]
+    due_day = min(max(expected_expense.due_day or 1, 1), last_day)
+    return date(expected_expense.year, expected_expense.month, due_day)
+
+
+def parse_date_arg(value, fallback=None):
+    if not value:
+        return fallback
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return fallback
+
+
+def month_bounds(year, month):
+    first = date(year, month, 1)
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    return first, last
+
+
+def parse_ai_budget_window(form):
+    period_type = form.get('period_type', 'date_range')
+    today = datetime.now().date()
+
+    if period_type == 'single_date':
+        start = parse_date_arg(form.get('single_date'), today)
+        end = start
+    elif period_type == 'single_month':
+        year = int(form.get('single_month_year') or today.year)
+        month = int(form.get('single_month') or today.month)
+        start, end = month_bounds(year, month)
+    elif period_type == 'month_range':
+        start_year = int(form.get('start_month_year') or today.year)
+        start_month = int(form.get('start_month') or today.month)
+        end_year = int(form.get('end_month_year') or start_year)
+        end_month = int(form.get('end_month') or start_month)
+        start, _ = month_bounds(start_year, start_month)
+        _, end = month_bounds(end_year, end_month)
+    else:
+        start = parse_date_arg(form.get('start_date'), today.replace(day=1))
+        end = parse_date_arg(form.get('end_date'), today)
+
+    if end < start:
+        start, end = end, start
+
+    target_start = end + timedelta(days=1)
+    target_end = target_start + (end - start)
+    return period_type, start, end, target_start, target_end
+
+
+def serialize_expense(expense):
+    return {
+        'date': expense.date.isoformat(),
+        'item_name': expense.item_name,
+        'amount': round(float(expense.amount), 2),
+        'category': expense.category.name if expense.category else 'Uncategorized',
+        'spender': expense.user.username if expense.user else 'Unknown',
+    }
+
+
+def serialize_expected(expense):
+    planned_date = expected_expense_date(expense)
+    return {
+        'name': expense.name,
+        'amount': round(float(expense.amount), 2),
+        'category': expense.category.name if expense.category else 'Uncategorized',
+        'planned_date': planned_date.isoformat(),
+        'month': expense.month,
+        'year': expense.year,
+        'due_day': expense.due_day,
+        'is_paid': bool(expense.is_paid),
+    }
+
+
+def summarize_expenses(expenses):
+    by_category = {}
+    by_day = {}
+    by_month = {}
+
+    for expense in expenses:
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        day_key = expense.date.isoformat()
+        month_key = expense.date.strftime('%Y-%m')
+        amount = float(expense.amount)
+
+        by_category[category_name] = by_category.get(category_name, 0.0) + amount
+        by_day[day_key] = by_day.get(day_key, 0.0) + amount
+        by_month[month_key] = by_month.get(month_key, 0.0) + amount
+
+    total = sum(float(exp.amount) for exp in expenses)
+    days = len(by_day) or 1
+    return {
+        'total_spent': round(total, 2),
+        'transaction_count': len(expenses),
+        'average_daily_spend': round(total / days, 2),
+        'by_category': {key: round(value, 2) for key, value in sorted(by_category.items())},
+        'by_day': {key: round(value, 2) for key, value in sorted(by_day.items())},
+        'by_month': {key: round(value, 2) for key, value in sorted(by_month.items())},
+    }
+
+
+def build_ai_budget_export(period_type, start, end, target_start, target_end):
+    expenses = Expense.query.filter(
+        Expense.date >= start,
+        Expense.date <= end,
+        Expense.family_id == current_user.family_id
+    ).order_by(Expense.date.asc(), Expense.id.asc()).all()
+
+    expected_items = [
+        item for item in ExpectedExpense.query.filter_by(
+            family_id=current_user.family_id
+        ).all()
+        if start <= expected_expense_date(item) <= end
+    ]
+
+    categories = Category.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(Category.name.asc()).all()
+
+    current_target_plan = [
+        item for item in ExpectedExpense.query.filter_by(
+            family_id=current_user.family_id
+        ).all()
+        if target_start <= expected_expense_date(item) <= target_end
+    ]
+
+    return {
+        'vaultsync_ai_budget_export_version': '1.0',
+        'generated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+        'currency': 'INR',
+        'scope': {
+            'period_type': period_type,
+            'source_start_date': start.isoformat(),
+            'source_end_date': end.isoformat(),
+            'target_start_date': target_start.isoformat(),
+            'target_end_date': target_end.isoformat(),
+        },
+        'family_context': {
+            'monthly_budget': float(current_user.family.monthly_budget or 0),
+            'category_names': [cat.name for cat in categories],
+            'recommended_category_names': [name for name, _, _ in PRESET_CATEGORIES],
+        },
+        'actual_expenses': [serialize_expense(expense) for expense in expenses],
+        'source_planned_expenses': [serialize_expected(item) for item in expected_items],
+        'current_target_plan': [serialize_expected(item) for item in current_target_plan],
+        'summaries': summarize_expenses(expenses),
+        'instructions_for_ai': [
+            'Analyze spending patterns, fixed bills, daily habits, spikes, and avoidable categories.',
+            'Create a practical budget plan for the target_start_date through target_end_date.',
+            'Use existing category_names whenever possible. If a new category is necessary, explain why.',
+            'Return only valid JSON matching required_response_schema. No markdown, no prose outside JSON.',
+            'Each planned_item date must be inside the target window and amount must be numeric.',
+            'recommended_monthly_budget should be the ideal family monthly budget for the next cycle.',
+        ],
+        'required_response_schema': {
+            'vaultsync_budget_suggestion_version': '1.0',
+            'title': 'string',
+            'target_start_date': 'YYYY-MM-DD',
+            'target_end_date': 'YYYY-MM-DD',
+            'recommended_monthly_budget': 0,
+            'risk_level': 'low|medium|high',
+            'strategy_notes': ['string'],
+            'planned_items': [
+                {
+                    'date': 'YYYY-MM-DD',
+                    'name': 'string',
+                    'category': 'string',
+                    'amount': 0,
+                    'reason': 'string',
+                    'priority': 'essential|recommended|optional'
+                }
+            ],
+            'savings_goals': [
+                {
+                    'name': 'string',
+                    'target_amount': 0,
+                    'reason': 'string'
+                }
+            ],
+            'guardrails': ['string']
+        },
+        'example_response': {
+            'vaultsync_budget_suggestion_version': '1.0',
+            'title': 'Balanced next-period budget',
+            'target_start_date': target_start.isoformat(),
+            'target_end_date': target_end.isoformat(),
+            'recommended_monthly_budget': float(current_user.family.monthly_budget or 0),
+            'risk_level': 'medium',
+            'strategy_notes': ['Keep fixed bills early and reduce avoidable snacks/transport spikes.'],
+            'planned_items': [
+                {
+                    'date': target_start.isoformat(),
+                    'name': 'Groceries cap',
+                    'category': 'Groceries',
+                    'amount': 5000,
+                    'reason': 'Core household food plan',
+                    'priority': 'essential'
+                }
+            ],
+            'savings_goals': [
+                {
+                    'name': 'Emergency buffer',
+                    'target_amount': 3000,
+                    'reason': 'Protect against unplanned spend'
+                }
+            ],
+            'guardrails': ['Review optional purchases before payment.']
+        }
+    }
+
+
+def validate_budget_suggestion_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('AI response must be a JSON object.')
+
+    planned_items = payload.get('planned_items')
+    if not isinstance(planned_items, list) or not planned_items:
+        raise ValueError('AI response must include at least one planned_items entry.')
+
+    target_start = parse_date_arg(payload.get('target_start_date'))
+    target_end = parse_date_arg(payload.get('target_end_date'))
+    if not target_start or not target_end or target_end < target_start:
+        raise ValueError('AI response must include a valid target date range.')
+
+    total = 0.0
+    normalized_items = []
+    for item in planned_items:
+        item_date = parse_date_arg(item.get('date'))
+        if not item_date or not (target_start <= item_date <= target_end):
+            raise ValueError('Every planned item date must be inside the target range.')
+
+        try:
+            amount = float(item.get('amount'))
+        except (TypeError, ValueError):
+            raise ValueError('Every planned item must include a numeric amount.')
+
+        if amount <= 0:
+            raise ValueError('Planned item amounts must be positive.')
+
+        name = str(item.get('name', '')).strip()
+        category = str(item.get('category', '')).strip()
+        if not name or not category:
+            raise ValueError('Every planned item needs a name and category.')
+
+        normalized_items.append({
+            **item,
+            'date': item_date.isoformat(),
+            'name': name,
+            'category': category,
+            'amount': round(amount, 2),
+            'priority': str(item.get('priority', 'recommended')).strip() or 'recommended',
+            'reason': str(item.get('reason', '')).strip(),
+        })
+        total += amount
+
+    payload['planned_items'] = normalized_items
+    normalized_goals = []
+    for goal in payload.get('savings_goals') or []:
+        if not isinstance(goal, dict):
+            continue
+        try:
+            target_amount = float(goal.get('target_amount') or 0)
+        except (TypeError, ValueError):
+            target_amount = 0.0
+        normalized_goals.append({
+            'name': str(goal.get('name', 'Savings Goal')).strip() or 'Savings Goal',
+            'target_amount': round(max(target_amount, 0.0), 2),
+            'reason': str(goal.get('reason', '')).strip(),
+        })
+    payload['savings_goals'] = normalized_goals
+    payload['target_start_date'] = target_start.isoformat()
+    payload['target_end_date'] = target_end.isoformat()
+    payload['total_planned'] = round(total, 2)
+    return payload, target_start, target_end, total
+
+
+def suggestion_payload(suggestion):
+    return json.loads(suggestion.raw_json)
+
+
+def current_plan_between(start, end):
+    return [
+        item for item in ExpectedExpense.query.filter_by(
+            family_id=current_user.family_id
+        ).all()
+        if start <= expected_expense_date(item) <= end
+    ]
+
+
+def compare_suggestion_to_current(suggestion):
+    payload = suggestion_payload(suggestion)
+    current_plan = current_plan_between(suggestion.target_start_date, suggestion.target_end_date)
+
+    current_total = sum(float(item.amount) for item in current_plan)
+    suggested_total = float(payload.get('total_planned') or suggestion.total_planned or 0)
+    current_by_category = {}
+    suggested_by_category = {}
+
+    for item in current_plan:
+        category_name = item.category.name if item.category else 'Uncategorized'
+        current_by_category[category_name] = current_by_category.get(category_name, 0.0) + float(item.amount)
+
+    for item in payload.get('planned_items', []):
+        category_name = item['category']
+        suggested_by_category[category_name] = suggested_by_category.get(category_name, 0.0) + float(item['amount'])
+
+    category_rows = []
+    for category_name in sorted(set(current_by_category) | set(suggested_by_category)):
+        current_amount = current_by_category.get(category_name, 0.0)
+        suggested_amount = suggested_by_category.get(category_name, 0.0)
+        category_rows.append({
+            'category': category_name,
+            'current': round(current_amount, 2),
+            'suggested': round(suggested_amount, 2),
+            'delta': round(suggested_amount - current_amount, 2),
+        })
+
+    monthly_budget = float(current_user.family.monthly_budget or 0)
+    suggested_monthly_budget = float(payload.get('recommended_monthly_budget') or 0)
+
+    return {
+        'payload': payload,
+        'current_plan': current_plan,
+        'current_total': round(current_total, 2),
+        'suggested_total': round(suggested_total, 2),
+        'plan_delta': round(suggested_total - current_total, 2),
+        'current_monthly_budget': round(monthly_budget, 2),
+        'suggested_monthly_budget': round(suggested_monthly_budget, 2),
+        'budget_delta': round(suggested_monthly_budget - monthly_budget, 2),
+        'category_rows': category_rows,
+    }
 
 # --- AUTH ROUTES ---
 @app.route('/register', methods=['GET', 'POST'])
@@ -91,6 +471,7 @@ def register():
             family = Family(name=family_name, monthly_budget=initial_budget)
             db.session.add(family)
             db.session.flush()
+            ensure_preset_categories(family.id)
 
             # Create user as family manager
             user = User(username=username, email=email, user_type='family_manager', family_id=family.id)
@@ -188,7 +569,10 @@ def dashboard():
         return redirect(url_for('login'))
 
     # --- NEW FILTERING LOGIC ---
-    import calendar
+    if current_user.family_id:
+        created_presets = ensure_preset_categories(current_user.family_id)
+        if created_presets:
+            db.session.commit()
 
     # Get month/year from URL args, default to current date if none provided
     current_date = datetime.utcnow()
@@ -249,6 +633,12 @@ def dashboard():
         family_id=current_user.family_id
     ).order_by(ExpectedExpense.amount.desc()).all()
 
+    expected_total = sum(exp.amount for exp in expected_expenses)
+    expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid)
+    expected_unpaid_total = expected_total - expected_paid_total
+    planned_after_budget = monthly_income - expected_total
+    plan_paid_percentage = (expected_paid_total / expected_total * 100) if expected_total else 0
+
     return render_template('dashboard.html',
                             user=current_user,
                             expenses=all_expenses,
@@ -261,6 +651,12 @@ def dashboard():
                             chart_data=chart_data,
                             chart_colors=chart_colors,
                             category_spent=totals_map,
+                            expected_total=expected_total,
+                            expected_paid_total=expected_paid_total,
+                            expected_unpaid_total=expected_unpaid_total,
+                            planned_after_budget=planned_after_budget,
+                            plan_paid_percentage=plan_paid_percentage,
+                            preset_categories=PRESET_CATEGORIES,
                             selected_month=selected_month,
                             selected_year=selected_year,
                             month_name=calendar.month_name[selected_month],
@@ -433,9 +829,10 @@ def add_expected():
     category_id = request.form.get('category_id')
     month = request.form.get('month')
     year = request.form.get('year')
+    due_day = request.form.get('due_day', 1)
 
-    if not (name and amount and category_id and month and year):
-        flash('Please provide name, amount, category, month and year.', 'error')
+    if not (name and amount and category_id and month and year and due_day):
+        flash('Please provide name, amount, category, due day, month and year.', 'error')
         return back_or('dashboard')
 
     category = Category.query.filter_by(
@@ -450,14 +847,18 @@ def add_expected():
         expected_amount = float(amount)
         expected_month = int(month)
         expected_year = int(year)
+        expected_due_day = int(due_day)
+        if expected_amount <= 0 or not (1 <= expected_month <= 12) or not (1 <= expected_due_day <= 31):
+            raise ValueError
     except (ValueError, TypeError):
-        flash('Please provide a valid amount, month, and year.', 'error')
+        flash('Please provide a valid amount, due day, month, and year.', 'error')
         return back_or('dashboard')
 
     new_expected = ExpectedExpense(
         name=name.strip(),
         amount=expected_amount,
         category_id=category.id,
+        due_day=expected_due_day,
         month=expected_month,
         year=expected_year,
         family_id=current_user.family_id
@@ -477,9 +878,260 @@ def toggle_expected(id):
         id=id,
         family_id=current_user.family_id
     ).first_or_404()
-    ee.is_paid = not ee.is_paid
+
+    if ee.is_paid:
+        if ee.linked_expense_id:
+            linked_expense = Expense.query.filter_by(
+                id=ee.linked_expense_id,
+                family_id=current_user.family_id
+            ).first()
+            if linked_expense:
+                db.session.delete(linked_expense)
+        ee.is_paid = False
+        ee.paid_at = None
+        ee.linked_expense_id = None
+        flash('Planned expense moved back to upcoming.', 'info')
+    else:
+        linked_expense = Expense(
+            date=expected_expense_date(ee),
+            item_name=f"Budget Plan: {ee.name}",
+            amount=ee.amount,
+            category_id=ee.category_id,
+            user_id=current_user.id,
+            family_id=current_user.family_id
+        )
+        db.session.add(linked_expense)
+        db.session.flush()
+        ee.is_paid = True
+        ee.paid_at = datetime.utcnow()
+        ee.linked_expense_id = linked_expense.id
+        flash('Planned expense marked paid and posted to actual spending.', 'success')
+
     db.session.commit()
     return back_or('dashboard')
+
+
+@app.route('/edit_expense/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_expense(id):
+    expense = Expense.query.filter_by(
+        id=id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    categories = Category.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(Category.name.asc()).all()
+
+    linked_plan = ExpectedExpense.query.filter_by(
+        linked_expense_id=expense.id,
+        family_id=current_user.family_id
+    ).first()
+
+    if request.method == 'POST':
+        item_name = request.form.get('item_name', '').strip()
+        amount = request.form.get('amount')
+        category_id = request.form.get('category_id')
+        expense_date_str = request.form.get('expense_date')
+
+        category = Category.query.filter_by(
+            id=category_id,
+            family_id=current_user.family_id
+        ).first()
+
+        if not (item_name and amount and category and expense_date_str):
+            flash('Please provide item name, amount, category, and date.', 'error')
+            return redirect(url_for('edit_expense', id=id))
+
+        try:
+            expense_amount = float(amount)
+            expense_date = datetime.strptime(expense_date_str, '%Y-%m-%d').date()
+            if expense_amount <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            flash('Please provide a valid amount and date.', 'error')
+            return redirect(url_for('edit_expense', id=id))
+
+        expense.item_name = item_name
+        expense.amount = expense_amount
+        expense.category_id = category.id
+        expense.date = expense_date
+
+        if linked_plan:
+            linked_plan.name = item_name.replace('Budget Plan: ', '', 1).strip() or item_name
+            linked_plan.amount = expense_amount
+            linked_plan.category_id = category.id
+            linked_plan.month = expense_date.month
+            linked_plan.year = expense_date.year
+            linked_plan.due_day = expense_date.day
+
+        db.session.commit()
+        flash('Expense updated successfully.', 'success')
+        return redirect(request.form.get('next') or url_for('dashboard'))
+
+    return render_template(
+        'edit_expense.html',
+        user=current_user,
+        expense=expense,
+        categories=categories,
+        linked_plan=linked_plan,
+        next_url=request.referrer or url_for('dashboard')
+    )
+
+
+@app.route('/delete_expected/<int:id>', methods=['POST'])
+@login_required
+def delete_expected(id):
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return back_or('dashboard')
+
+    ee = ExpectedExpense.query.filter_by(
+        id=id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    if ee.linked_expense_id:
+        linked_expense = Expense.query.filter_by(
+            id=ee.linked_expense_id,
+            family_id=current_user.family_id
+        ).first()
+        if linked_expense:
+            db.session.delete(linked_expense)
+
+    db.session.delete(ee)
+    db.session.commit()
+    flash('Planned expense deleted.', 'success')
+    return back_or('dashboard')
+
+
+@app.route('/edit_expected/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_expected(id):
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return back_or('dashboard')
+
+    planned = ExpectedExpense.query.filter_by(
+        id=id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    categories = Category.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(Category.name.asc()).all()
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        amount = request.form.get('amount')
+        category_id = request.form.get('category_id')
+        month = request.form.get('month')
+        year = request.form.get('year')
+        due_day = request.form.get('due_day')
+
+        category = Category.query.filter_by(
+            id=category_id,
+            family_id=current_user.family_id
+        ).first()
+
+        if not (name and amount and category and month and year and due_day):
+            flash('Please provide every planned expense field.', 'error')
+            return redirect(url_for('edit_expected', id=id))
+
+        try:
+            planned_amount = float(amount)
+            planned_month = int(month)
+            planned_year = int(year)
+            planned_due_day = int(due_day)
+            if planned_amount <= 0 or not (1 <= planned_month <= 12) or not (1 <= planned_due_day <= 31):
+                raise ValueError
+        except (ValueError, TypeError):
+            flash('Please provide valid amount, month, year, and due day.', 'error')
+            return redirect(url_for('edit_expected', id=id))
+
+        planned.name = name
+        planned.amount = planned_amount
+        planned.category_id = category.id
+        planned.month = planned_month
+        planned.year = planned_year
+        planned.due_day = planned_due_day
+
+        if planned.linked_expense_id:
+            linked_expense = Expense.query.filter_by(
+                id=planned.linked_expense_id,
+                family_id=current_user.family_id
+            ).first()
+            if linked_expense:
+                linked_expense.item_name = f"Budget Plan: {name}"
+                linked_expense.amount = planned_amount
+                linked_expense.category_id = category.id
+                linked_expense.date = expected_expense_date(planned)
+
+        db.session.commit()
+        flash('Planned expense updated successfully.', 'success')
+        return redirect(request.form.get('next') or url_for('dashboard'))
+
+    return render_template(
+        'edit_expected.html',
+        user=current_user,
+        planned=planned,
+        categories=categories,
+        year_range=range(2024, datetime.utcnow().year + 4),
+        next_url=request.referrer or url_for('dashboard')
+    )
+
+
+@app.route('/copy_expected_plan', methods=['POST'])
+@login_required
+def copy_expected_plan():
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return back_or('dashboard')
+
+    try:
+        source_month = int(request.form.get('month'))
+        source_year = int(request.form.get('year'))
+    except (ValueError, TypeError):
+        flash('Please choose a valid month to copy.', 'error')
+        return back_or('dashboard')
+
+    next_month = source_month + 1
+    next_year = source_year
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+
+    source_items = ExpectedExpense.query.filter_by(
+        family_id=current_user.family_id,
+        month=source_month,
+        year=source_year
+    ).all()
+
+    copied = 0
+    for item in source_items:
+        exists = ExpectedExpense.query.filter_by(
+            family_id=current_user.family_id,
+            month=next_month,
+            year=next_year,
+            name=item.name,
+            category_id=item.category_id
+        ).first()
+        if exists:
+            continue
+        db.session.add(ExpectedExpense(
+            name=item.name,
+            amount=item.amount,
+            due_day=item.due_day,
+            category_id=item.category_id,
+            month=next_month,
+            year=next_year,
+            family_id=current_user.family_id
+        ))
+        copied += 1
+
+    db.session.commit()
+    flash(f'Copied {copied} planned expenses to next month.', 'success')
+    return redirect(url_for('dashboard', month=next_month, year=next_year))
 
 @app.route('/add_category', methods=['POST'])
 @login_required
@@ -497,14 +1149,41 @@ def add_category():
         db.session.commit()
     return back_or('dashboard')
 
+
+@app.route('/apply_category_presets', methods=['POST'])
+@login_required
+def apply_category_presets():
+    if not current_user.family_id:
+        flash('Please join a family before adding categories.', 'error')
+        return back_or('dashboard')
+
+    created = ensure_preset_categories(current_user.family_id)
+    db.session.commit()
+
+    if created:
+        flash(f'Added {created} recommended categories.', 'success')
+    else:
+        flash('Your family already has all recommended categories.', 'info')
+    return back_or('dashboard')
+
 @app.route('/edit_category/<int:id>', methods=['POST'])
 @login_required
 def edit_category(id):
     category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
     name = request.form.get('name', '').strip()
     color = request.form.get('color', '').strip()
+    monthly_limit = request.form.get('monthly_limit', 0)
+    is_fixed = request.form.get('is_fixed') == 'on'
     if not (name and color):
         flash('Please provide a category name and color.', 'error')
+        return back_or('dashboard')
+
+    try:
+        monthly_limit = float(monthly_limit or 0)
+        if monthly_limit < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash('Please provide a valid monthly category limit.', 'error')
         return back_or('dashboard')
     
     # Check if new name already exists in this family (but allow keeping same name)
@@ -515,6 +1194,8 @@ def edit_category(id):
     
     category.name = name
     category.color = color
+    category.monthly_limit = monthly_limit
+    category.is_fixed = is_fixed
     db.session.commit()
     return back_or('dashboard')
 
@@ -524,11 +1205,12 @@ def delete_category(id):
     category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
     # Check if category has expenses in this family
     expenses_count = Expense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
-    if expenses_count == 0:
+    expected_count = ExpectedExpense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
+    if expenses_count == 0 and expected_count == 0:
         db.session.delete(category)
         db.session.commit()
     else:
-        flash('Cannot delete a category that has expenses.', 'error')
+        flash('Cannot delete a category that has expenses or planned budget items.', 'error')
     return back_or('dashboard')
 
 @app.route('/delete_expense/<int:id>')
@@ -538,9 +1220,216 @@ def delete_expense(id):
         id=id, 
         family_id=current_user.family_id
     ).first_or_404()
+    linked_plan = ExpectedExpense.query.filter_by(
+        linked_expense_id=id,
+        family_id=current_user.family_id
+    ).first()
+    if linked_plan:
+        linked_plan.is_paid = False
+        linked_plan.paid_at = None
+        linked_plan.linked_expense_id = None
     db.session.delete(expense_to_delete)
     db.session.commit()
     return back_or('dashboard')
+
+
+@app.route('/features')
+@login_required
+def features():
+    return render_template('features.html', user=current_user)
+
+
+@app.route('/ai_budget')
+@login_required
+def ai_budget():
+    if not current_user.family_id:
+        flash('Please join a family before using the AI Budget Planner.', 'error')
+        return redirect(url_for('dashboard'))
+
+    suggestions = BudgetSuggestion.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(BudgetSuggestion.created_at.desc()).limit(10).all()
+
+    selected_suggestion = None
+    comparison = None
+    suggestion_id = request.args.get('suggestion_id', type=int)
+    if suggestion_id:
+        selected_suggestion = BudgetSuggestion.query.filter_by(
+            id=suggestion_id,
+            family_id=current_user.family_id
+        ).first_or_404()
+        comparison = compare_suggestion_to_current(selected_suggestion)
+    elif suggestions:
+        selected_suggestion = suggestions[0]
+        comparison = compare_suggestion_to_current(selected_suggestion)
+
+    today = datetime.now().date()
+    return render_template(
+        'ai_budget.html',
+        user=current_user,
+        suggestions=suggestions,
+        selected_suggestion=selected_suggestion,
+        comparison=comparison,
+        today=today,
+        current_month=today.month,
+        current_year=today.year,
+        year_range=range(2024, today.year + 4)
+    )
+
+
+@app.route('/ai_budget/export', methods=['POST'])
+@login_required
+def export_ai_budget():
+    if not current_user.family_id:
+        flash('Please join a family before exporting budget data.', 'error')
+        return redirect(url_for('dashboard'))
+
+    try:
+        period_type, start, end, target_start, target_end = parse_ai_budget_window(request.form)
+    except (TypeError, ValueError):
+        flash('Please choose a valid export date or month range.', 'error')
+        return redirect(url_for('ai_budget'))
+
+    payload = build_ai_budget_export(period_type, start, end, target_start, target_end)
+    filename = f"vaultsync_ai_budget_{start.isoformat()}_to_{end.isoformat()}.json"
+    return Response(
+        json.dumps(payload, indent=2),
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
+
+
+@app.route('/ai_budget/import', methods=['POST'])
+@login_required
+def import_ai_budget():
+    if not current_user.family_id:
+        flash('Please join a family before importing a budget suggestion.', 'error')
+        return redirect(url_for('dashboard'))
+
+    raw_text = request.form.get('ai_response', '').strip()
+    uploaded = request.files.get('ai_response_file')
+    if uploaded and uploaded.filename:
+        raw_text = uploaded.read().decode('utf-8').strip()
+
+    if not raw_text:
+        flash('Paste the AI JSON response or upload a JSON file.', 'error')
+        return redirect(url_for('ai_budget'))
+
+    try:
+        payload = json.loads(raw_text)
+        payload, target_start, target_end, total = validate_budget_suggestion_payload(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        flash(f'Could not import AI budget: {exc}', 'error')
+        return redirect(url_for('ai_budget'))
+
+    source_start = parse_date_arg(request.form.get('source_start_date'), target_start)
+    source_end = parse_date_arg(request.form.get('source_end_date'), target_end)
+
+    strategy_notes = payload.get('strategy_notes') if isinstance(payload.get('strategy_notes'), list) else []
+    guardrails = payload.get('guardrails') if isinstance(payload.get('guardrails'), list) else []
+    notes = '\n'.join(str(note) for note in strategy_notes + guardrails)
+
+    suggestion = BudgetSuggestion(
+        family_id=current_user.family_id,
+        created_by_user_id=current_user.id,
+        source_start_date=source_start,
+        source_end_date=source_end,
+        target_start_date=target_start,
+        target_end_date=target_end,
+        title=str(payload.get('title') or 'AI Budget Suggestion')[:160],
+        suggested_monthly_budget=float(payload.get('recommended_monthly_budget') or 0),
+        total_planned=total,
+        risk_level=str(payload.get('risk_level') or 'medium')[:20],
+        notes=notes,
+        raw_json=json.dumps(payload, indent=2),
+    )
+    db.session.add(suggestion)
+    db.session.commit()
+    flash('AI budget suggestion imported. Review the comparison before applying.', 'success')
+    return redirect(url_for('ai_budget', suggestion_id=suggestion.id))
+
+
+@app.route('/ai_budget/apply/<int:id>', methods=['POST'])
+@login_required
+def apply_ai_budget(id):
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return redirect(url_for('ai_budget'))
+
+    suggestion = BudgetSuggestion.query.filter_by(
+        id=id,
+        family_id=current_user.family_id
+    ).first_or_404()
+    payload = suggestion_payload(suggestion)
+
+    category_map = {
+        category.name.lower(): category
+        for category in Category.query.filter_by(family_id=current_user.family_id).all()
+    }
+
+    created_categories = 0
+    created_items = 0
+    skipped_items = 0
+    for item in payload.get('planned_items', []):
+        item_date = parse_date_arg(item.get('date'))
+        if not item_date:
+            skipped_items += 1
+            continue
+
+        category_name = str(item.get('category', 'Household')).strip() or 'Household'
+        category = category_map.get(category_name.lower())
+        if not category:
+            category = Category(
+                name=category_name,
+                color='#64748b',
+                monthly_limit=0,
+                is_fixed=False,
+                family_id=current_user.family_id
+            )
+            db.session.add(category)
+            db.session.flush()
+            category_map[category_name.lower()] = category
+            created_categories += 1
+
+        name = str(item.get('name')).strip()
+        amount = float(item.get('amount'))
+        existing = ExpectedExpense.query.filter_by(
+            family_id=current_user.family_id,
+            month=item_date.month,
+            year=item_date.year,
+            name=name,
+            category_id=category.id
+        ).first()
+        if existing:
+            skipped_items += 1
+            continue
+
+        db.session.add(ExpectedExpense(
+            name=name,
+            amount=amount,
+            due_day=item_date.day,
+            category_id=category.id,
+            month=item_date.month,
+            year=item_date.year,
+            family_id=current_user.family_id
+        ))
+        created_items += 1
+
+    if request.form.get('update_monthly_budget') == 'yes' and suggestion.suggested_monthly_budget:
+        current_user.family.monthly_budget = suggestion.suggested_monthly_budget
+
+    suggestion.is_applied = True
+    db.session.commit()
+    flash(
+        f'Applied {created_items} suggested planned items. '
+        f'{skipped_items} duplicates skipped. {created_categories} new categories added.',
+        'success'
+    )
+    return redirect(url_for(
+        'dashboard',
+        month=suggestion.target_start_date.month,
+        year=suggestion.target_start_date.year
+    ))
 
 @app.route('/export_ai_data')
 @login_required
@@ -606,12 +1495,73 @@ def admin_panel():
 
     remaining_budget = family.monthly_budget - monthly_spending if family.monthly_budget else 0
 
+    member_spending_rows = db.session.query(
+        User.id,
+        func.coalesce(func.sum(Expense.amount), 0).label('total'),
+        func.count(Expense.id).label('count')
+    ).outerjoin(
+        Expense,
+        (Expense.user_id == User.id) &
+        (Expense.family_id == current_user.family_id) &
+        (func.strftime('%Y', Expense.date) == year_str) &
+        (func.strftime('%m', Expense.date) == month_str)
+    ).filter(
+        User.family_id == current_user.family_id
+    ).group_by(User.id).all()
+    member_stats = {
+        user_id: {'total': float(total or 0), 'count': int(count or 0)}
+        for user_id, total, count in member_spending_rows
+    }
+
+    categories = Category.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(Category.name.asc()).all()
+
+    category_spending_rows = db.session.query(
+        Expense.category_id,
+        func.coalesce(func.sum(Expense.amount), 0).label('total')
+    ).filter(
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == current_user.family_id
+    ).group_by(Expense.category_id).all()
+    category_spending = {
+        category_id: float(total or 0)
+        for category_id, total in category_spending_rows
+    }
+
+    planned_total = db.session.query(
+        func.coalesce(func.sum(ExpectedExpense.amount), 0)
+    ).filter_by(
+        family_id=current_user.family_id,
+        month=current_date.month,
+        year=current_date.year
+    ).scalar() or 0.0
+    planned_paid_total = db.session.query(
+        func.coalesce(func.sum(ExpectedExpense.amount), 0)
+    ).filter_by(
+        family_id=current_user.family_id,
+        month=current_date.month,
+        year=current_date.year,
+        is_paid=True
+    ).scalar() or 0.0
+    ai_suggestions_count = BudgetSuggestion.query.filter_by(
+        family_id=current_user.family_id
+    ).count()
+
     return render_template('admin_panel.html',
                           user=current_user,
                           family=family,
                           family_members=family_members,
+                          member_stats=member_stats,
+                          categories=categories,
+                          category_spending=category_spending,
                           monthly_spending=monthly_spending,
                           remaining_budget=remaining_budget,
+                          planned_total=float(planned_total),
+                          planned_paid_total=float(planned_paid_total),
+                          planned_unpaid_total=float(planned_total - planned_paid_total),
+                          ai_suggestions_count=ai_suggestions_count,
                           budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0,
                           year_range=range(2024, datetime.utcnow().year + 3))
 
@@ -637,6 +1587,32 @@ def update_budget():
     except (ValueError, TypeError):
         flash('Please enter a valid budget amount.', 'error')
 
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/categories/<int:category_id>/limit', methods=['POST'])
+@login_required
+def update_category_limit(category_id):
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    category = Category.query.filter_by(
+        id=category_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    try:
+        monthly_limit = float(request.form.get('monthly_limit') or 0)
+        if monthly_limit < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash('Please enter a valid category limit.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    category.monthly_limit = monthly_limit
+    db.session.commit()
+    flash(f'{category.name} limit updated.', 'success')
     return redirect(url_for('admin_panel'))
 
 
@@ -717,6 +1693,23 @@ def update_family():
     return redirect(url_for('admin_panel'))
 
 
+@app.route('/admin_panel/family/regenerate_invite', methods=['POST'])
+@login_required
+def regenerate_invite_code():
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    new_code = secrets.token_urlsafe(12)
+    while Family.query.filter_by(invite_code=new_code).first():
+        new_code = secrets.token_urlsafe(12)
+
+    current_user.family.invite_code = new_code
+    db.session.commit()
+    flash('Invite code regenerated. Share the new code with future members.', 'success')
+    return redirect(url_for('admin_panel'))
+
+
 @app.route('/admin_panel/family/archive', methods=['POST'])
 @login_required
 def archive_family():
@@ -745,6 +1738,7 @@ def delete_family():
     Expense.query.filter_by(family_id=family_id).delete()
     Category.query.filter_by(family_id=family_id).delete()
     ExpectedExpense.query.filter_by(family_id=family_id).delete()
+    BudgetSuggestion.query.filter_by(family_id=family_id).delete()
 
     # Remove all members from family
     User.query.filter_by(family_id=family_id).update({User.family_id: None})
