@@ -217,7 +217,7 @@ body {
     transition: transform 0.3s ease;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
     .sidebar {
         transform: translateX(-100%);
     }
