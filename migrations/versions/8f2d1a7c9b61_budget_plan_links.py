@@ -16,24 +16,62 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table('expected_expense', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('due_day', sa.Integer(), nullable=False, server_default='1'))
-        batch_op.add_column(sa.Column('paid_at', sa.DateTime(), nullable=True))
-        batch_op.add_column(sa.Column('linked_expense_id', sa.Integer(), nullable=True))
-        batch_op.create_foreign_key(
-            'fk_expected_expense_linked_expense_id_expense',
-            'expense',
-            ['linked_expense_id'],
-            ['id']
-        )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column['name'] for column in inspector.get_columns('expected_expense')}
+    foreign_keys = inspector.get_foreign_keys('expected_expense')
+    has_linked_expense_fk = any(
+        fk.get('referred_table') == 'expense'
+        and fk.get('constrained_columns') == ['linked_expense_id']
+        for fk in foreign_keys
+    )
 
-    with op.batch_alter_table('expected_expense', schema=None) as batch_op:
-        batch_op.alter_column('due_day', server_default=None)
+    missing_columns = {
+        'due_day',
+        'paid_at',
+        'linked_expense_id',
+    } - columns
+
+    if missing_columns:
+        with op.batch_alter_table('expected_expense', schema=None) as batch_op:
+            if 'due_day' in missing_columns:
+                batch_op.add_column(sa.Column('due_day', sa.Integer(), nullable=False, server_default='1'))
+            if 'paid_at' in missing_columns:
+                batch_op.add_column(sa.Column('paid_at', sa.DateTime(), nullable=True))
+            if 'linked_expense_id' in missing_columns:
+                batch_op.add_column(sa.Column('linked_expense_id', sa.Integer(), nullable=True))
+
+    if not has_linked_expense_fk:
+        with op.batch_alter_table('expected_expense', schema=None) as batch_op:
+            batch_op.create_foreign_key(
+                'fk_expected_expense_linked_expense_id_expense',
+                'expense',
+                ['linked_expense_id'],
+                ['id']
+            )
+
+    if 'due_day' in missing_columns:
+        with op.batch_alter_table('expected_expense', schema=None) as batch_op:
+            batch_op.alter_column('due_day', server_default=None)
 
 
 def downgrade():
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column['name'] for column in inspector.get_columns('expected_expense')}
+    foreign_keys = inspector.get_foreign_keys('expected_expense')
+    has_linked_expense_fk = any(
+        fk.get('referred_table') == 'expense'
+        and fk.get('constrained_columns') == ['linked_expense_id']
+        for fk in foreign_keys
+    )
+
     with op.batch_alter_table('expected_expense', schema=None) as batch_op:
-        batch_op.drop_constraint('fk_expected_expense_linked_expense_id_expense', type_='foreignkey')
-        batch_op.drop_column('linked_expense_id')
-        batch_op.drop_column('paid_at')
-        batch_op.drop_column('due_day')
+        if has_linked_expense_fk:
+            batch_op.drop_constraint('fk_expected_expense_linked_expense_id_expense', type_='foreignkey')
+        if 'linked_expense_id' in columns:
+            batch_op.drop_column('linked_expense_id')
+        if 'paid_at' in columns:
+            batch_op.drop_column('paid_at')
+        if 'due_day' in columns:
+            batch_op.drop_column('due_day')
