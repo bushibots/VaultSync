@@ -280,14 +280,26 @@ body.dark-mode .bg-red-50 {
    ============================================ */
 .sidebar {
     transition: transform 0.3s ease;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    z-index: 60;
+    -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 767px) {
     .sidebar {
         transform: translateX(-100%);
+        width: min(20rem, calc(100vw - 2rem));
     }
     .sidebar.active {
         transform: translateX(0);
+    }
+
+    body.menu-open {
+        overflow: hidden;
     }
 }
 
@@ -316,7 +328,7 @@ body.dark-mode .bg-red-50 {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 39;
+    z-index: 55;
     display: none;
 }
 

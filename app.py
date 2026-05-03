@@ -8,7 +8,7 @@ import os
 import secrets
 from io import StringIO
 from datetime import date, datetime, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion
 
 
@@ -38,6 +38,41 @@ PRESET_CATEGORIES = [
     ('Emergency', '#be123c', 0),
     ('Personal Care', '#db2777', 0),
 ]
+
+
+@app.cli.command('repair-schema')
+def repair_schema():
+    """Repair older SQLite databases that were deployed before migrations ran."""
+    db.create_all()
+
+    inspector = inspect(db.engine)
+    if not inspector.has_table('expected_expense'):
+        print('expected_expense table is missing; run flask db upgrade first.')
+        return
+
+    columns = {
+        column['name']
+        for column in inspector.get_columns('expected_expense')
+    }
+    expected_expense_columns = {
+        'due_day': 'due_day INTEGER NOT NULL DEFAULT 1',
+        'paid_at': 'paid_at DATETIME',
+        'linked_expense_id': 'linked_expense_id INTEGER',
+    }
+
+    added = []
+    with db.engine.begin() as connection:
+        for column_name, ddl in expected_expense_columns.items():
+            if column_name in columns:
+                continue
+            connection.execute(text(f'ALTER TABLE expected_expense ADD COLUMN {ddl}'))
+            added.append(column_name)
+
+    if added:
+        print(f"Added missing expected_expense columns: {', '.join(added)}")
+    else:
+        print('Schema already has the expected_expense budget-plan columns.')
+
 
 @login_manager.user_loader
 def load_user(user_id):

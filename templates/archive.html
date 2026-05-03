@@ -61,7 +61,7 @@
             position: fixed;
             inset: 0;
             background-color: rgba(0, 0, 0, 0.5);
-            z-index: 30;
+            z-index: 55;
         }
 
         .sidebar-overlay.active {
@@ -70,6 +70,13 @@
 
         .sidebar {
             transition: transform 0.3s ease;
+            height: 100vh;
+            height: 100dvh;
+            max-height: 100dvh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            z-index: 60;
+            -webkit-overflow-scrolling: touch;
         }
 
         .sidebar.active {
@@ -79,6 +86,11 @@
         @media (max-width: 767px) {
             .sidebar {
                 transform: translateX(-100%);
+                width: min(20rem, calc(100vw - 2rem));
+            }
+
+            body.menu-open {
+                overflow: hidden;
             }
         }
 
@@ -97,6 +109,7 @@
             top: 0;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="font-sans flex h-screen overflow-hidden bg-gray-100">
     <!-- Skip to content link for accessibility -->
