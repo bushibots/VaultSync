@@ -38,10 +38,13 @@
         </div>
         <nav class="flex-1 space-y-2 sidebar-nav">
             <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Dashboard</span>
+                <i class="fas fa-home mr-3" aria-hidden="true"></i>Dashboard
+            </a>
+            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <span class="mr-3" aria-hidden="true">📓</span>Daily Diary
             </a>
             <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Archive</span>
+                <i class="fas fa-archive mr-3" aria-hidden="true"></i>Archive
             </a>
         </nav>
         <div class="mt-auto space-y-4">
@@ -61,7 +64,7 @@
             {% endif %}
             <!-- Logout Button -->
             <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
-                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i><span class="hidden sm:inline">Logout</span>
+                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i>Logout
             </a>
         </div>
     </aside>
@@ -149,7 +152,7 @@
                         {% endfor %}
                     </select>
                     <select name="year" class="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-500 cursor-pointer shadow-sm" onchange="this.form.submit()">
-                        {% for y in range(2024, 2030) %}
+                        {% for y in year_range %}
                             <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
                         {% endfor %}
                     </select>
@@ -336,7 +339,7 @@
                                     {% endfor %}
                                 </select>
                                 <select name="year" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-sm" required>
-                                    {% for y in range(2024, 2030) %}
+                                    {% for y in year_range %}
                                     <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
                                     {% endfor %}
                                 </select>

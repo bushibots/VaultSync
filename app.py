@@ -4,7 +4,7 @@ from flask_migrate import Migrate
 import csv
 import os
 from io import StringIO
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import func
 from models import db, User, Category, Expense, ExpectedExpense, Family
 
@@ -195,6 +195,12 @@ def dashboard():
     selected_month = request.args.get('month', current_date.month, type=int)
     selected_year = request.args.get('year', current_date.year, type=int)
 
+    # Validate month is within 1-12
+    if not (1 <= selected_month <= 12):
+        selected_month = current_date.month
+    if selected_year < 2020 or selected_year > 2050:
+        selected_year = current_date.year
+
     # Normalize strings for SQLite strftime comparisons
     month_str = f"{selected_month:02d}"
     year_str = str(selected_year)
@@ -243,7 +249,7 @@ def dashboard():
         family_id=current_user.family_id
     ).order_by(ExpectedExpense.amount.desc()).all()
 
-    return render_template('dashboard.html', 
+    return render_template('dashboard.html',
                             user=current_user,
                             expenses=all_expenses,
                             categories=all_categories,
@@ -257,7 +263,8 @@ def dashboard():
                             category_spent=totals_map,
                             selected_month=selected_month,
                             selected_year=selected_year,
-                            month_name=calendar.month_name[selected_month])
+                            month_name=calendar.month_name[selected_month],
+                            year_range=range(2024, datetime.utcnow().year + 3))
 
 
 @app.route('/archive')
@@ -284,6 +291,50 @@ def archive():
         })
 
     return render_template('archive.html', user=current_user, months=months)
+
+
+@app.route('/daily_diary')
+@login_required
+def daily_diary():
+    """Focused day-by-day view of the same family expenses used by the dashboard."""
+    if not current_user.family_id:
+        flash('Please join a family before opening the Daily Diary.', 'error')
+        return redirect(url_for('dashboard'))
+
+    today = datetime.now().date()
+    selected_date_str = request.args.get('date', '').strip()
+
+    if selected_date_str:
+        try:
+            selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            selected_date = today
+            flash('Invalid date selected. Showing today instead.', 'info')
+    else:
+        selected_date = today
+
+    expenses = Expense.query.filter_by(
+        date=selected_date,
+        family_id=current_user.family_id
+    ).order_by(Expense.id.asc()).all()
+
+    categories = Category.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(Category.name.asc()).all()
+
+    daily_total = sum(exp.amount for exp in expenses)
+
+    return render_template(
+        'daily_diary.html',
+        user=current_user,
+        expenses=expenses,
+        categories=categories,
+        daily_total=daily_total,
+        selected_date=selected_date,
+        today=today,
+        previous_date=selected_date - timedelta(days=1),
+        next_date=selected_date + timedelta(days=1)
+    )
 
 # --- NEW ROUTE: PERSONAL SPENDING TAB ---
 @app.route('/my_spendings')
@@ -343,6 +394,27 @@ def add_expense():
     )
     db.session.add(new_expense)
     db.session.commit()
+
+    # Check budget after adding expense
+    current_date = datetime.utcnow()
+    month_str = f"{current_date.month:02d}"
+    year_str = str(current_date.year)
+
+    monthly_total = db.session.query(
+        func.sum(Expense.amount).label('total')
+    ).filter(
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == current_user.family_id
+    ).scalar() or 0.0
+
+    family = current_user.family
+    if family.monthly_budget and monthly_total > family.monthly_budget:
+        percentage = (monthly_total / family.monthly_budget) * 100
+        flash(f'⚠️ Budget Alert: Your family has spent {percentage:.1f}% of the monthly budget!', 'warning')
+    elif family.monthly_budget and monthly_total > (family.monthly_budget * 0.8):
+        percentage = (monthly_total / family.monthly_budget) * 100
+        flash(f'💡 You\'re at {percentage:.1f}% of your monthly budget.', 'info')
 
     # Send them back to wherever they submitted the form from
     return back_or('dashboard')
@@ -540,7 +612,8 @@ def admin_panel():
                           family_members=family_members,
                           monthly_spending=monthly_spending,
                           remaining_budget=remaining_budget,
-                          budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0)
+                          budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0,
+                          year_range=range(2024, datetime.utcnow().year + 3))
 
 
 @app.route('/admin_panel/budget', methods=['POST'])
@@ -682,6 +755,135 @@ def delete_family():
 
     flash('Family has been permanently deleted.', 'success')
     return redirect(url_for('dashboard'))
+
+
+@app.route('/admin_panel/reports', methods=['GET'])
+@login_required
+def reports():
+    """Analytics and reports for family spending"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return redirect(url_for('dashboard'))
+
+    import calendar
+
+    family = current_user.family
+    current_date = datetime.utcnow()
+
+    # Get last 6 months of data for trends
+    months_data = []
+    for i in range(5, -1, -1):
+        date = current_date - timedelta(days=30*i)
+        month = date.month
+        year = date.year
+        month_str = f"{month:02d}"
+        year_str = str(year)
+
+        total = db.session.query(
+            func.sum(Expense.amount).label('total')
+        ).filter(
+            func.strftime('%Y', Expense.date) == year_str,
+            func.strftime('%m', Expense.date) == month_str,
+            Expense.family_id == family.id
+        ).scalar() or 0.0
+
+        months_data.append({
+            'month': calendar.month_abbr[month],
+            'year': year,
+            'amount': float(total)
+        })
+
+    # Get current month category breakdown
+    month_str = f"{current_date.month:02d}"
+    year_str = str(current_date.year)
+
+    category_totals = db.session.query(
+        Category.name,
+        Category.monthly_limit,
+        func.sum(Expense.amount).label('spent')
+    ).join(Expense, Expense.category_id == Category.id).filter(
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == family.id
+    ).group_by(Category.id).all()
+
+    categories_data = []
+    for cat_name, cat_limit, spent in category_totals:
+        categories_data.append({
+            'name': cat_name,
+            'spent': float(spent),
+            'limit': float(cat_limit) if cat_limit else None
+        })
+
+    # Member contribution
+    member_totals = db.session.query(
+        User.username,
+        func.sum(Expense.amount).label('total')
+    ).join(Expense, Expense.user_id == User.id).filter(
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == family.id
+    ).group_by(User.id).all()
+
+    members_data = [
+        {'name': username, 'amount': float(total)}
+        for username, total in member_totals
+    ]
+
+    # Current month stats
+    current_month_total = sum(cat['spent'] for cat in categories_data)
+    budget_percentage = (current_month_total / family.monthly_budget * 100) if family.monthly_budget else 0
+
+    return render_template('reports.html',
+                          user=current_user,
+                          family=family,
+                          months_data=months_data,
+                          categories_data=categories_data,
+                          members_data=members_data,
+                          current_month_total=current_month_total,
+                          budget_percentage=budget_percentage,
+                          month_name=calendar.month_name[current_date.month],
+                          year=current_date.year)
+
+
+@app.route('/admin_panel/reports/data', methods=['GET'])
+@login_required
+def reports_data():
+    """JSON endpoint for report charts"""
+    if current_user.user_type != 'family_manager':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    family = current_user.family
+    current_date = datetime.utcnow()
+
+    # Spending trends (last 6 months)
+    trend_labels = []
+    trend_data = []
+    for i in range(5, -1, -1):
+        date = current_date - timedelta(days=30*i)
+        month = date.month
+        year = date.year
+        month_str = f"{month:02d}"
+        year_str = str(year)
+
+        total = db.session.query(
+            func.sum(Expense.amount).label('total')
+        ).filter(
+            func.strftime('%Y', Expense.date) == year_str,
+            func.strftime('%m', Expense.date) == month_str,
+            Expense.family_id == family.id
+        ).scalar() or 0.0
+
+        import calendar
+        trend_labels.append(f"{calendar.month_abbr[month]} {year}")
+        trend_data.append(float(total))
+
+    return jsonify({
+        'trends': {
+            'labels': trend_labels,
+            'data': trend_data
+        }
+    })
 
 if __name__ == '__main__':
     with app.app_context():

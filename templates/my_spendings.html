@@ -25,15 +25,31 @@
         <header class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold text-slate-800">My Personal Ledger</h1>
             <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-sm font-bold">
-                My Total: &#8377;{{ "{:,.0f}".format(total_spent) }}
+                My Total: ₹{{ "{:,.0f}".format(total_spent) }}
             </div>
         </header>
 
+        <!-- Check if user has a family -->
+        {% if not user.family_id %}
+        <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded mb-6">
+            <div class="flex items-center">
+                <i class="fas fa-exclamation-triangle text-yellow-600 mr-3 text-lg"></i>
+                <div>
+                    <p class="font-semibold text-yellow-800">You need to join a family first</p>
+                    <p class="text-sm text-yellow-700 mt-1">Go to Family Overview to join or create a family to track expenses.</p>
+                    <a href="{{ url_for('dashboard') }}" class="inline-block mt-2 bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 text-sm font-semibold">
+                        <i class="fas fa-arrow-right mr-1"></i>Go to Family Overview
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
+
             <!-- Daily Tracker Form -->
             <div class="lg:col-span-1">
-                <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 sticky top-0">
+                <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 sticky top-0 {% if not user.family_id %}opacity-50 pointer-events-none{% endif %}"
                     <h2 class="text-xl font-bold text-slate-800 mb-6">Log Daily Expense</h2>
                     <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-4">
                         
