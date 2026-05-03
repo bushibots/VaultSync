@@ -283,10 +283,44 @@ body.dark-mode .bg-red-50 {
     height: 100vh;
     height: 100dvh;
     max-height: 100dvh;
-    overflow-y: auto;
+    overflow: hidden;
     overscroll-behavior: contain;
+    padding: clamp(1rem, 2.4vh, 1.5rem) !important;
     z-index: 60;
     -webkit-overflow-scrolling: touch;
+}
+
+.sidebar > .mb-8 {
+    flex: 0 0 auto;
+    margin-bottom: clamp(0.75rem, 2vh, 2rem) !important;
+}
+
+.sidebar-nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    margin-right: -0.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.65) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 0.35rem;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.65);
+    border-radius: 999px;
+}
+
+.sidebar > .mt-auto {
+    flex: 0 0 auto;
+    margin-top: clamp(0.75rem, 2vh, 1.5rem) !important;
+}
+
+.sidebar > .mt-auto > :not([hidden]) ~ :not([hidden]) {
+    margin-top: clamp(0.5rem, 1.6vh, 1rem) !important;
 }
 
 @media (max-width: 767px) {
@@ -304,8 +338,26 @@ body.dark-mode .bg-red-50 {
 }
 
 .sidebar-nav a {
+    display: flex !important;
+    align-items: center;
+    min-width: 0;
+    gap: 0.75rem;
     position: relative;
     overflow: hidden;
+    line-height: 1.2;
+}
+
+.sidebar-nav a i {
+    flex: 0 0 1.25rem;
+    margin-right: 0 !important;
+    text-align: center;
+}
+
+.sidebar-nav a span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .sidebar-nav a::before {
@@ -321,6 +373,17 @@ body.dark-mode .bg-red-50 {
 
 .sidebar-nav a:hover::before {
     width: 100%;
+}
+
+@media (max-height: 760px) {
+    .sidebar-nav a {
+        padding-top: 0.65rem !important;
+        padding-bottom: 0.65rem !important;
+    }
+
+    .sidebar > .mt-auto > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 0.55rem !important;
+    }
 }
 
 /* Sidebar overlay for mobile */
