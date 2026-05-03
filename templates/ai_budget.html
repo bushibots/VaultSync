@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultSync | AI Budget Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <div class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 p-4 flex items-center justify-between md:hidden">
+        <h1 class="text-lg font-bold text-blue-600">AI Budget</h1>
+        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900 p-2" aria-label="Open menu" aria-expanded="false">
+            <i class="fas fa-bars text-2xl" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
+        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg" aria-label="Close menu">
+            <i class="fas fa-times text-xl" aria-hidden="true"></i>
+        </button>
+
+        <div class="mb-8 mt-8 md:mt-0">
+            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+        </div>
+
+        <nav class="flex-1 space-y-2 sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
+            </a>
+            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
+            </a>
+            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
+                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
+            </a>
+            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
+            </a>
+            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
+            </a>
+        </nav>
+
+        <div class="mt-auto space-y-4">
+            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
+                <button type="button" id="dark-mode-toggle" class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
+                </button>
+                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
+                <select id="language-select" class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                </select>
+            </div>
+            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
+                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
+                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
+                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
+            </div>
+        </div>
+    </aside>
+
+    <main id="main-content" class="flex-1 overflow-y-auto pt-16 md:pt-0" role="main">
+        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
+            <header class="mb-8 animate-slide-in">
+                <p class="text-xs md:text-sm text-blue-600 font-semibold">AI-assisted planning</p>
+                <h1 class="text-3xl md:text-4xl font-bold text-slate-800 mt-2" data-i18n="ai_title">AI Budget Planner</h1>
+                <p class="text-slate-500 text-sm mt-2 max-w-3xl" data-i18n="ai_subtitle">Export family spending as clean JSON, ask an AI for a budget, import the JSON answer, compare it, then apply the plan.</p>
+            </header>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="space-y-3 mb-6">
+                        {% for category, message in messages %}
+                            <div class="p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% elif category == 'warning' %}bg-yellow-50 border border-yellow-200 text-yellow-800{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+                <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                    <div class="flex items-center mb-5">
+                        <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-file-export text-blue-600" aria-hidden="true"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-lg md:text-xl font-bold text-slate-800">1. Export AI-Ready Budget File</h2>
+                            <p class="text-xs text-slate-500 mt-1">Choose any date, date range, month, or month range.</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('export_ai_budget') }}" method="POST" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Export Type</label>
+                            <select name="period_type" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                <option value="date_range">Date range</option>
+                                <option value="single_date">Specific date</option>
+                                <option value="single_month">Specific month</option>
+                                <option value="month_range">Month range</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-2">Start Date</label>
+                                <input type="date" name="start_date" value="{{ today.replace(day=1).isoformat() }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-2">End Date</label>
+                                <input type="date" name="end_date" value="{{ today.isoformat() }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-2">Specific Date</label>
+                                <input type="date" name="single_date" value="{{ today.isoformat() }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-2">Specific Month</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select name="single_month" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                        {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                                    </select>
+                                    <select name="single_month_year" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                        {% for y in year_range %}<option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-2">Range Start Month</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select name="start_month" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                        {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                                    </select>
+                                    <select name="start_month_year" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                        {% for y in year_range %}<option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-700 mb-2">Range End Month</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select name="end_month" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                        {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                                    </select>
+                                    <select name="end_month_year" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
+                                        {% for y in year_range %}<option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 duration-200 flex items-center justify-center gap-2">
+                            <i class="fas fa-download" aria-hidden="true"></i>Download AI JSON
+                        </button>
+                    </form>
+                </section>
+
+                <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                    <div class="flex items-center mb-5">
+                        <div class="bg-emerald-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-file-import text-emerald-600" aria-hidden="true"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-lg md:text-xl font-bold text-slate-800">2. Import AI Suggestion</h2>
+                            <p class="text-xs text-slate-500 mt-1">Paste the AI's JSON response or upload the returned file.</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('import_ai_budget') }}" method="POST" enctype="multipart/form-data" class="space-y-4">
+                        <textarea name="ai_response" rows="11" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm font-mono" placeholder='{"vaultsync_budget_suggestion_version":"1.0","title":"...","planned_items":[...]}'></textarea>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-2">Or upload JSON</label>
+                            <input type="file" name="ai_response_file" accept="application/json,.json" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                        </div>
+                        <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-700 duration-200 flex items-center justify-center gap-2">
+                            <i class="fas fa-upload" aria-hidden="true"></i>Import and Compare
+                        </button>
+                    </form>
+                </section>
+            </div>
+
+            <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-6">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+                    <div>
+                        <h2 class="text-lg md:text-xl font-bold text-slate-800">3. Compare and Apply</h2>
+                        <p class="text-xs text-slate-500 mt-1">Review how the imported plan differs from your current planned expenditure.</p>
+                    </div>
+                    {% if suggestions %}
+                    <form method="GET" action="{{ url_for('ai_budget') }}">
+                        <select name="suggestion_id" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm" onchange="this.form.submit()">
+                            {% for suggestion in suggestions %}
+                            <option value="{{ suggestion.id }}" {% if selected_suggestion and suggestion.id == selected_suggestion.id %}selected{% endif %}>
+                                {{ suggestion.title }} · {{ suggestion.created_at.strftime('%b %d') }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    {% endif %}
+                </div>
+
+                {% if comparison and selected_suggestion %}
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                        <p class="text-xs text-blue-700 font-semibold">Current Plan</p>
+                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.current_total) }}</p>
+                    </div>
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-4">
+                        <p class="text-xs text-emerald-700 font-semibold">AI Suggested Plan</p>
+                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.suggested_total) }}</p>
+                    </div>
+                    <div class="{% if comparison.plan_delta <= 0 %}bg-green-50 border-green-100{% else %}bg-yellow-50 border-yellow-100{% endif %} border rounded-lg p-4">
+                        <p class="text-xs font-semibold">Plan Difference</p>
+                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.plan_delta) }}</p>
+                    </div>
+                    <div class="{% if comparison.budget_delta <= 0 %}bg-green-50 border-green-100{% else %}bg-red-50 border-red-100{% endif %} border rounded-lg p-4">
+                        <p class="text-xs font-semibold">Monthly Budget Change</p>
+                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.budget_delta) }}</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-bold text-slate-800 mb-3">Category Comparison</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm text-left">
+                                <thead>
+                                    <tr class="border-b border-gray-200">
+                                        <th class="py-2 pr-3 text-slate-800">Category</th>
+                                        <th class="py-2 pr-3 text-slate-800">Current</th>
+                                        <th class="py-2 pr-3 text-slate-800">AI</th>
+                                        <th class="py-2 text-slate-800">Delta</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in comparison.category_rows %}
+                                    <tr class="border-b border-gray-100">
+                                        <td class="py-2 pr-3 font-semibold text-slate-800">{{ row.category }}</td>
+                                        <td class="py-2 pr-3">&#8377;{{ "{:,.0f}".format(row.current) }}</td>
+                                        <td class="py-2 pr-3">&#8377;{{ "{:,.0f}".format(row.suggested) }}</td>
+                                        <td class="py-2 {% if row.delta > 0 %}text-red-500{% else %}text-green-600{% endif %} font-bold">&#8377;{{ "{:,.0f}".format(row.delta) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 mb-3">AI Planned Items</h3>
+                        <div class="space-y-2 max-h-80 overflow-y-auto">
+                            {% for item in comparison.payload.planned_items %}
+                            <div class="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="font-bold text-slate-800">{{ item.name }}</p>
+                                    <p class="text-red-500 font-bold">&#8377;{{ "{:,.0f}".format(item.amount) }}</p>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-1">{{ item.date }} · {{ item.category }} · {{ item.priority }}</p>
+                                {% if item.reason %}<p class="text-xs text-slate-500 mt-1">{{ item.reason }}</p>{% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                        <h3 class="font-bold text-slate-800 mb-3">Strategy Notes</h3>
+                        <ul class="space-y-2 text-sm text-slate-600">
+                            {% for note in comparison.payload.strategy_notes or [] %}
+                            <li class="flex gap-2"><i class="fas fa-check text-blue-600 mt-1" aria-hidden="true"></i><span>{{ note }}</span></li>
+                            {% else %}
+                            <li>No strategy notes included.</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                        <h3 class="font-bold text-slate-800 mb-3">Savings Goals</h3>
+                        <div class="space-y-2 text-sm text-slate-600">
+                            {% for goal in comparison.payload.savings_goals or [] %}
+                            <div>
+                                <p class="font-bold text-slate-800">{{ goal.name }} · &#8377;{{ "{:,.0f}".format(goal.target_amount or 0) }}</p>
+                                <p class="text-xs text-slate-500">{{ goal.reason }}</p>
+                            </div>
+                            {% else %}
+                            <p>No savings goals included.</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4">
+                        <h3 class="font-bold text-slate-800 mb-3">Guardrails</h3>
+                        <ul class="space-y-2 text-sm text-slate-600">
+                            {% for guardrail in comparison.payload.guardrails or [] %}
+                            <li class="flex gap-2"><i class="fas fa-shield-halved text-yellow-600 mt-1" aria-hidden="true"></i><span>{{ guardrail }}</span></li>
+                            {% else %}
+                            <li>No guardrails included.</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                {% if user.user_type == 'family_manager' %}
+                <form action="{{ url_for('apply_ai_budget', id=selected_suggestion.id) }}" method="POST" class="mt-6 flex flex-col md:flex-row md:items-center gap-3">
+                    <label class="flex items-center gap-2 text-sm text-slate-600">
+                        <input type="checkbox" name="update_monthly_budget" value="yes" class="rounded border-gray-300">
+                        Update family monthly budget to AI recommendation
+                    </label>
+                    <button type="submit" class="md:ml-auto bg-slate-900 text-white font-bold py-3 px-5 rounded-lg hover:bg-slate-700 duration-200" onclick="return confirm('Apply this AI budget suggestion to Expected Monthly Expenditure?')">
+                        Apply Suggested Plan
+                    </button>
+                </form>
+                {% endif %}
+                {% else %}
+                <div class="text-center py-12">
+                    <div class="text-5xl mb-4"><i class="fas fa-wand-magic-sparkles text-gray-300" aria-hidden="true"></i></div>
+                    <p class="text-gray-500 font-semibold">No AI suggestions imported yet</p>
+                    <p class="text-gray-400 text-sm mt-1">Export a JSON file, ask an AI to fill the schema, then import its answer here.</p>
+                </div>
+                {% endif %}
+            </section>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

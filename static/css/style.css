@@ -21,6 +21,69 @@ body {
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 }
 
+body.dark-mode,
+body.dark-mode.dashboard-body {
+    background: #0f172a;
+    color: #e5e7eb;
+}
+
+body.dark-mode .bg-gradient-to-br {
+    background: linear-gradient(135deg, #0f172a 0%, #111827 55%, #172554 100%) !important;
+}
+
+body.dark-mode .bg-white,
+body.dark-mode .stat-card,
+body.dark-mode .modal {
+    background: #111827 !important;
+    color: #e5e7eb !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .bg-gray-50,
+body.dark-mode .hover\:bg-gray-100:hover,
+body.dark-mode .table-row:hover {
+    background-color: #1f2937 !important;
+}
+
+body.dark-mode .text-slate-800,
+body.dark-mode .text-gray-700,
+body.dark-mode .text-gray-600,
+body.dark-mode .font-bold,
+body.dark-mode label {
+    color: #e5e7eb !important;
+}
+
+body.dark-mode .text-slate-500,
+body.dark-mode .text-gray-500,
+body.dark-mode .text-gray-400,
+body.dark-mode .text-slate-400 {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode .border-gray-100,
+body.dark-mode .border-gray-200,
+body.dark-mode .border-blue-100,
+body.dark-mode .border-red-100,
+body.dark-mode .border-green-100 {
+    border-color: #334155 !important;
+}
+
+body.dark-mode .form-input,
+body.dark-mode input,
+body.dark-mode select {
+    background-color: #0f172a !important;
+    color: #e5e7eb !important;
+    border-color: #475569 !important;
+}
+
+body.dark-mode .bg-blue-50,
+body.dark-mode .bg-teal-50,
+body.dark-mode .bg-green-50,
+body.dark-mode .bg-yellow-50,
+body.dark-mode .bg-red-50 {
+    background-color: rgba(30, 41, 59, 0.95) !important;
+}
+
 /* ============================================
    Animations
    ============================================ */
