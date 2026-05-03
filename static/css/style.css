@@ -7,6 +7,8 @@ body {
     transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+::selection { background: rgba(59, 130, 246, 0.22); color: #0f172a; }
+
 /* Login/Register gradient background */
 .auth-body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
