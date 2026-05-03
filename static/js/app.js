@@ -226,24 +226,31 @@ const MobileMenu = {
 
         if (!menuToggle || !sidebar) return;
 
-        menuToggle.addEventListener('click', () => {
+        const openMenu = () => {
             sidebar.classList.add('active');
+            document.body.classList.add('menu-open');
+            menuToggle.setAttribute('aria-expanded', 'true');
             if (overlay) overlay.classList.add('active');
-        });
+        };
 
-        if (closeMenu) {
-            closeMenu.addEventListener('click', () => {
-                sidebar.classList.remove('active');
-                if (overlay) overlay.classList.remove('active');
-            });
-        }
+        const closeMenuPanel = () => {
+            sidebar.classList.remove('active');
+            document.body.classList.remove('menu-open');
+            menuToggle.setAttribute('aria-expanded', 'false');
+            if (overlay) overlay.classList.remove('active');
+        };
+
+        menuToggle.addEventListener('click', openMenu);
+
+        if (closeMenu) closeMenu.addEventListener('click', closeMenuPanel);
 
         if (overlay) {
-            overlay.addEventListener('click', () => {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-            });
+            overlay.addEventListener('click', closeMenuPanel);
         }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeMenuPanel();
+        });
     }
 };
 
