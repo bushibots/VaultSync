@@ -38,6 +38,38 @@
             transform: translateY(-2px);
             box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
+        .role-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .role-option {
+            flex: 1;
+            padding: 1.5rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+        .role-option:hover {
+            border-color: #667eea;
+            background-color: #f3f4f6;
+        }
+        .role-option.active {
+            border-color: #667eea;
+            background-color: #667eea;
+            color: white;
+        }
+        .role-option.active i {
+            color: white;
+        }
+        .form-section {
+            display: none;
+        }
+        .form-section.active {
+            display: block;
+        }
         .password-strength {
             height: 4px;
             border-radius: 2px;
@@ -58,7 +90,7 @@
     </style>
 </head>
 <body>
-    <div class="register-container w-full max-w-md px-4">
+    <div class="register-container w-full max-w-2xl px-4">
         <div class="bg-white rounded-2xl shadow-2xl p-8 md:p-10">
             <!-- Logo/Brand -->
             <div class="text-center mb-8">
@@ -85,15 +117,34 @@
                 {% endif %}
             {% endwith %}
 
+            <!-- Role Selection -->
+            <div class="mb-8">
+                <p class="text-gray-700 font-semibold mb-4">I want to:</p>
+                <div class="role-selector">
+                    <div class="role-option active" onclick="selectRole('family_manager')">
+                        <i class="fas fa-crown text-2xl mb-2 text-purple-600"></i>
+                        <p class="font-semibold text-gray-800">Create a Family</p>
+                        <p class="text-xs text-gray-500 mt-1">Set budgets & manage members</p>
+                    </div>
+                    <div class="role-option" onclick="selectRole('family_member')">
+                        <i class="fas fa-users text-2xl mb-2 text-blue-600"></i>
+                        <p class="font-semibold text-gray-800">Join a Family</p>
+                        <p class="text-xs text-gray-500 mt-1">Use family invite code</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Registration Form -->
-            <form method="POST" class="space-y-5" onsubmit="return validateForm()">
-                <!-- Username Field -->
+            <form method="POST" onsubmit="return validateForm()">
+                <input type="hidden" name="user_type" id="user_type" value="family_manager">
+
+                <!-- Common Fields -->
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">
-                        <i class="fas fa-user mr-2 text-purple-500"></i>Full Name / Username
+                        <i class="fas fa-user mr-2 text-purple-500"></i>Username
                     </label>
-                    <input 
-                        type="text" 
+                    <input
+                        type="text"
                         name="username"
                         id="username"
                         class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
@@ -104,13 +155,12 @@
                     <p class="text-xs text-gray-500 mt-1">At least 3 characters</p>
                 </div>
 
-                <!-- Email Field -->
-                <div>
+                <div class="mt-4">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                         <i class="fas fa-envelope mr-2 text-purple-500"></i>Email Address
                     </label>
-                    <input 
-                        type="email" 
+                    <input
+                        type="email"
                         name="email"
                         id="email"
                         class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
@@ -121,12 +171,12 @@
                 </div>
 
                 <!-- Password Field -->
-                <div>
+                <div class="mt-4">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                         <i class="fas fa-lock mr-2 text-purple-500"></i>Password
                     </label>
-                    <input 
-                        type="password" 
+                    <input
+                        type="password"
                         name="password"
                         id="password"
                         class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
@@ -144,12 +194,12 @@
                 </div>
 
                 <!-- Confirm Password Field -->
-                <div>
+                <div class="mt-4">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                         <i class="fas fa-lock-open mr-2 text-purple-500"></i>Confirm Password
                     </label>
-                    <input 
-                        type="password" 
+                    <input
+                        type="password"
                         name="password_confirm"
                         id="password_confirm"
                         class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
@@ -160,11 +210,61 @@
                     <p id="passwordMatch" class="text-xs text-gray-500 mt-1"></p>
                 </div>
 
+                <!-- Family Manager Specific Fields -->
+                <div id="manager-fields" class="form-section active">
+                    <div class="mt-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-home mr-2 text-purple-500"></i>Family Name
+                        </label>
+                        <input
+                            type="text"
+                            name="family_name"
+                            id="family_name"
+                            class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                            placeholder="e.g., The Smiths"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Name of your family group</p>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-wallet mr-2 text-purple-500"></i>Monthly Budget
+                        </label>
+                        <input
+                            type="number"
+                            name="initial_budget"
+                            id="initial_budget"
+                            class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                            placeholder="e.g., 100000"
+                            value="170000"
+                            step="1000"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Minimum ₹1000</p>
+                    </div>
+                </div>
+
+                <!-- Family Member Specific Fields -->
+                <div id="member-fields" class="form-section">
+                    <div class="mt-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-key mr-2 text-purple-500"></i>Family Invite Code
+                        </label>
+                        <input
+                            type="text"
+                            name="invite_code"
+                            id="invite_code"
+                            class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                            placeholder="Enter the code from your family manager"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Ask your family manager for this code</p>
+                    </div>
+                </div>
+
                 <!-- Terms & Conditions -->
-                <div class="flex items-start">
-                    <input 
-                        type="checkbox" 
-                        name="terms" 
+                <div class="flex items-start mt-4">
+                    <input
+                        type="checkbox"
+                        name="terms"
                         id="terms"
                         class="mt-1 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
                         required
@@ -175,9 +275,9 @@
                 </div>
 
                 <!-- Register Button -->
-                <button 
-                    type="submit" 
-                    class="btn-register w-full text-white font-bold py-3 rounded-lg hover:shadow-lg transition flex items-center justify-center gap-2"
+                <button
+                    type="submit"
+                    class="btn-register w-full text-white font-bold py-3 px-4 rounded-lg hover:shadow-lg transition flex items-center justify-center gap-2 mt-6"
                 >
                     <i class="fas fa-user-plus"></i>Create Account
                 </button>
@@ -191,8 +291,8 @@
             </div>
 
             <!-- Login Link -->
-            <a 
-                href="{{ url_for('login') }}" 
+            <a
+                href="{{ url_for('login') }}"
                 class="block w-full text-center bg-gray-100 text-gray-700 font-semibold py-3 rounded-lg hover:bg-gray-200 transition"
             >
                 <i class="fas fa-sign-in-alt mr-2"></i>Sign In
@@ -214,27 +314,49 @@
     </div>
 
     <script>
+        function selectRole(role) {
+            document.getElementById('user_type').value = role;
+
+            // Update UI
+            document.querySelectorAll('.role-option').forEach(el => el.classList.remove('active'));
+            event.target.closest('.role-option').classList.add('active');
+
+            // Show/hide relevant fields
+            document.getElementById('manager-fields').classList.remove('active');
+            document.getElementById('member-fields').classList.remove('active');
+
+            if (role === 'family_manager') {
+                document.getElementById('manager-fields').classList.add('active');
+                document.getElementById('family_name').required = true;
+                document.getElementById('invite_code').required = false;
+            } else {
+                document.getElementById('member-fields').classList.add('active');
+                document.getElementById('family_name').required = false;
+                document.getElementById('invite_code').required = true;
+            }
+        }
+
         function checkPasswordStrength() {
             const password = document.getElementById('password').value;
             const strengthBar = document.getElementById('passwordStrength');
             const strengthText = document.getElementById('strengthText');
-            
+
             let strength = 0;
-            
+
             // Check length
             if (password.length >= 6) strength++;
             if (password.length >= 8) strength++;
             if (password.length >= 12) strength++;
-            
+
             // Check complexity
             if (/[a-z]/.test(password)) strength++;
             if (/[A-Z]/.test(password)) strength++;
             if (/[0-9]/.test(password)) strength++;
             if (/[^a-zA-Z0-9]/.test(password)) strength++;
-            
+
             // Update strength indicator
             strengthBar.className = 'password-strength h-1';
-            
+
             if (strength < 3) {
                 strengthBar.classList.add('strength-weak');
                 strengthText.textContent = 'Weak';
@@ -248,20 +370,20 @@
                 strengthText.textContent = 'Strong';
                 strengthText.className = 'text-xs text-green-600 font-semibold';
             }
-            
+
             checkPasswordMatch();
         }
-        
+
         function checkPasswordMatch() {
             const password = document.getElementById('password').value;
             const passwordConfirm = document.getElementById('password_confirm').value;
             const matchText = document.getElementById('passwordMatch');
-            
+
             if (passwordConfirm === '') {
                 matchText.textContent = '';
                 return;
             }
-            
+
             if (password === passwordConfirm) {
                 matchText.textContent = '✓ Passwords match';
                 matchText.className = 'text-xs text-green-600 font-semibold mt-1';
@@ -270,18 +392,38 @@
                 matchText.className = 'text-xs text-red-600 font-semibold mt-1';
             }
         }
-        
+
         document.getElementById('password_confirm').addEventListener('input', checkPasswordMatch);
-        
+
         function validateForm() {
             const password = document.getElementById('password').value;
             const passwordConfirm = document.getElementById('password_confirm').value;
-            
+            const userType = document.getElementById('user_type').value;
+
             if (password !== passwordConfirm) {
                 alert('Passwords do not match!');
                 return false;
             }
-            
+
+            if (userType === 'family_manager') {
+                const familyName = document.getElementById('family_name').value;
+                if (!familyName || familyName.length < 2) {
+                    alert('Family name must be at least 2 characters long!');
+                    return false;
+                }
+                const budget = parseFloat(document.getElementById('initial_budget').value);
+                if (isNaN(budget) || budget < 1000) {
+                    alert('Budget must be at least 1000!');
+                    return false;
+                }
+            } else {
+                const inviteCode = document.getElementById('invite_code').value;
+                if (!inviteCode) {
+                    alert('Please enter your family invite code!');
+                    return false;
+                }
+            }
+
             return true;
         }
     </script>

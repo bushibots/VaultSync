@@ -281,7 +281,8 @@ const EditModal = {
 
         document.getElementById('editName').value = name;
         document.getElementById('editColor').value = color;
-        this.form.action = `/edit_category/${id}`;
+        const actionTemplate = this.form.dataset.actionTemplate || '/edit_category/0';
+        this.form.action = actionTemplate.replace(/0$/, String(id));
         this.modal.classList.remove('hidden');
 
         // Focus first input

@@ -6,59 +6,224 @@
     <title>VaultSync | Archive</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes scaleIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .animate-scale-in {
+            animation: scaleIn 0.4s ease-out;
+        }
+
+        .month-card {
+            animation: scaleIn 0.4s ease-out;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .month-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 30;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        .sidebar.active {
+            transform: translateX(0);
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #000;
+            color: #fff;
+            padding: 8px;
+            text-decoration: none;
+            z-index: 100;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+<body class="font-sans flex h-screen overflow-hidden bg-gray-100">
+    <!-- Skip to content link for accessibility -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Mobile Menu Toggle -->
+    <div class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 p-4 flex items-center justify-between md:hidden">
+        <h1 class="text-lg font-bold text-blue-600">
+            <i class="fas fa-archive mr-2"></i>Archive
+        </h1>
+        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900 p-2" aria-label="Open menu" aria-expanded="false">
+            <i class="fas fa-bars text-2xl" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Overlay (Mobile) -->
+    <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
 
     <!-- Sidebar -->
-    <aside class="w-64 bg-slate-900 h-full p-6 text-white flex flex-col">
-        <h2 class="text-2xl font-bold mb-8 tracking-wider text-blue-400">VaultSync.</h2>
-        <nav class="flex-1 space-y-4">
-            <a href="/" class="block py-2.5 px-4 rounded transition hover:bg-slate-800">Family Overview</a>
-            <a href="{{ url_for('archive') }}" class="block py-2.5 px-4 rounded transition bg-blue-600 hover:bg-blue-500">Archive</a>
+    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
+        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg" aria-label="Close menu">
+            <i class="fas fa-times text-xl" aria-hidden="true"></i>
+        </button>
+
+        <div class="mb-8 mt-8 md:mt-0">
+            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+        </div>
+
+        <nav class="flex-1 space-y-2 sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-home mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Dashboard</span>
+            </a>
+            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
+                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Archive</span>
+            </a>
         </nav>
-        <div class="mt-auto">
-            <p class="text-sm text-slate-400">Logged in as: <span class="font-bold text-white">{{ user.username }}</span></p>
+
+        <div class="mt-auto space-y-4">
+            <!-- User Profile Card -->
+            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
+                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
+                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
+                <p class="text-xs text-blue-300 mt-1">
+                    <i class="fas fa-clock mr-1" aria-hidden="true"></i>{{ months|length }} months
+                </p>
+                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
+            </div>
+
+            {% if current_user.user_type == 'family_manager' %}
+            <a href="{{ url_for('admin_panel') }}" class="block px-4 py-2 rounded-lg bg-indigo-600 text-white font-bold shadow-md hover:bg-indigo-700 transition-colors">
+                <i class="fas fa-cog mr-2" aria-hidden="true"></i>Admin Panel
+            </a>
+            {% endif %}
+
+            <!-- Logout Button -->
+            <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
+                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i><span class="hidden sm:inline">Logout</span>
+            </a>
         </div>
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 p-8 overflow-y-auto">
-        <header class="flex items-center justify-between mb-8">
-            <div>
-                <h1 class="text-3xl font-bold text-slate-800">Monthly Archive</h1>
-                <p class="text-sm text-slate-500 mt-1">Browse historical months and view or edit their data.</p>
-            </div>
-            <div>
-                <a href="/" class="bg-white px-4 py-2 rounded shadow text-slate-700 hover:bg-slate-50">Back to Dashboard</a>
-            </div>
-        </header>
-
-        {% if months %}
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {% for m in months %}
-            <a href="{{ url_for('dashboard', month=m['month'], year=m['year']) }}" class="block p-6 bg-white rounded-xl shadow hover:shadow-md transition">
-                <div class="flex items-center justify-between">
+    <main id="main-content" class="flex-1 overflow-y-auto pt-16 md:pt-0" role="main">
+        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
+            <!-- Header -->
+            <header class="mb-8 animate-fade-in">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>
-                        <p class="text-sm text-slate-500">{{ m['month_name'] }} {{ m['year'] }}</p>
-                        <h3 class="mt-2 text-lg font-bold text-slate-800">View Month</h3>
+                        <h1 class="text-3xl md:text-4xl font-bold text-slate-800">
+                            <i class="fas fa-history mr-2 text-blue-600" aria-hidden="true"></i>Monthly Archive
+                        </h1>
+                        <p class="text-slate-500 text-sm mt-2">Browse historical months and view your expense records</p>
                     </div>
-                    <div class="text-right">
-                        <p class="text-xs text-slate-400">{{ m['count'] }} expenses</p>
-                        <div class="mt-2 text-blue-600">
-                            <i class="fas fa-arrow-right"></i>
+                    <a href="{{ url_for('dashboard') }}" class="bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-2.5 rounded-lg shadow text-white font-semibold hover:shadow-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200">
+                        <i class="fas fa-arrow-left mr-2" aria-hidden="true"></i>Back to Dashboard
+                    </a>
+                </div>
+            </header>
+
+            <!-- Archive Content -->
+            {% if months %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 animate-fade-in">
+                {% for m in months %}
+                <a href="{{ url_for('dashboard', month=m['month'], year=m['year']) }}" class="month-card group relative bg-white rounded-xl shadow-md p-6 border border-gray-100 overflow-hidden">
+                    <!-- Background gradient on hover -->
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+                    <!-- Content -->
+                    <div class="relative z-10">
+                        <div class="flex items-start justify-between mb-4">
+                            <div>
+                                <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+                                    <i class="fas fa-calendar-alt mr-1" aria-hidden="true"></i>{{ m['month_name'] }}
+                                </p>
+                                <h3 class="text-2xl font-bold text-slate-800 mt-1">{{ m['year'] }}</h3>
+                            </div>
+                            <div class="bg-blue-100 rounded-full p-3 flex-shrink-0 group-hover:bg-blue-200 transition-colors duration-200">
+                                <i class="fas fa-chart-line text-blue-600 text-lg" aria-hidden="true"></i>
+                            </div>
+                        </div>
+
+                        <!-- Stats -->
+                        <div class="mt-4 pt-4 border-t border-gray-100">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-xs text-slate-500 font-medium">Expenses</p>
+                                    <p class="text-xl font-bold text-slate-800">{{ m['count'] }}</p>
+                                </div>
+                                <div class="text-blue-600 group-hover:translate-x-1 transition-transform duration-200">
+                                    <i class="fas fa-arrow-right text-lg" aria-hidden="true"></i>
+                                </div>
+                            </div>
                         </div>
                     </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="animate-scale-in">
+                <div class="bg-white rounded-xl shadow-md p-12 md:p-16 text-center border border-gray-100">
+                    <div class="inline-block bg-gray-100 rounded-full p-4 mb-4">
+                        <i class="fas fa-inbox text-gray-400 text-3xl" aria-hidden="true"></i>
+                    </div>
+                    <h2 class="text-xl font-bold text-slate-800 mt-4">No Archived Months Yet</h2>
+                    <p class="text-slate-500 mt-2">Add some expenses to build an archive.</p>
+                    <a href="{{ url_for('dashboard') }}" class="inline-block mt-6 bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-2.5 rounded-lg shadow text-white font-semibold hover:shadow-lg transition-all duration-200">
+                        <i class="fas fa-plus mr-2" aria-hidden="true"></i>Add Expense
+                    </a>
                 </div>
-            </a>
-            {% endfor %}
+            </div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="bg-white rounded-xl shadow p-8 text-center">
-            <p class="text-lg text-slate-600">No archived months yet.</p>
-            <p class="text-sm text-slate-400 mt-2">Add some expenses to build an archive.</p>
-        </div>
-        {% endif %}
     </main>
 
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

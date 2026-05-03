@@ -37,7 +37,7 @@
             <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
         </div>
         <nav class="flex-1 space-y-2 sidebar-nav">
-            <a href="/" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
+            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
                 <i class="fas fa-home mr-3" aria-hidden="true"></i><span class="hidden sm:inline">Dashboard</span>
             </a>
             <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
@@ -50,10 +50,15 @@
                 <p class="text-xs text-slate-400 mb-1">Logged in as</p>
                 <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
                 <p class="text-xs text-blue-300 mt-1">
-                    <i class="fas fa-user-tag mr-1" aria-hidden="true"></i>{{ user.role }}
+                    <i class="fas fa-user-tag mr-1" aria-hidden="true"></i>{{ user.user_type.replace('_', ' ').title() }}
                 </p>
                 <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
             </div>
+            {% if current_user.user_type == 'family_manager' %}
+            <a href="{{ url_for('admin_panel') }}" class="block px-4 py-2 mt-2 rounded-lg bg-indigo-600 text-white font-bold shadow-md hover:bg-indigo-700 transition-colors">
+                <i class="fas fa-cog mr-2" aria-hidden="true"></i>Admin Panel
+            </a>
+            {% endif %}
             <!-- Logout Button -->
             <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
                 <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i><span class="hidden sm:inline">Logout</span>
@@ -64,6 +69,67 @@
     <!-- Main Content -->
     <main id="main-content" class="flex-1 overflow-y-auto pt-16 md:pt-0" role="main">
         <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
+
+            <!-- Welcome Screen for Users Without Family -->
+            {% if not user.family_id %}
+            <div class="flex items-center justify-center min-h-screen">
+                <div class="w-full max-w-md">
+                    <div class="bg-white rounded-2xl shadow-2xl p-8 md:p-10 border border-blue-100">
+                        <div class="text-center mb-8">
+                            <div class="inline-block bg-gradient-to-r from-blue-400 to-indigo-600 rounded-full p-4 mb-4">
+                                <i class="fas fa-users text-white text-3xl"></i>
+                            </div>
+                            <h1 class="text-3xl font-bold text-slate-800">Join Your Family</h1>
+                            <p class="text-gray-600 text-sm mt-2">Enter your family's invite code to get started</p>
+                        </div>
+
+                        <!-- Flash Messages -->
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    <div class="mb-4 p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
+                                        <div class="flex items-center">
+                                            <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} mr-3"></i>
+                                            <span>{{ message }}</span>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+
+                        <form method="POST" action="{{ url_for('join_family') }}" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-key mr-2 text-blue-500"></i>Family Invite Code
+                                </label>
+                                <input
+                                    type="text"
+                                    name="invite_code"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition"
+                                    placeholder="Enter your family invite code"
+                                    required
+                                >
+                                <p class="text-xs text-gray-500 mt-2">Ask your family admin for the invite code</p>
+                            </div>
+                            <button
+                                type="submit"
+                                class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:shadow-lg transition flex items-center justify-center gap-2"
+                            >
+                                <i class="fas fa-sign-in-alt"></i>Join Family
+                            </button>
+                        </form>
+
+                        <div class="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
+                            <p class="text-sm text-gray-700">
+                                <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                                <strong>Don't have a code yet?</strong> Your family admin can find it in the Admin Panel.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+
             <header class="mb-6 md:mb-8 animate-slide-in">
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -73,7 +139,7 @@
                     <i class="fas fa-calendar-alt mr-2"></i>{{ month_name }} {{ selected_year }} Overview
                 </p>
                 
-                <form action="/" method="GET" class="flex items-center gap-2 ml-2">
+                <form action="{{ url_for('dashboard') }}" method="GET" class="flex items-center gap-2 ml-2">
                     <select name="month" class="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-500 cursor-pointer shadow-sm" onchange="this.form.submit()">
                         {% set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
                         {% for m in range(1, 13) %}
@@ -107,7 +173,7 @@
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Family Income</h3>
                         <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
                     </div>
-                    <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
+                    <p class="text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">This month</p>
                 </div>
                 <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-red-100">
@@ -115,10 +181,10 @@
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Spent</h3>
                         <i class="fas fa-credit-card text-red-400 text-lg" aria-hidden="true"></i>
                     </div>
-                    <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
+                    <p class="text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">
                         <i class="fas fa-arrow-up text-red-400 mr-1" aria-hidden="true"></i>
-                        {% if total_spent > 0 %}{{ "{:.1f}".format((total_spent/income)*100) }}% of income{% else %}No expenses{% endif %}
+                        {% if income and total_spent > 0 %}{{ "{:.1f}".format((total_spent/income)*100) }}% of income{% else %}No expenses{% endif %}
                     </p>
                 </div>
                 <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
@@ -126,7 +192,7 @@
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Projected Savings</h3>
                         <i class="fas fa-piggy-bank text-green-400 text-lg" aria-hidden="true"></i>
                     </div>
-                    <p class="text-2xl md:text-3xl font-bold text-slate-800">₹<span class="text-green-600">{{ "{:,.0f}".format(projected) }}</span></p>
+                    <p class="text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-green-600">{{ "{:,.0f}".format(projected) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">
                         <i class="fas fa-arrow-up text-green-400 mr-1" aria-hidden="true"></i>
                         {% if projected > 0 %}Safe to spend{% else %}Overspent!{% endif %}
@@ -145,7 +211,7 @@
                             </div>
                             <h2 class="text-lg md:text-xl font-bold text-slate-800">Log New Expense</h2>
                         </div>
-                        <form action="/add_expense" method="POST" class="space-y-4" data-loading>
+                        <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-4" data-loading>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
                                     <i class="fas fa-tag mr-1 text-blue-500" aria-hidden="true"></i>Expense Name
@@ -161,6 +227,12 @@
                                     <option value="{{ cat.id }}">{{ cat.name }}</option>
                                     {% endfor %}
                                 </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-calendar mr-1 text-blue-500" aria-hidden="true"></i>Date
+                                </label>
+                                <input type="date" name="expense_date" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
                             </div>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
@@ -182,7 +254,7 @@
                             </div>
                             <h2 class="text-lg md:text-lg font-bold text-slate-800">Create Category</h2>
                         </div>
-                        <form action="/add_category" method="POST" class="flex flex-col gap-4" data-loading>
+                        <form action="{{ url_for('add_category') }}" method="POST" class="flex flex-col gap-4" data-loading>
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
                                     <i class="fas fa-folder-plus mr-1 text-slate-600" aria-hidden="true"></i>Name
@@ -219,10 +291,10 @@
                                     <span class="font-medium text-slate-800 truncate text-sm md:text-base">{{ cat.name }}</span>
                                 </div>
                                 <div class="flex gap-2 flex-shrink-0">
-                                    <button onclick="openEditModal({{ cat.id }}, '{{ cat.name }}', '{{ cat.color }}')" class="edit-btn text-blue-500 hover:text-blue-700 p-2" title="Edit" aria-label="Edit {{ cat.name }} category">
+                                    <button onclick="openEditModal({{ cat.id }}, {{ cat.name|tojson }}, {{ cat.color|tojson }})" class="edit-btn text-blue-500 hover:text-blue-700 p-2" title="Edit" aria-label="Edit {{ cat.name }} category">
                                         <i class="fas fa-edit text-sm" aria-hidden="true"></i>
                                     </button>
-                                    <a href="/delete_category/{{ cat.id }}" class="delete-btn text-red-500 hover:text-red-700 p-2" title="Delete" aria-label="Delete {{ cat.name }} category" onclick="return confirmDialog('Are you sure you want to delete the \'{{ cat.name }}\' category? This action cannot be undone.')">
+                                    <a href="{{ url_for('delete_category', id=cat.id) }}" class="delete-btn text-red-500 hover:text-red-700 p-2" title="Delete" aria-label="Delete {{ cat.name }} category" onclick="return confirm('Delete this category? This action cannot be undone.')">
                                         <i class="fas fa-trash-alt text-sm" aria-hidden="true"></i>
                                     </a>
                                 </div>
@@ -246,8 +318,8 @@
                             <h2 class="text-lg md:text-lg font-bold text-slate-800">Monthly Budget Plan</h2>
                         </div>
 
-                        {% if user.role == 'admin' %}
-                        <form action="/add_expected" method="POST" class="space-y-3 mb-4">
+                        {% if user.user_type == 'family_manager' %}
+                        <form action="{{ url_for('add_expected') }}" method="POST" class="space-y-3 mb-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <input type="text" name="name" placeholder="Expected item e.g., Electricity" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-sm" required>
                                 <input type="number" name="amount" placeholder="Amount" step="0.01" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-sm" required>
@@ -291,9 +363,9 @@
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3">
-                                        <span class="font-semibold text-sm text-red-500">₹{{ "{:,.0f}".format(ee.amount) }}</span>
-                                        {% if user.role == 'admin' %}
-                                        <a href="/toggle_expected/{{ ee.id }}" class="text-sm text-blue-500 hover:underline">Toggle</a>
+                                        <span class="font-semibold text-sm text-red-500">&#8377;{{ "{:,.0f}".format(ee.amount) }}</span>
+                                        {% if user.user_type == 'family_manager' %}
+                                        <a href="{{ url_for('toggle_expected', id=ee.id) }}" class="text-sm text-blue-500 hover:underline">Toggle</a>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -366,12 +438,12 @@
                                 <td class="px-3 md:px-6 py-3 md:py-4 font-semibold text-slate-800 text-xs md:text-sm">
                                     <span class="inline-flex items-center gap-1 md:gap-2 bg-blue-50 px-2 md:px-3 py-1 rounded-full">
                                         <i class="fas fa-user-circle text-blue-500 text-xs hidden sm:inline"></i>
-                                        {{ exp.spender.username|truncate(8, True) }}
+                                        {{ exp.user.username|truncate(8, True) }}
                                     </span>
                                 </td>
                                 <td class="px-3 md:px-6 py-3 md:py-4 font-bold text-blue-600 text-xs md:text-sm truncate">
                                     {{ exp.item_name|truncate(15, True) }}
-                                    <span class="ml-2 inline-block px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">{{ exp.spender.username|truncate(8, True) }}</span>
+                                    <span class="ml-2 inline-block px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">{{ exp.user.username|truncate(8, True) }}</span>
                                 </td>
                                 <td class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
                                     <span class="category-badge px-2 md:px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
@@ -380,9 +452,9 @@
                                         <span class="md:hidden">{{ exp.category.name|truncate(8, True) }}</span>
                                     </span>
                                 </td>
-                                <td class="px-3 md:px-6 py-3 md:py-4 text-red-500 font-bold text-xs md:text-sm">₹{{ "{:,.0f}".format(exp.amount)|truncate(10, True) }}</td>
+                                <td class="px-3 md:px-6 py-3 md:py-4 text-red-500 font-bold text-xs md:text-sm">&#8377;{{ "{:,.0f}".format(exp.amount)|truncate(10, True) }}</td>
                                 <td class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
-                                    <a href="/delete_expense/{{ exp.id }}" class="delete-btn text-red-500 hover:text-red-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 duration-200" onclick="return confirm('Delete this expense?')">
+                                    <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn text-red-500 hover:text-red-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 duration-200" onclick="return confirm('Delete this expense?')">
                                         <i class="fas fa-trash-alt text-xs"></i><span class="hidden sm:inline">Delete</span>
                                     </a>
                                 </td>
@@ -392,7 +464,7 @@
                     </table>
                     {% else %}
                     <div class="text-center py-12">
-                        <div class="text-5xl md:text-6xl mb-4">💸</div>
+                        <div class="text-5xl md:text-6xl mb-4"><i class="fas fa-receipt text-gray-300" aria-hidden="true"></i></div>
                         <p class="text-gray-500 text-base md:text-lg font-semibold">No expenses logged yet</p>
                         <p class="text-gray-400 text-xs md:text-sm mt-1">Start tracking your family expenses above!</p>
                     </div>
@@ -402,7 +474,7 @@
 
             <!-- Footer -->
             <div class="text-center text-slate-500 text-xs md:text-sm">
-                <p><i class="fas fa-shield-alt mr-1"></i>VaultSync © 2026 - Your Family's Financial Hub</p>
+                <p><i class="fas fa-shield-alt mr-1"></i>VaultSync &copy; 2026 - Your Family's Financial Hub</p>
             </div>
         </div>
     </main>
@@ -416,7 +488,7 @@
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-            <form id="editForm" method="POST" class="space-y-4">
+            <form id="editForm" method="POST" class="space-y-4" data-action-template="{{ url_for('edit_category', id=0) }}">
                 <div>
                     <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Category Name</label>
                     <input type="text" id="editName" name="name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
@@ -436,104 +508,68 @@
             </form>
         </div>
     </div>
+            {% endif %}
+    </div>
 
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <!-- Chart.js Configuration -->
     <script>
-        // Mobile menu toggle
-        document.getElementById('menu-toggle').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.add('active');
-            document.getElementById('sidebar-overlay').classList.add('active');
+        document.querySelectorAll('input[name="expense_date"]').forEach((input) => {
+            if (!input.value) input.value = new Date().toISOString().split('T')[0];
         });
-
-        document.getElementById('close-menu').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.remove('active');
-            document.getElementById('sidebar-overlay').classList.remove('active');
-        });
-
-        document.getElementById('sidebar-overlay').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.remove('active');
-            document.getElementById('sidebar-overlay').classList.remove('active');
-        });
-
-        // Edit modal functions
-        function openEditModal(id, name, color) {
-            document.getElementById('editName').value = name;
-            document.getElementById('editColor').value = color;
-            const form = document.getElementById('editForm');
-            form.action = `/edit_category/${id}`;
-            document.getElementById('editModal').classList.remove('hidden');
-        }
-
-        function closeEditModal() {
-            document.getElementById('editModal').classList.add('hidden');
-        }
-
-        // Close modal when clicking outside
-        document.getElementById('editModal').addEventListener('click', (e) => {
-            if (e.target === document.getElementById('editModal')) {
-                closeEditModal();
-            }
-        });
-
-        // Update current time
-        function updateTime() {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-            document.getElementById('current-time').textContent = timeStr;
-        }
-        updateTime();
-        setInterval(updateTime, 1000);
 
         // Python dynamically injects the categories, data, and colors!
         const dynamicLabels = {{ chart_labels | tojson | safe }};
         const dynamicData = {{ chart_data | safe }};
         const dynamicColors = {{ chart_colors | tojson | safe }};
         
-        const ctx = document.getElementById('expenseChart').getContext('2d');
-        const expenseChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: dynamicLabels,
-                datasets: [{
-                    data: dynamicData,
-                    backgroundColor: dynamicColors,
-                    borderWidth: 0,
-                    borderRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 15,
-                            font: { size: 11, weight: 'bold' },
-                            usePointStyle: true,
-                            pointStyle: 'circle'
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        padding: 12,
-                        titleFont: { size: 13, weight: 'bold' },
-                        bodyFont: { size: 11 },
-                        borderColor: 'rgba(255, 255, 255, 0.2)',
-                        borderWidth: 1,
-                        displayColors: true,
-                        callbacks: {
-                            label: function(context) {
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = ((context.raw / total) * 100).toFixed(1);
-                                return `₹${context.raw.toLocaleString('en-IN')} (${percentage}%)`;
+        const chartCanvas = document.getElementById('expenseChart');
+        if (chartCanvas && window.Chart) {
+            new Chart(chartCanvas.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: dynamicLabels,
+                    datasets: [{
+                        data: dynamicData,
+                        backgroundColor: dynamicColors,
+                        borderWidth: 0,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: { size: 11, weight: 'bold' },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleFont: { size: 13, weight: 'bold' },
+                            bodyFont: { size: 11 },
+                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                            borderWidth: 1,
+                            displayColors: true,
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total ? ((context.raw / total) * 100).toFixed(1) : '0.0';
+                                    return `Rs. ${context.raw.toLocaleString('en-IN')} (${percentage}%)`;
+                                }
                             }
                         }
-                    }
-                },
-                cutout: '65%'
-            }
-        });
+                    },
+                    cutout: '65%'
+                }
+            });
+        }
     </script>
 </body>
 </html>
