@@ -957,6 +957,10 @@ def edit_expense(id):
     categories = Category.query.filter_by(
         family_id=current_user.family_id
     ).order_by(Category.name.asc()).all()
+    family_users = User.query.filter_by(
+        family_id=current_user.family_id,
+        is_active=True
+    ).order_by(User.username.asc()).all()
 
     linked_plan = ExpectedExpense.query.filter_by(
         linked_expense_id=expense.id,
@@ -968,6 +972,7 @@ def edit_expense(id):
         amount = request.form.get('amount')
         category_id = request.form.get('category_id')
         expense_date_str = request.form.get('expense_date')
+        user_id = request.form.get('user_id')
 
         category = Category.query.filter_by(
             id=category_id,
@@ -991,6 +996,16 @@ def edit_expense(id):
         expense.amount = expense_amount
         expense.category_id = category.id
         expense.date = expense_date
+        if current_user.user_type == 'family_manager' and user_id:
+            spender = User.query.filter_by(
+                id=user_id,
+                family_id=current_user.family_id,
+                is_active=True
+            ).first()
+            if not spender:
+                flash('Please choose a valid family member for this expense.', 'error')
+                return redirect(url_for('edit_expense', id=id))
+            expense.user_id = spender.id
 
         if linked_plan:
             linked_plan.name = item_name.replace('Budget Plan: ', '', 1).strip() or item_name
@@ -1009,6 +1024,7 @@ def edit_expense(id):
         user=current_user,
         expense=expense,
         categories=categories,
+        family_users=family_users,
         linked_plan=linked_plan,
         next_url=request.referrer or url_for('dashboard')
     )
@@ -1173,15 +1189,36 @@ def copy_expected_plan():
 def add_category():
     name = request.form.get('name', '').strip()
     color = request.form.get('color', '').strip()
+    monthly_limit = request.form.get('monthly_limit', 0)
     if not current_user.family_id:
         flash('Please join a family before adding categories.', 'error')
         return back_or('dashboard')
 
-    # Check if category already exists in this family
-    if name and color and not Category.query.filter_by(name=name, family_id=current_user.family_id).first():
-        new_cat = Category(name=name, color=color, family_id=current_user.family_id)
-        db.session.add(new_cat)
-        db.session.commit()
+    if not (name and color):
+        flash('Please provide a category name and color.', 'error')
+        return back_or('dashboard')
+
+    try:
+        monthly_limit = float(monthly_limit or 0)
+        if monthly_limit < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash('Please provide a valid monthly category limit.', 'error')
+        return back_or('dashboard')
+
+    if Category.query.filter_by(name=name, family_id=current_user.family_id).first():
+        flash('A category with that name already exists.', 'error')
+        return back_or('dashboard')
+
+    new_cat = Category(
+        name=name,
+        color=color,
+        monthly_limit=monthly_limit,
+        family_id=current_user.family_id
+    )
+    db.session.add(new_cat)
+    db.session.commit()
+    flash('Category added successfully.', 'success')
     return back_or('dashboard')
 
 
@@ -1201,17 +1238,43 @@ def apply_category_presets():
         flash('Your family already has all recommended categories.', 'info')
     return back_or('dashboard')
 
-@app.route('/edit_category/<int:id>', methods=['POST'])
+@app.route('/edit_category/<int:id>', methods=['GET', 'POST'])
 @login_required
 def edit_category(id):
     category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
+    other_categories = Category.query.filter(
+        Category.family_id == current_user.family_id,
+        Category.id != id
+    ).order_by(Category.name.asc()).all()
+    expenses_count = Expense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
+    expected_count = ExpectedExpense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
+    current_month = datetime.utcnow()
+    month_spent = db.session.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
+        Expense.category_id == id,
+        Expense.family_id == current_user.family_id,
+        func.strftime('%Y', Expense.date) == str(current_month.year),
+        func.strftime('%m', Expense.date) == f"{current_month.month:02d}"
+    ).scalar() or 0
+
+    if request.method == 'GET':
+        return render_template(
+            'edit_category.html',
+            user=current_user,
+            category=category,
+            other_categories=other_categories,
+            expenses_count=expenses_count,
+            expected_count=expected_count,
+            month_spent=float(month_spent),
+            next_url=request.referrer or url_for('dashboard')
+        )
+
     name = request.form.get('name', '').strip()
     color = request.form.get('color', '').strip()
     monthly_limit = request.form.get('monthly_limit', 0)
     is_fixed = request.form.get('is_fixed') == 'on'
     if not (name and color):
         flash('Please provide a category name and color.', 'error')
-        return back_or('dashboard')
+        return redirect(url_for('edit_category', id=id))
 
     try:
         monthly_limit = float(monthly_limit or 0)
@@ -1219,22 +1282,23 @@ def edit_category(id):
             raise ValueError
     except (ValueError, TypeError):
         flash('Please provide a valid monthly category limit.', 'error')
-        return back_or('dashboard')
+        return redirect(url_for('edit_category', id=id))
     
     # Check if new name already exists in this family (but allow keeping same name)
     existing = Category.query.filter_by(name=name, family_id=current_user.family_id).first()
     if existing and existing.id != id:
         flash('A category with that name already exists.', 'error')
-        return back_or('dashboard')
+        return redirect(url_for('edit_category', id=id))
     
     category.name = name
     category.color = color
     category.monthly_limit = monthly_limit
     category.is_fixed = is_fixed
     db.session.commit()
-    return back_or('dashboard')
+    flash('Category updated successfully.', 'success')
+    return redirect(request.form.get('next') or url_for('dashboard'))
 
-@app.route('/delete_category/<int:id>')
+@app.route('/delete_category/<int:id>', methods=['GET', 'POST'])
 @login_required
 def delete_category(id):
     category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
@@ -1244,9 +1308,33 @@ def delete_category(id):
     if expenses_count == 0 and expected_count == 0:
         db.session.delete(category)
         db.session.commit()
+        flash('Category deleted successfully.', 'success')
     else:
-        flash('Cannot delete a category that has expenses or planned budget items.', 'error')
-    return back_or('dashboard')
+        try:
+            replacement_id = int(request.form.get('replacement_category_id') or 0)
+        except (ValueError, TypeError):
+            replacement_id = 0
+        replacement = Category.query.filter(
+            Category.id == replacement_id,
+            Category.id != id,
+            Category.family_id == current_user.family_id
+        ).first()
+        if request.method == 'POST' and replacement:
+            Expense.query.filter_by(
+                category_id=id,
+                family_id=current_user.family_id
+            ).update({'category_id': replacement.id})
+            ExpectedExpense.query.filter_by(
+                category_id=id,
+                family_id=current_user.family_id
+            ).update({'category_id': replacement.id})
+            db.session.delete(category)
+            db.session.commit()
+            flash(f'Moved existing items to {replacement.name} and deleted the category.', 'success')
+        else:
+            flash('This category has expenses or planned items. Choose a replacement category before deleting it.', 'error')
+            return redirect(url_for('edit_category', id=id))
+    return redirect(request.form.get('next') or url_for('dashboard'))
 
 @app.route('/delete_expense/<int:id>')
 @login_required

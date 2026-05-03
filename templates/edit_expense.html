@@ -53,6 +53,20 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Spender</label>
+                        {% if user.user_type == 'family_manager' %}
+                        <select name="user_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm" required>
+                            {% for member in family_users %}
+                            <option value="{{ member.id }}" {% if member.id == expense.user_id %}selected{% endif %}>{{ member.username }} - {{ member.email }}</option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
+                            {{ expense.user.username }} - ask the family manager to change spender.
+                        </div>
+                        {% endif %}
+                    </div>
                     <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">
                         Save Expense
                     </button>

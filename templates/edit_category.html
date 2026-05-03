@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultSync | Edit Category</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dashboard-body min-h-screen bg-gray-100">
+    <main class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
+        <div class="max-w-4xl mx-auto">
+            <a href="{{ next_url }}" class="inline-flex items-center gap-2 text-blue-600 font-semibold mb-6">
+                <i class="fas fa-arrow-left" aria-hidden="true"></i>Back
+            </a>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="space-y-3 mb-6">
+                        {% for category_name, message in messages %}
+                        <div class="p-4 rounded-lg border text-sm {% if category_name == 'error' %}bg-red-50 border-red-200 text-red-700{% elif category_name == 'success' %}bg-green-50 border-green-200 text-green-700{% else %}bg-blue-50 border-blue-200 text-blue-700{% endif %}">
+                            {{ message }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <section class="lg:col-span-2 bg-white rounded-xl md:rounded-2xl shadow-md p-6 md:p-8 border border-gray-100">
+                    <div class="flex items-start gap-3 mb-6">
+                        <div class="rounded-full p-3" style="background-color: {{ category.color }}22;">
+                            <i class="fas fa-folder-open" style="color: {{ category.color }};" aria-hidden="true"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-bold text-slate-800">Edit Category</h1>
+                            <p class="text-sm text-slate-500 mt-1">Update name, color, monthly limit, and preset status.</p>
+                        </div>
+                    </div>
+
+                    <form method="POST" class="space-y-5">
+                        <input type="hidden" name="next" value="{{ next_url }}">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Category Name</label>
+                            <input type="text" name="name" value="{{ category.name }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm" required>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Color</label>
+                                <input type="color" name="color" value="{{ category.color }}" class="h-12 w-full border-2 border-gray-200 rounded-lg cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Monthly Limit</label>
+                                <input type="number" name="monthly_limit" value="{{ category.monthly_limit or 0 }}" min="0" step="0.01" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm" required>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Quick Colors</label>
+                            <div class="flex flex-wrap gap-2">
+                                {% for color in ['#16a34a', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0ea5e9', '#ea580c', '#64748b', '#059669', '#db2777'] %}
+                                <button type="button" class="h-9 w-9 rounded-full border-2 border-white shadow ring-1 ring-gray-200" style="background-color: {{ color }};" aria-label="Use {{ color }}" onclick="this.closest('form').querySelector('input[name=color]').value='{{ color }}'"></button>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <label class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700">
+                            <input type="checkbox" name="is_fixed" class="mt-1 rounded border-gray-300" {% if category.is_fixed %}checked{% endif %}>
+                            <span>
+                                <span class="block font-semibold">Recommended/Preset category</span>
+                                <span class="block text-xs text-slate-500 mt-1">Use this for necessary categories that should stay organized and visible.</span>
+                            </span>
+                        </label>
+
+                        <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">
+                            <i class="fas fa-save mr-2"></i>Save Category
+                        </button>
+                    </form>
+                </section>
+
+                <aside class="space-y-6">
+                    <section class="bg-white rounded-xl shadow-md p-5 border border-gray-100">
+                        <h2 class="font-bold text-slate-800 mb-4">Category Usage</h2>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex justify-between"><span class="text-slate-500">Actual expenses</span><span class="font-bold text-slate-800">{{ expenses_count }}</span></div>
+                            <div class="flex justify-between"><span class="text-slate-500">Planned items</span><span class="font-bold text-slate-800">{{ expected_count }}</span></div>
+                            <div class="flex justify-between"><span class="text-slate-500">This month</span><span class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(month_spent) }}</span></div>
+                            <div class="flex justify-between"><span class="text-slate-500">Monthly limit</span><span class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(category.monthly_limit or 0) }}</span></div>
+                        </div>
+                    </section>
+
+                    <section class="bg-white rounded-xl shadow-md p-5 border border-red-100">
+                        <h2 class="font-bold text-red-700 mb-2">Delete Category</h2>
+                        {% if expenses_count or expected_count %}
+                        <p class="text-xs text-slate-500 mb-4">This category has existing records. Move them to another category before deleting.</p>
+                        {% else %}
+                        <p class="text-xs text-slate-500 mb-4">This category has no records and can be deleted directly.</p>
+                        {% endif %}
+                        <form method="POST" action="{{ url_for('delete_category', id=category.id) }}" class="space-y-3" onsubmit="return confirm('Delete this category?')">
+                            <input type="hidden" name="next" value="{{ next_url }}">
+                            {% if expenses_count or expected_count %}
+                            <select name="replacement_category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm" required>
+                                <option value="">Move records to...</option>
+                                {% for other in other_categories %}
+                                <option value="{{ other.id }}">{{ other.name }}</option>
+                                {% endfor %}
+                            </select>
+                            {% endif %}
+                            <button type="submit" class="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-700">
+                                <i class="fas fa-trash-alt mr-2"></i>Delete Category
+                            </button>
+                        </form>
+                    </section>
+                </aside>
+            </div>
+        </div>
+    </main>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
