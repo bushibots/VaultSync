@@ -6,186 +6,390 @@
     <title>VaultSync | Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-btn {
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .tab-btn.active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-        <!-- Navigation -->
-        <nav class="bg-white shadow">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center">
-                        <h1 class="text-2xl font-bold text-blue-600">
-                            <i class="fas fa-vault mr-2"></i>VaultSync Admin
-                        </h1>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <span class="text-sm text-gray-700">
-                            <i class="fas fa-user mr-2 text-blue-500"></i>{{ user.username }}
-                        </span>
-                        <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800 font-semibold">Back to Dashboard</a>
-                        <a href="{{ url_for('logout') }}" class="text-red-600 hover:text-red-800 font-semibold">Logout</a>
-                    </div>
+<body class="bg-gray-50">
+    <!-- Navigation Bar -->
+    <nav class="bg-white shadow sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-blue-600">
+                        <i class="fas fa-vault mr-2"></i>VaultSync Admin
+                    </h1>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-sm text-gray-700">
+                        <i class="fas fa-user mr-2 text-blue-500"></i>{{ user.username }}
+                    </span>
+                    <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800 font-semibold text-sm">Back to Dashboard</a>
+                    <a href="{{ url_for('logout') }}" class="text-red-600 hover:text-red-800 font-semibold text-sm">Logout</a>
                 </div>
             </div>
-        </nav>
+        </div>
+    </nav>
 
-        <!-- Main Content -->
-        <main class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                <!-- Family Invite Code Card -->
-                <div class="lg:col-span-1">
-                    <div class="bg-white rounded-xl shadow-md p-8 border border-gray-100">
-                        <div class="flex items-center mb-6">
-                            <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-link text-green-600 text-xl"></i>
-                            </div>
-                            <h2 class="text-xl font-bold text-slate-800">Family Invite Code</h2>
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+                {% for category, message in messages %}
+                    <div class="mb-4 p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
+                        <div class="flex items-center">
+                            <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} mr-3"></i>
+                            <span>{{ message }}</span>
                         </div>
-                        
-                        <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-6 border-2 border-green-200 mb-4">
-                            <p class="text-xs text-gray-600 mb-2 font-semibold">Share this code with family members:</p>
-                            <div class="flex items-center justify-between bg-white rounded-lg p-4 border border-green-200">
-                                <code class="font-mono text-2xl font-bold text-green-600 tracking-widest">{{ invite_code }}</code>
-                                <button class="text-green-600 hover:text-green-800 transition" onclick="copyToClipboard('{{ invite_code }}')">
-                                    <i class="fas fa-copy text-lg"></i>
-                                </button>
-                            </div>
-                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
 
-                        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
-                            <p class="text-sm text-gray-700">
-                                <i class="fas fa-info-circle text-blue-500 mr-2"></i>
-                                Family members can use this code to join your family group.
-                            </p>
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Tab Navigation -->
+        <div class="bg-white rounded-t-xl shadow border-b border-gray-200">
+            <div class="flex space-x-8 px-6 overflow-x-auto">
+                <button class="tab-btn active py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('dashboard')">
+                    <i class="fas fa-chart-line mr-2"></i>Dashboard
+                </button>
+                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('members')">
+                    <i class="fas fa-users mr-2"></i>Members
+                </button>
+                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('budget')">
+                    <i class="fas fa-wallet mr-2"></i>Budget & Limits
+                </button>
+                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('settings')">
+                    <i class="fas fa-cog mr-2"></i>Settings
+                </button>
+            </div>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active bg-white rounded-b-xl shadow p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">
+                <i class="fas fa-tachometer-alt mr-2 text-blue-500"></i>Family Dashboard
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <!-- Budget Health Card -->
+                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold text-gray-700">Family Budget</h3>
+                        <i class="fas fa-wallet text-blue-600 text-2xl"></i>
+                    </div>
+                    <p class="text-3xl font-bold text-blue-600">&#8377;{{ "{:,.0f}".format(family.monthly_budget) }}</p>
+                    <p class="text-xs text-gray-600 mt-1">Monthly budget</p>
+                </div>
+
+                <!-- Current Spending Card -->
+                <div class="bg-gradient-to-br from-red-50 to-orange-50 rounded-lg p-6 border border-red-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold text-gray-700">Current Spending</h3>
+                        <i class="fas fa-shopping-cart text-red-600 text-2xl"></i>
+                    </div>
+                    <p class="text-3xl font-bold text-red-600">&#8377;{{ "{:,.0f}".format(monthly_spending) }}</p>
+                    <p class="text-xs text-gray-600 mt-1">This month</p>
+                </div>
+
+                <!-- Remaining Budget Card -->
+                <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-6 border border-green-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold text-gray-700">Remaining</h3>
+                        <i class="fas fa-piggy-bank text-green-600 text-2xl"></i>
+                    </div>
+                    <p class="text-3xl font-bold text-green-600">&#8377;{{ "{:,.0f}".format(remaining_budget) }}</p>
+                    <p class="text-xs text-gray-600 mt-1">
+                        {% if remaining_budget >= 0 %}
+                            {{ "{:.1f}".format(budget_percentage) }}% spent
+                        {% else %}
+                            OVERSPENT
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+
+            <!-- Budget Progress Bar -->
+            <div class="bg-white rounded-lg p-6 border border-gray-200">
+                <h3 class="font-semibold text-gray-700 mb-4">Monthly Budget Progress</h3>
+                <div class="relative">
+                    <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                        <div class="h-full bg-gradient-to-r {% if budget_percentage <= 80 %}from-green-400 to-emerald-500{% elif budget_percentage <= 100 %}from-yellow-400 to-orange-500{% else %}from-red-400 to-red-600{% endif %} rounded-full" style="width: {{ [budget_percentage, 100]|min }}%"></div>
+                    </div>
+                    <p class="text-sm text-gray-600 mt-2">
+                        {% if budget_percentage <= 50 %}
+                            <i class="fas fa-check-circle text-green-500 mr-1"></i>You're doing great! Less than 50% spent.
+                        {% elif budget_percentage <= 80 %}
+                            <i class="fas fa-info-circle text-yellow-500 mr-1"></i>You're doing well. 50-80% spent.
+                        {% else %}
+                            <i class="fas fa-exclamation-circle text-red-500 mr-1"></i>Getting close to limit. More than 80% spent!
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+
+            <!-- Family Info Card -->
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
+                    <h3 class="font-semibold text-gray-700 mb-4">Family Information</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs text-gray-600 font-semibold">Family Name</p>
+                            <p class="text-lg font-bold text-gray-800">{{ family.name }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600 font-semibold">Total Members</p>
+                            <p class="text-lg font-bold text-gray-800">{{ family_members|length }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600 font-semibold">Created</p>
+                            <p class="text-lg font-bold text-gray-800">{{ family.created_at.strftime('%b %d, %Y') }}</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Family Members & Management -->
-                <div class="lg:col-span-2">
-                    <!-- Add Member Form -->
-                    <div class="bg-white rounded-xl shadow-md p-8 border border-gray-100 mb-8">
-                        <div class="flex items-center mb-6">
-                            <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-user-plus text-purple-600 text-xl"></i>
-                            </div>
-                            <h2 class="text-xl font-bold text-slate-800">Assign Existing Member</h2>
-                        </div>
+                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
+                    <h3 class="font-semibold text-gray-700 mb-4">Invite Code</h3>
+                    <div class="flex items-center justify-between bg-white rounded-lg p-4 border-2 border-blue-200 mb-2">
+                        <code class="font-mono text-xl font-bold text-blue-600 tracking-widest">{{ family.invite_code }}</code>
+                        <button class="text-blue-600 hover:text-blue-800 transition" onclick="copyToClipboard('{{ family.invite_code }}')">
+                            <i class="fas fa-copy text-lg"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-600">Share this code with family members to invite them</p>
+                </div>
+            </div>
+        </div>
 
-                        <form method="POST" class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-search mr-1 text-purple-500"></i>Member Username
-                                </label>
-                                <input 
-                                    type="text" 
-                                    name="member_username" 
-                                    class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none" 
-                                    placeholder="Enter member's username" 
-                                    required
-                                >
-                                <p class="text-xs text-gray-500 mt-2">
-                                    <i class="fas fa-lightbulb mr-1"></i>Type the exact username of the member to assign to your family.
-                                </p>
+        <!-- Members Tab -->
+        <div id="members" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">
+                <i class="fas fa-users mr-2 text-purple-500"></i>Family Members
+            </h2>
+
+            <!-- Add Member Form -->
+            <div class="bg-purple-50 rounded-lg p-6 border border-purple-200 mb-8">
+                <h3 class="font-semibold text-gray-700 mb-4">Add Existing Member</h3>
+                <form method="POST" action="{{ url_for('admin_panel') }}" class="space-y-4">
+                    <div class="flex gap-3">
+                        <input
+                            type="text"
+                            name="member_username"
+                            placeholder="Enter member's username"
+                            class="flex-1 border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none"
+                            required
+                        >
+                        <button type="submit" class="bg-purple-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-purple-700 duration-200 flex items-center gap-2 whitespace-nowrap">
+                            <i class="fas fa-user-plus"></i>Add Member
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-600">
+                        <i class="fas fa-lightbulb mr-1"></i>Enter the exact username of the user you want to add to your family
+                    </p>
+                </form>
+            </div>
+
+            <!-- Members List -->
+            <div>
+                <h3 class="font-semibold text-gray-700 mb-4">Members ({{ family_members|length }})</h3>
+                {% if family_members %}
+                    <div class="space-y-3">
+                        {% for member in family_members %}
+                        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-100 hover:shadow-md transition">
+                            <div class="flex items-center gap-4 flex-1 min-w-0">
+                                <div class="bg-indigo-600 text-white rounded-full w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                                    {{ member.username[0].upper() }}
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="font-semibold text-gray-800 truncate">{{ member.username }}</p>
+                                    <p class="text-xs text-gray-600 truncate">{{ member.email }}</p>
+                                </div>
                             </div>
-                            <button type="submit" class="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 duration-200 flex items-center justify-center gap-2">
-                                <i class="fas fa-plus"></i>Assign Member
+                            <div class="flex items-center gap-3 flex-shrink-0">
+                                {% if member.user_type == 'family_manager' %}
+                                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700">
+                                        <i class="fas fa-crown"></i>Manager
+                                    </span>
+                                    {% if member.id != user.id %}
+                                    <form method="POST" action="{{ url_for('demote_member', member_id=member.id) }}" class="inline">
+                                        <button type="submit" class="px-3 py-1 text-xs font-semibold text-blue-600 hover:text-blue-800" title="Demote to Member" onclick="return confirm('Demote this member?')">
+                                            <i class="fas fa-arrow-down"></i>Demote
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-700">
+                                        <i class="fas fa-user"></i>Member
+                                    </span>
+                                    <form method="POST" action="{{ url_for('promote_member', member_id=member.id) }}" class="inline">
+                                        <button type="submit" class="px-3 py-1 text-xs font-semibold text-green-600 hover:text-green-800" title="Promote to Manager">
+                                            <i class="fas fa-arrow-up"></i>Promote
+                                        </button>
+                                    </form>
+                                {% endif %}
+                                {% if member.id != user.id %}
+                                <form method="POST" action="{{ url_for('remove_member', member_id=member.id) }}" class="inline">
+                                    <button type="submit" class="px-3 py-1 text-xs font-semibold text-red-600 hover:text-red-800" title="Remove from family" onclick="return confirm('Remove this member from the family?')">
+                                        <i class="fas fa-trash-alt"></i>Remove
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+                        <i class="fas fa-users text-4xl text-gray-300 mb-3"></i>
+                        <p class="text-gray-500 font-semibold">No family members yet</p>
+                        <p class="text-gray-400 text-sm mt-1">Add members using their username or share the invite code above</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Budget & Limits Tab -->
+        <div id="budget" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">
+                <i class="fas fa-wallet mr-2 text-green-500"></i>Budget & Limits
+            </h2>
+
+            <!-- Update Family Budget -->
+            <div class="bg-green-50 rounded-lg p-6 border border-green-200 mb-8">
+                <h3 class="font-semibold text-gray-700 mb-4">Monthly Family Budget</h3>
+                <form method="POST" action="{{ url_for('update_budget') }}" class="space-y-4">
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Set Budget Amount</label>
+                            <input
+                                type="number"
+                                name="monthly_budget"
+                                value="{{ family.monthly_budget }}"
+                                min="1000"
+                                step="500"
+                                class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-green-500 focus:outline-none"
+                                required
+                            >
+                        </div>
+                        <div class="flex items-end">
+                            <button type="submit" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 duration-200 flex items-center gap-2">
+                                <i class="fas fa-save"></i>Save Budget
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-600">
+                        <i class="fas fa-info-circle mr-1"></i>Minimum budget is Rs. 1000
+                    </p>
+                </form>
+            </div>
+
+            <!-- Category Limits Info -->
+            <div class="bg-blue-50 rounded-lg p-6 border border-blue-200">
+                <h3 class="font-semibold text-gray-700 mb-4">Category Spending Limits</h3>
+                <p class="text-sm text-gray-700 mb-4">You can set spending limits for individual categories from the main Dashboard. This helps you track spending in specific areas of your budget.</p>
+                <a href="{{ url_for('dashboard') }}" class="inline-flex items-center gap-2 bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">
+                    <i class="fas fa-arrow-right"></i>Go to Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">
+                <i class="fas fa-cog mr-2 text-gray-600"></i>Family Settings
+            </h2>
+
+            <!-- Update Family Name -->
+            <div class="bg-slate-50 rounded-lg p-6 border border-gray-200 mb-8">
+                <h3 class="font-semibold text-gray-700 mb-4">Change Family Name</h3>
+                <form method="POST" action="{{ url_for('update_family') }}" class="space-y-4">
+                    <div class="flex gap-3">
+                        <input
+                            type="text"
+                            name="family_name"
+                            value="{{ family.name }}"
+                            minlength="2"
+                            class="flex-1 border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none"
+                            required
+                        >
+                        <button type="submit" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 duration-200 flex items-center gap-2 whitespace-nowrap">
+                            <i class="fas fa-save"></i>Update Name
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="bg-red-50 rounded-lg p-6 border-2 border-red-300">
+                <h3 class="font-bold text-red-700 mb-4">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>Danger Zone
+                </h3>
+
+                <div class="space-y-4">
+                    <!-- Archive Family -->
+                    <div class="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
+                        <div>
+                            <p class="font-semibold text-gray-800">Archive Family</p>
+                            <p class="text-xs text-gray-600 mt-1">Hide this family from view but keep the data</p>
+                        </div>
+                        <form method="POST" action="{{ url_for('archive_family') }}" class="inline">
+                            <button type="submit" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 duration-200 text-sm" onclick="return confirm('Archive this family? You can unarchive it later.')">
+                                <i class="fas fa-box mr-1"></i>Archive
                             </button>
                         </form>
                     </div>
 
-                    <!-- Family Members List -->
-                    <div class="bg-white rounded-xl shadow-md p-8 border border-gray-100">
-                        <div class="flex items-center mb-6">
-                            <div class="bg-indigo-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-users text-indigo-600 text-xl"></i>
-                            </div>
-                            <h2 class="text-xl font-bold text-slate-800">Family Members ({{ family_members|length }})</h2>
+                    <!-- Delete Family -->
+                    <div class="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
+                        <div>
+                            <p class="font-semibold text-gray-800">Delete Family</p>
+                            <p class="text-xs text-gray-600 mt-1">Permanently delete family, expenses, and all data (CANNOT be undone)</p>
                         </div>
-
-                        <div class="space-y-3">
-                            {% if family_members %}
-                                {% for member in family_members %}
-                                <div class="flex items-center justify-between p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-100 hover:shadow-md transition">
-                                    <div class="flex items-center gap-4 flex-1 min-w-0">
-                                        <div class="bg-indigo-600 text-white rounded-full w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                                            {{ member.username[0].upper() }}
-                                        </div>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="font-semibold text-gray-800 truncate">{{ member.username }}</p>
-                                            <p class="text-xs text-gray-600">{{ member.email }}</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-center gap-3 flex-shrink-0">
-                                        {% if member.role == 'admin' %}
-                                            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700">
-                                                <i class="fas fa-crown"></i>Admin
-                                            </span>
-                                        {% else %}
-                                            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-700">
-                                                <i class="fas fa-user"></i>Member
-                                            </span>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            {% else %}
-                                <div class="text-center py-8">
-                                    <i class="fas fa-users text-4xl text-gray-300 mb-3"></i>
-                                    <p class="text-gray-500 font-semibold">No family members yet</p>
-                                </div>
-                            {% endif %}
-                        </div>
+                        <form method="POST" action="{{ url_for('delete_family') }}" class="inline">
+                            <button type="submit" class="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 duration-200 text-sm" onclick="return confirm('PERMANENTLY DELETE this family and all data? This cannot be undone!')">
+                                <i class="fas fa-trash-alt mr-1"></i>Delete
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
-
-            <!-- Info Section -->
-            <div class="mt-12 bg-white rounded-xl shadow-md p-8 border border-gray-100">
-                <h3 class="text-lg font-bold text-slate-800 mb-4">
-                    <i class="fas fa-question-circle text-blue-500 mr-2"></i>How to Invite Family Members
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="flex gap-4">
-                        <div class="flex-shrink-0">
-                            <div class="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white">
-                                <i class="fas fa-copy"></i>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 class="font-semibold text-gray-800 mb-1">Copy the Code</h4>
-                            <p class="text-sm text-gray-600">Click the copy button to get your family's invite code.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-4">
-                        <div class="flex-shrink-0">
-                            <div class="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white">
-                                <i class="fas fa-share"></i>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 class="font-semibold text-gray-800 mb-1">Share with Family</h4>
-                            <p class="text-sm text-gray-600">Share the code with family members you want to add.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-4">
-                        <div class="flex-shrink-0">
-                            <div class="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white">
-                                <i class="fas fa-user-plus"></i>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 class="font-semibold text-gray-800 mb-1">Assign Members</h4>
-                            <p class="text-sm text-gray-600">Once they register, use the form above to add them.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
+        </div>
     </div>
 
     <script>
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+
+            // Add active class to clicked button
+            event.target.closest('.tab-btn').classList.add('active');
+        }
+
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
                 alert('Invite code copied to clipboard!');

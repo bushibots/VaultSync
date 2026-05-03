@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, jsonify, Response, 
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 from flask_migrate import Migrate
 import csv
+import os
 from io import StringIO
 from datetime import datetime
 from sqlalchemy import func
@@ -9,8 +10,9 @@ from models import db, User, Category, Expense, ExpectedExpense, Family
 
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///vaultsync.db'
+app.config['SECRET_KEY'] = 'your_super_secret_static_key_here_use_this_for_production'
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'vaultsync.db')
 db.init_app(app)
 migrate = Migrate(app, db)
 
@@ -23,56 +25,106 @@ login_manager.login_message_category = 'info'
 def load_user(user_id):
     return db.session.get(User, int(user_id))
 
+def back_or(endpoint):
+    """Redirect back to the submitting page, falling back to a known route."""
+    return redirect(request.referrer or url_for(endpoint))
+
 # --- AUTH ROUTES ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """User registration"""
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
-    
+
     if request.method == 'POST':
+        user_type = request.form.get('user_type', 'family_member')
         username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         password_confirm = request.form.get('password_confirm', '')
-        
-        # Validation
+
+        # Basic validation
         if not username or len(username) < 3:
             flash('Username must be at least 3 characters long.', 'error')
             return redirect(url_for('register'))
-        
+
         if not email or '@' not in email:
             flash('Please provide a valid email address.', 'error')
             return redirect(url_for('register'))
-        
+
         if not password or len(password) < 6:
             flash('Password must be at least 6 characters long.', 'error')
             return redirect(url_for('register'))
-        
+
         if password != password_confirm:
             flash('Passwords do not match.', 'error')
             return redirect(url_for('register'))
-        
+
         # Check if user already exists
         if User.query.filter_by(username=username).first():
             flash('Username already exists. Please choose another.', 'error')
             return redirect(url_for('register'))
-        
+
         if User.query.filter_by(email=email).first():
             flash('Email already registered. Please log in instead.', 'error')
             return redirect(url_for('register'))
-        
-        # Create a new family for this user
-        family = Family(name=f"{username}'s Family")
-        user = User(username=username, email=email, role='member', family=family)
-        user.set_password(password)
-        db.session.add(family)
-        db.session.add(user)
-        db.session.commit()
-        
-        flash('Registration successful! Please log in.', 'success')
+
+        # Handle Family Manager registration
+        if user_type == 'family_manager':
+            family_name = request.form.get('family_name', '').strip()
+            initial_budget = request.form.get('initial_budget', 170000)
+
+            if not family_name or len(family_name) < 2:
+                flash('Family name must be at least 2 characters long.', 'error')
+                return redirect(url_for('register'))
+
+            try:
+                initial_budget = float(initial_budget)
+                if initial_budget < 1000:
+                    flash('Initial budget must be at least 1000.', 'error')
+                    return redirect(url_for('register'))
+            except (ValueError, TypeError):
+                flash('Please provide a valid budget amount.', 'error')
+                return redirect(url_for('register'))
+
+            # Create family
+            family = Family(name=family_name, monthly_budget=initial_budget)
+            db.session.add(family)
+            db.session.flush()
+
+            # Create user as family manager
+            user = User(username=username, email=email, user_type='family_manager', family_id=family.id)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush()
+            family.created_by_user_id = user.id
+            db.session.commit()
+
+            flash('Family created successfully! Please log in.', 'success')
+
+        # Handle Family Member registration
+        else:
+            invite_code = request.form.get('invite_code', '').strip()
+
+            if not invite_code:
+                flash('Please provide a family invite code to join.', 'error')
+                return redirect(url_for('register'))
+
+            family = Family.query.filter_by(invite_code=invite_code).first()
+            if not family:
+                flash('Invalid invite code. Please check and try again.', 'error')
+                return redirect(url_for('register'))
+
+            # Create user as family member
+            user = User(username=username, email=email, user_type='family_member', family_id=family.id)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+
+            flash('Successfully joined the family! Please log in.', 'success')
+
         return redirect(url_for('login'))
-    
+
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -108,6 +160,27 @@ def logout():
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
 
+@app.route('/join_family', methods=['POST'])
+@login_required
+def join_family():
+    """Join a family using invite code"""
+    invite_code = request.form.get('invite_code', '').strip()
+
+    if not invite_code:
+        flash('Please provide an invite code.', 'error')
+        return redirect(url_for('dashboard'))
+
+    family = Family.query.filter_by(invite_code=invite_code).first()
+    if not family:
+        flash('Invalid invite code. Please check and try again.', 'error')
+        return redirect(url_for('dashboard'))
+
+    # Update user's family
+    current_user.family_id = family.id
+    db.session.commit()
+    flash('You have successfully joined the family!', 'success')
+    return redirect(url_for('dashboard'))
+
 # --- ROUTES ---
 @app.route('/')
 def dashboard():
@@ -137,7 +210,7 @@ def dashboard():
 
     # Math is now isolated to the selected month!
     total_spent = sum(exp.amount for exp in all_expenses)
-    monthly_income = 170000
+    monthly_income = current_user.family.monthly_budget if current_user.family else 0
     projected_savings = monthly_income - total_spent
 
     # Compute per-category totals using a grouped query to ensure accuracy
@@ -235,39 +308,53 @@ def my_spendings():
 @app.route('/add_expense', methods=['POST'])
 @login_required
 def add_expense():
-    item_name = request.form.get('item_name')
+    item_name = request.form.get('item_name', '').strip()
     amount = request.form.get('amount')
     category_id = request.form.get('category_id')
     expense_date_str = request.form.get('expense_date')
 
-    # Convert the date string from the form into a Python Date object
-    if expense_date_str:
-        expense_date = datetime.strptime(expense_date_str, '%Y-%m-%d').date()
-    else:
-        expense_date = datetime.utcnow().date()
-    
+    if not current_user.family_id:
+        flash('Please join a family before adding expenses.', 'error')
+        return back_or('dashboard')
+
+    category = Category.query.filter_by(
+        id=category_id,
+        family_id=current_user.family_id
+    ).first()
+
+    if not (item_name and amount and category):
+        flash('Please provide a valid item, amount, and family category.', 'error')
+        return back_or('dashboard')
+
+    try:
+        expense_amount = float(amount)
+        expense_date = datetime.strptime(expense_date_str, '%Y-%m-%d').date() if expense_date_str else datetime.utcnow().date()
+    except (ValueError, TypeError):
+        flash('Please provide a valid expense amount and date.', 'error')
+        return back_or('dashboard')
+
     new_expense = Expense(
-        date=expense_date, 
-        item_name=item_name, 
-        amount=float(amount), 
-        category_id=int(category_id), 
+        date=expense_date,
+        item_name=item_name,
+        amount=expense_amount,
+        category_id=category.id,
         user_id=current_user.id,
         family_id=current_user.family_id
     )
     db.session.add(new_expense)
     db.session.commit()
-    
+
     # Send them back to wherever they submitted the form from
-    return redirect(request.referrer)
+    return back_or('dashboard')
 
 
 @app.route('/add_expected', methods=['POST'])
 @login_required
 def add_expected():
     # Admin-only access
-    if not current_user.is_authenticated or (hasattr(current_user, 'role') and current_user.role != 'admin'):
-        flash('Unauthorized: admin only', 'error')
-        return redirect(request.referrer)
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return back_or('dashboard')
 
     name = request.form.get('name')
     amount = request.form.get('amount')
@@ -277,63 +364,87 @@ def add_expected():
 
     if not (name and amount and category_id and month and year):
         flash('Please provide name, amount, category, month and year.', 'error')
-        return redirect(request.referrer)
+        return back_or('dashboard')
+
+    category = Category.query.filter_by(
+        id=category_id,
+        family_id=current_user.family_id
+    ).first()
+    if not category:
+        flash('Please choose a valid family category.', 'error')
+        return back_or('dashboard')
+
+    try:
+        expected_amount = float(amount)
+        expected_month = int(month)
+        expected_year = int(year)
+    except (ValueError, TypeError):
+        flash('Please provide a valid amount, month, and year.', 'error')
+        return back_or('dashboard')
 
     new_expected = ExpectedExpense(
         name=name.strip(),
-        amount=float(amount),
-        category_id=int(category_id),
-        month=int(month),
-        year=int(year),
+        amount=expected_amount,
+        category_id=category.id,
+        month=expected_month,
+        year=expected_year,
         family_id=current_user.family_id
     )
     db.session.add(new_expected)
     db.session.commit()
-    return redirect(request.referrer)
+    return back_or('dashboard')
 
 
 @app.route('/toggle_expected/<int:id>')
 @login_required
 def toggle_expected(id):
-    if not current_user.is_authenticated or (hasattr(current_user, 'role') and current_user.role != 'admin'):
-        flash('Unauthorized: admin only', 'error')
-        return redirect(request.referrer)
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
+        return back_or('dashboard')
     ee = ExpectedExpense.query.filter_by(
-        id=id, 
+        id=id,
         family_id=current_user.family_id
     ).first_or_404()
     ee.is_paid = not ee.is_paid
     db.session.commit()
-    return redirect(request.referrer)
+    return back_or('dashboard')
 
 @app.route('/add_category', methods=['POST'])
 @login_required
 def add_category():
-    name = request.form.get('name')
-    color = request.form.get('color')
+    name = request.form.get('name', '').strip()
+    color = request.form.get('color', '').strip()
+    if not current_user.family_id:
+        flash('Please join a family before adding categories.', 'error')
+        return back_or('dashboard')
+
     # Check if category already exists in this family
-    if not Category.query.filter_by(name=name, family_id=current_user.family_id).first():
+    if name and color and not Category.query.filter_by(name=name, family_id=current_user.family_id).first():
         new_cat = Category(name=name, color=color, family_id=current_user.family_id)
         db.session.add(new_cat)
         db.session.commit()
-    return redirect(request.referrer)
+    return back_or('dashboard')
 
 @app.route('/edit_category/<int:id>', methods=['POST'])
 @login_required
 def edit_category(id):
     category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
-    name = request.form.get('name')
-    color = request.form.get('color')
+    name = request.form.get('name', '').strip()
+    color = request.form.get('color', '').strip()
+    if not (name and color):
+        flash('Please provide a category name and color.', 'error')
+        return back_or('dashboard')
     
     # Check if new name already exists in this family (but allow keeping same name)
     existing = Category.query.filter_by(name=name, family_id=current_user.family_id).first()
     if existing and existing.id != id:
-        return redirect(request.referrer)
+        flash('A category with that name already exists.', 'error')
+        return back_or('dashboard')
     
     category.name = name
     category.color = color
     db.session.commit()
-    return redirect(request.referrer)
+    return back_or('dashboard')
 
 @app.route('/delete_category/<int:id>')
 @login_required
@@ -344,7 +455,9 @@ def delete_category(id):
     if expenses_count == 0:
         db.session.delete(category)
         db.session.commit()
-    return redirect(request.referrer)
+    else:
+        flash('Cannot delete a category that has expenses.', 'error')
+    return back_or('dashboard')
 
 @app.route('/delete_expense/<int:id>')
 @login_required
@@ -355,7 +468,7 @@ def delete_expense(id):
     ).first_or_404()
     db.session.delete(expense_to_delete)
     db.session.commit()
-    return redirect(request.referrer)
+    return back_or('dashboard')
 
 @app.route('/export_ai_data')
 @login_required
@@ -366,7 +479,7 @@ def export_ai_data():
         writer = csv.writer(data)
         writer.writerow(('Date', 'Spender', 'Item Name', 'Category', 'Amount'))
         for exp in expenses:
-            writer.writerow((exp.date.strftime("%Y-%m-%d"), exp.spender.username, exp.category.name, exp.amount))
+            writer.writerow((exp.date.strftime("%Y-%m-%d"), exp.user.username, exp.item_name, exp.category.name, exp.amount))
             yield data.getvalue()
             data.seek(0)
             data.truncate(0)
@@ -376,67 +489,203 @@ def export_ai_data():
 @login_required
 def admin_panel():
     """Admin panel for family management"""
-    if not current_user.is_authenticated or current_user.role != 'admin':
-        flash('Unauthorized: admin only', 'error')
+    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+        flash('Unauthorized: family manager only', 'error')
         return redirect(url_for('dashboard'))
-    
+
     if request.method == 'POST':
         member_username = request.form.get('member_username', '').strip()
-        
-        # Find user by username in the same family
-        member = User.query.filter_by(username=member_username, family_id=current_user.family_id).first()
+
+        # Find user by username (case-insensitive) but NOT in the current family
+        member = User.query.filter(
+            func.lower(User.username) == func.lower(member_username)
+        ).first()
+
         if not member:
-            flash(f'User "{member_username}" not found in your family.', 'error')
-        else:
+            flash(f'User "{member_username}" not found in the system.', 'error')
+        elif member.family_id == current_user.family_id:
             flash(f'User "{member_username}" is already in your family.', 'info')
-        
+        else:
+            # Update the member's family_id to match the admin's family
+            member.family_id = current_user.family_id
+            db.session.commit()
+            flash(f'User "{member_username}" has been added to your family!', 'success')
+
         return redirect(url_for('admin_panel'))
-    
+
     # Fetch all members in this family
     family_members = User.query.filter_by(family_id=current_user.family_id).all()
-    
-    return render_template('admin_panel.html', 
+
+    # Fetch family data
+    family = current_user.family
+
+    # Calculate spending stats
+    current_date = datetime.utcnow()
+    month_str = f"{current_date.month:02d}"
+    year_str = str(current_date.year)
+
+    monthly_spending = db.session.query(
+        func.sum(Expense.amount).label('total')
+    ).filter(
+        func.strftime('%Y', Expense.date) == year_str,
+        func.strftime('%m', Expense.date) == month_str,
+        Expense.family_id == current_user.family_id
+    ).scalar() or 0.0
+
+    remaining_budget = family.monthly_budget - monthly_spending if family.monthly_budget else 0
+
+    return render_template('admin_panel.html',
                           user=current_user,
+                          family=family,
                           family_members=family_members,
-                          invite_code=current_user.family.invite_code)
+                          monthly_spending=monthly_spending,
+                          remaining_budget=remaining_budget,
+                          budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0)
+
+
+@app.route('/admin_panel/budget', methods=['POST'])
+@login_required
+def update_budget():
+    """Update family monthly budget"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    budget = request.form.get('monthly_budget')
+    try:
+        budget = float(budget)
+        if budget < 1000:
+            flash('Budget must be at least 1000.', 'error')
+            return redirect(url_for('admin_panel'))
+
+        current_user.family.monthly_budget = budget
+        db.session.commit()
+        flash('Family budget updated successfully!', 'success')
+    except (ValueError, TypeError):
+        flash('Please enter a valid budget amount.', 'error')
+
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/members/<int:member_id>/promote', methods=['POST'])
+@login_required
+def promote_member(member_id):
+    """Promote member to family manager"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    member = User.query.filter_by(id=member_id, family_id=current_user.family_id).first_or_404()
+    member.user_type = 'family_manager'
+    db.session.commit()
+    flash(f'{member.username} has been promoted to Family Manager!', 'success')
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/members/<int:member_id>/demote', methods=['POST'])
+@login_required
+def demote_member(member_id):
+    """Demote member from family manager"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    member = User.query.filter_by(id=member_id, family_id=current_user.family_id).first_or_404()
+
+    # Prevent demoting the creator
+    if member.id == current_user.family.created_by_user_id and member.id != current_user.id:
+        flash('Cannot demote the family creator.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    member.user_type = 'family_member'
+    db.session.commit()
+    flash(f'{member.username} has been demoted to Family Member!', 'success')
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/members/<int:member_id>/remove', methods=['POST'])
+@login_required
+def remove_member(member_id):
+    """Remove member from family"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    member = User.query.filter_by(id=member_id, family_id=current_user.family_id).first_or_404()
+
+    # Prevent removing yourself
+    if member.id == current_user.id:
+        flash('You cannot remove yourself from the family.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    member.family_id = None
+    db.session.commit()
+    flash(f'{member.username} has been removed from the family.', 'success')
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/family/update', methods=['POST'])
+@login_required
+def update_family():
+    """Update family settings"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    family_name = request.form.get('family_name', '').strip()
+
+    if not family_name or len(family_name) < 2:
+        flash('Family name must be at least 2 characters long.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    current_user.family.name = family_name
+    db.session.commit()
+    flash('Family name updated successfully!', 'success')
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/family/archive', methods=['POST'])
+@login_required
+def archive_family():
+    """Archive family"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    current_user.family.is_archived = True
+    db.session.commit()
+    flash('Family has been archived.', 'success')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/admin_panel/family/delete', methods=['POST'])
+@login_required
+def delete_family():
+    """Delete family - PERMANENT"""
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    family_id = current_user.family_id
+
+    # Delete all expenses, categories, expected expenses
+    Expense.query.filter_by(family_id=family_id).delete()
+    Category.query.filter_by(family_id=family_id).delete()
+    ExpectedExpense.query.filter_by(family_id=family_id).delete()
+
+    # Remove all members from family
+    User.query.filter_by(family_id=family_id).update({User.family_id: None})
+
+    # Delete family
+    Family.query.filter_by(id=family_id).delete()
+    db.session.commit()
+
+    flash('Family has been permanently deleted.', 'success')
+    return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     with app.app_context():
-        # Drop all tables and recreate (for development - removes old schema)
-        db.drop_all()
         db.create_all()
-        
-        # Create a Family
-        family = Family(name='Demo Family')
-        db.session.add(family)
-        db.session.flush()  # Flush to get family.id
-        
-        # Seed default Users (with hashed passwords)
-        dad = User(username='Dad', email='dad@family.com', role='admin', family_id=family.id)
-        dad.set_password('password123')
-        
-        arish = User(username='Mohd Arish', email='arish@family.com', role='member', family_id=family.id)
-        arish.set_password('password123')
-        
-        db.session.add(dad)
-        db.session.add(arish)
-        db.session.commit()
-        
-        # Seed default Categories for the family
-        db.session.add_all([
-            Category(name='Housing & Utilities', color='#3b82f6', family_id=family.id),
-            Category(name='Groceries & Food', color='#10b981', family_id=family.id),
-            Category(name='Healthcare', color='#ef4444', family_id=family.id),
-            Category(name='Transportation', color='#f59e0b', family_id=family.id),
-            Category(name='Debt Repayment', color='#8b5cf6', family_id=family.id),
-            Category(name='Miscellaneous', color='#64748b', family_id=family.id)
-        ])
-        db.session.commit()
-        
-        print("✓ Database initialized with demo family and users")
-        print("  Family Name: Demo Family")
-        print("  Family Invite Code:", family.invite_code)
-        print("  Username: Dad (admin) / Mohd Arish (member)")
-        print("  Password: password123")
-    
+        print("Database tables created successfully")
+
     app.run(debug=True)

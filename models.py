@@ -11,8 +11,11 @@ class Family(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, index=True)
     invite_code = db.Column(db.String(20), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(12))
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    monthly_budget = db.Column(db.Float, default=170000)
+    is_archived = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    users = db.relationship('User', backref='family', lazy=True)
+    users = db.relationship('User', backref='family', lazy=True, foreign_keys='User.family_id')
     categories = db.relationship('Category', backref='family', lazy=True)
     expenses = db.relationship('Expense', backref='family', lazy=True)
     expected_expenses = db.relationship('ExpectedExpense', backref='family', lazy=True)
@@ -22,10 +25,11 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False, index=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), default='member')
-    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    user_type = db.Column(db.String(20), default='family_member')
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    expenses = db.relationship('Expense', backref='spender', lazy=True)
+    expenses = db.relationship('Expense', backref='user', lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -63,3 +67,12 @@ class ExpectedExpense(db.Model):
     family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
     month = db.Column(db.Integer, nullable=False)
     year = db.Column(db.Integer, nullable=False)
+
+
+class AuditLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    action = db.Column(db.String(100), nullable=False)
+    details = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

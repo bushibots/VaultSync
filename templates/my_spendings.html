@@ -12,8 +12,8 @@
     <aside class="w-64 bg-slate-900 h-full p-6 text-white flex flex-col">
         <h2 class="text-2xl font-bold mb-8 tracking-wider text-blue-400">VaultSync.</h2>
         <nav class="flex-1 space-y-4">
-            <a href="/" class="block py-2.5 px-4 rounded transition hover:bg-slate-800">Family Overview</a>
-            <a href="/my_spendings" class="block py-2.5 px-4 rounded transition bg-blue-600 hover:bg-blue-500">My Daily Ledger</a>
+            <a href="{{ url_for('dashboard') }}" class="block py-2.5 px-4 rounded transition hover:bg-slate-800">Family Overview</a>
+            <a href="{{ url_for('my_spendings') }}" class="block py-2.5 px-4 rounded transition bg-blue-600 hover:bg-blue-500">My Daily Ledger</a>
         </nav>
         <div class="mt-auto">
             <p class="text-sm text-slate-400">Logged in as: <span class="font-bold text-white">{{ user.username }}</span></p>
@@ -25,7 +25,7 @@
         <header class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold text-slate-800">My Personal Ledger</h1>
             <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-sm font-bold">
-                My Total: ₹{{ "{:,.0f}".format(total_spent) }}
+                My Total: &#8377;{{ "{:,.0f}".format(total_spent) }}
             </div>
         </header>
 
@@ -35,7 +35,7 @@
             <div class="lg:col-span-1">
                 <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 sticky top-0">
                     <h2 class="text-xl font-bold text-slate-800 mb-6">Log Daily Expense</h2>
-                    <form action="/add_expense" method="POST" class="space-y-4">
+                    <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-4">
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -57,7 +57,7 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Amount (₹)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Amount (Rs.)</label>
                             <input type="number" name="amount" class="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 150" required>
                         </div>
                         
@@ -91,9 +91,9 @@
                                             {{ exp.category.name }}
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3 text-slate-800 font-bold">₹{{ "{:,.0f}".format(exp.amount) }}</td>
+                                    <td class="px-4 py-3 text-slate-800 font-bold">&#8377;{{ "{:,.0f}".format(exp.amount) }}</td>
                                     <td class="px-4 py-3">
-                                        <a href="/delete_expense/{{ exp.id }}" class="text-red-500 hover:text-red-700 text-xs font-bold uppercase tracking-wide">Delete</a>
+                                        <a href="{{ url_for('delete_expense', id=exp.id) }}" class="text-red-500 hover:text-red-700 text-xs font-bold uppercase tracking-wide" onclick="return confirm('Delete this expense?')">Delete</a>
                                     </td>
                                 </tr>
                                 {% else %}
