@@ -294,7 +294,7 @@ body.dark-mode .bg-red-50 {
     overflow: hidden;
     overscroll-behavior: contain;
     padding: clamp(1rem, 2.4vh, 1.5rem) !important;
-    z-index: 60;
+    z-index: 40;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -339,8 +339,11 @@ body.dark-mode .bg-red-50 {
         transform: translateX(-100%);
         width: min(20rem, calc(100vw - 2rem));
         height: 100vh;
+        height: 100dvh;
         transition: transform 0.3s ease, box-shadow 0.3s ease;
         box-shadow: none;
+        z-index: 40;
+        padding-top: calc(clamp(1rem, 2.4vh, 1.5rem) + 60px) !important;
     }
     .sidebar.active {
         transform: translateX(0);
@@ -351,6 +354,12 @@ body.dark-mode .bg-red-50 {
         overflow: hidden;
         position: fixed;
         width: 100%;
+    }
+    
+    /* Adjust close button position to account for mobile header */
+    .sidebar #close-menu {
+        top: 16px;
+        right: 16px;
     }
 }
 
@@ -408,7 +417,7 @@ body.dark-mode .bg-red-50 {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0);
-    z-index: 55;
+    z-index: 39;
     display: block;
     pointer-events: none;
     transition: background-color 0.3s ease;
@@ -417,6 +426,7 @@ body.dark-mode .bg-red-50 {
 .sidebar-overlay.active {
     background-color: rgba(0, 0, 0, 0.5);
     pointer-events: auto;
+    z-index: 39;
 }
 
 .sidebar-overlay.active.fading {
@@ -435,7 +445,7 @@ body.dark-mode .bg-red-50 {
     position: fixed;
     inset: 0;
     background-color: rgba(0, 0, 0, 0.5);
-    z-index: 50;
+    z-index: 70;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -639,14 +649,11 @@ body.dark-mode .bg-red-50 {
     /* Improve sidebar performance with GPU acceleration */
     .sidebar {
         will-change: transform;
-        transform: translateZ(0);
         backface-visibility: hidden;
     }
 
-    /* Mobile header adjustments */
-    .fixed.top-0.left-0.right-0 {
-        z-index: 45;
-    }
+    /* Mobile header adjustments - ensure header stays on top */
+    /* No z-index override needed - keep Tailwind z-50 */
 }
 
 /* Reduced motion preferences */
