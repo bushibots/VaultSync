@@ -218,6 +218,8 @@ const PasswordToggle = {
 // ============================================
 
 const MobileMenu = {
+    isOpen: false,
+
     init() {
         const menuToggle = document.getElementById('menu-toggle');
         const closeMenu = document.getElementById('close-menu');
@@ -226,18 +228,48 @@ const MobileMenu = {
 
         if (!menuToggle || !sidebar) return;
 
-        const openMenu = () => {
+        const self = this;
+
+        const openMenu = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            if (self.isOpen) return;
+            
+            self.isOpen = true;
             sidebar.classList.add('active');
             document.body.classList.add('menu-open');
             menuToggle.setAttribute('aria-expanded', 'true');
-            if (overlay) overlay.classList.add('active');
+            if (overlay) {
+                overlay.classList.remove('fading');
+                overlay.classList.add('active');
+            }
         };
 
-        const closeMenuPanel = () => {
+        const closeMenuPanel = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            if (!self.isOpen) return;
+            
+            self.isOpen = false;
             sidebar.classList.remove('active');
             document.body.classList.remove('menu-open');
             menuToggle.setAttribute('aria-expanded', 'false');
-            if (overlay) overlay.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.add('fading');
+                setTimeout(() => {
+                    if (!self.isOpen) {
+                        overlay.classList.remove('active');
+                        overlay.classList.remove('fading');
+                    }
+                }, 300);
+            }
         };
 
         menuToggle.addEventListener('click', openMenu);
@@ -245,11 +277,26 @@ const MobileMenu = {
         if (closeMenu) closeMenu.addEventListener('click', closeMenuPanel);
 
         if (overlay) {
-            overlay.addEventListener('click', closeMenuPanel);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    closeMenuPanel(e);
+                }
+            }, true);
         }
 
+        // Close menu when clicking on nav links
+        const navLinks = sidebar.querySelectorAll('.sidebar-nav a');
+        navLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                setTimeout(() => closeMenuPanel(), 150);
+            });
+        });
+
+        // Escape key to close
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') closeMenuPanel();
+            if (event.key === 'Escape' && self.isOpen) {
+                closeMenuPanel();
+            }
         });
     }
 };

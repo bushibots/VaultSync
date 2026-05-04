@@ -7,6 +7,14 @@ body {
     transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+body.menu-open {
+    position: fixed;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 ::selection { background: rgba(59, 130, 246, 0.22); color: #0f172a; }
 
 /* Login/Register gradient background */
@@ -325,15 +333,24 @@ body.dark-mode .bg-red-50 {
 
 @media (max-width: 767px) {
     .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
         transform: translateX(-100%);
         width: min(20rem, calc(100vw - 2rem));
+        height: 100vh;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        box-shadow: none;
     }
     .sidebar.active {
         transform: translateX(0);
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
     }
 
     body.menu-open {
         overflow: hidden;
+        position: fixed;
+        width: 100%;
     }
 }
 
@@ -390,13 +407,21 @@ body.dark-mode .bg-red-50 {
 .sidebar-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0);
     z-index: 55;
-    display: none;
+    display: block;
+    pointer-events: none;
+    transition: background-color 0.3s ease;
 }
 
 .sidebar-overlay.active {
-    display: block;
+    background-color: rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+}
+
+.sidebar-overlay.active.fading {
+    background-color: rgba(0, 0, 0, 0);
+    pointer-events: none;
 }
 
 /* ============================================
@@ -591,4 +616,73 @@ body.dark-mode .bg-red-50 {
     button, a, input, select {
         min-height: 44px;
     }
+}
+
+/* ============================================
+   Mobile Menu Improvements & Accessibility
+   ============================================ */
+
+@media (max-width: 767px) {
+    /* Prevent content shift and interactions when menu is open */
+    main,
+    [role="main"] {
+        transition: opacity 0.3s ease;
+    }
+
+    body.menu-open main,
+    body.menu-open [role="main"] {
+        opacity: 0.5;
+        pointer-events: none;
+        user-select: none;
+    }
+
+    /* Improve sidebar performance with GPU acceleration */
+    .sidebar {
+        will-change: transform;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+    }
+
+    /* Mobile header adjustments */
+    .fixed.top-0.left-0.right-0 {
+        z-index: 45;
+    }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .sidebar-overlay {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Improve dark mode mobile menu */
+@media (max-width: 767px) {
+    body.dark-mode .sidebar-overlay.active {
+        background-color: rgba(0, 0, 0, 0.7) !important;
+    }
+}
+
+/* Fix text selection in menu */
+.sidebar-nav a {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Prevent double-tap zoom on touch devices */
+button,
+a,
+input,
+select {
+    touch-action: manipulation;
+}
+
+/* Smooth scrolling within sidebar */
+.sidebar-nav {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
 }
