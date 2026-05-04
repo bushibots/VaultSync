@@ -58,6 +58,12 @@ def repair_schema():
         'due_day': 'due_day INTEGER NOT NULL DEFAULT 1',
         'paid_at': 'paid_at DATETIME',
         'linked_expense_id': 'linked_expense_id INTEGER',
+        'is_bucket': 'is_bucket BOOLEAN NOT NULL DEFAULT 0',
+        'allocated_amount': 'allocated_amount FLOAT NOT NULL DEFAULT 0',
+    }
+    expense_columns = {
+        column['name']
+        for column in inspector.get_columns('expense')
     }
 
     added = []
@@ -67,6 +73,9 @@ def repair_schema():
                 continue
             connection.execute(text(f'ALTER TABLE expected_expense ADD COLUMN {ddl}'))
             added.append(column_name)
+        if 'bucket_id' not in expense_columns:
+            connection.execute(text('ALTER TABLE expense ADD COLUMN bucket_id INTEGER'))
+            added.append('expense.bucket_id')
 
     if added:
         print(f"Added missing expected_expense columns: {', '.join(added)}")
@@ -115,6 +124,60 @@ def expected_expense_date(expected_expense):
     last_day = calendar.monthrange(expected_expense.year, expected_expense.month)[1]
     due_day = min(max(expected_expense.due_day or 1, 1), last_day)
     return date(expected_expense.year, expected_expense.month, due_day)
+
+
+def expected_budget_amount(expected_expense):
+    """Return the reserved value for buckets and the payable value for bills."""
+    if expected_expense.is_bucket:
+        return float(expected_expense.allocated_amount or expected_expense.amount or 0)
+    return float(expected_expense.amount or 0)
+
+
+def find_budget_bucket(family_id, category_id, expense_date):
+    if not family_id or not category_id or not expense_date:
+        return None
+    return ExpectedExpense.query.filter_by(
+        family_id=family_id,
+        category_id=category_id,
+        month=expense_date.month,
+        year=expense_date.year,
+        is_bucket=True
+    ).order_by(ExpectedExpense.due_day.asc(), ExpectedExpense.id.asc()).first()
+
+
+def build_budget_bucket_summaries(buckets, family_id, month_str, year_str):
+    bucket_ids = [bucket.id for bucket in buckets]
+    spent_map = {}
+    if bucket_ids:
+        spent_rows = db.session.query(
+            Expense.bucket_id,
+            func.coalesce(func.sum(Expense.amount), 0).label('total')
+        ).filter(
+            Expense.bucket_id.in_(bucket_ids),
+            Expense.family_id == family_id,
+            func.strftime('%Y', Expense.date) == year_str,
+            func.strftime('%m', Expense.date) == month_str
+        ).group_by(Expense.bucket_id).all()
+        spent_map = {int(bucket_id): float(total) for bucket_id, total in spent_rows}
+
+    summaries = []
+    for bucket in buckets:
+        allocated = expected_budget_amount(bucket)
+        spent = spent_map.get(bucket.id, 0.0)
+        remaining = max(allocated - spent, 0.0)
+        overflow = max(spent - allocated, 0.0)
+        fill_percentage = min((spent / allocated * 100), 100) if allocated else 0
+        summaries.append({
+            'bucket': bucket,
+            'allocated': allocated,
+            'spent': spent,
+            'remaining': remaining,
+            'overflow': overflow,
+            'fill_percentage': fill_percentage,
+            'is_overflow': overflow > 0
+        })
+
+    return summaries
 
 
 def parse_date_arg(value, fallback=None):
@@ -633,10 +696,9 @@ def dashboard():
 
     all_categories = Category.query.filter_by(family_id=current_user.family_id).all()
 
-    # Math is now isolated to the selected month!
+    # Math is now isolated to the selected month.
     total_spent = sum(exp.amount for exp in all_expenses)
     monthly_income = current_user.family.monthly_budget if current_user.family else 0
-    projected_savings = monthly_income - total_spent
 
     # Compute per-category totals using a grouped query to ensure accuracy
     totals = db.session.query(
@@ -668,11 +730,26 @@ def dashboard():
         family_id=current_user.family_id
     ).order_by(ExpectedExpense.amount.desc()).all()
 
-    expected_total = sum(exp.amount for exp in expected_expenses)
-    expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid)
-    expected_unpaid_total = expected_total - expected_paid_total
+    budget_bucket_items = [exp for exp in expected_expenses if exp.is_bucket]
+    budget_buckets = build_budget_bucket_summaries(
+        budget_bucket_items,
+        current_user.family_id,
+        month_str,
+        year_str
+    )
+    bucket_unspent_total = sum(bucket['remaining'] for bucket in budget_buckets)
+    bucket_allocated_total = sum(bucket['allocated'] for bucket in budget_buckets)
+    bucket_spent_total = sum(bucket['spent'] for bucket in budget_buckets)
+    bucket_overflow_total = sum(bucket['overflow'] for bucket in budget_buckets)
+
+    projected_savings = monthly_income - total_spent - bucket_unspent_total
+
+    expected_total = sum(expected_budget_amount(exp) for exp in expected_expenses)
+    expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid and not exp.is_bucket)
+    expected_unpaid_total = sum(exp.amount for exp in expected_expenses if not exp.is_paid and not exp.is_bucket)
     planned_after_budget = monthly_income - expected_total
-    plan_paid_percentage = (expected_paid_total / expected_total * 100) if expected_total else 0
+    standard_expected_total = expected_paid_total + expected_unpaid_total
+    plan_paid_percentage = (expected_paid_total / standard_expected_total * 100) if standard_expected_total else 0
 
     return render_template('dashboard.html',
                             user=current_user,
@@ -691,6 +768,10 @@ def dashboard():
                             expected_unpaid_total=expected_unpaid_total,
                             planned_after_budget=planned_after_budget,
                             plan_paid_percentage=plan_paid_percentage,
+                            budget_buckets=budget_buckets,
+                            bucket_allocated_total=bucket_allocated_total,
+                            bucket_spent_total=bucket_spent_total,
+                            bucket_overflow_total=bucket_overflow_total,
                             preset_categories=PRESET_CATEGORIES,
                             selected_month=selected_month,
                             selected_year=selected_year,
@@ -811,25 +892,28 @@ def add_expense():
     try:
         expense_amount = float(amount)
         expense_date = datetime.strptime(expense_date_str, '%Y-%m-%d').date() if expense_date_str else datetime.utcnow().date()
+        if expense_amount <= 0:
+            raise ValueError
     except (ValueError, TypeError):
         flash('Please provide a valid expense amount and date.', 'error')
         return back_or('dashboard')
 
+    budget_bucket = find_budget_bucket(current_user.family_id, category.id, expense_date)
     new_expense = Expense(
         date=expense_date,
         item_name=item_name,
         amount=expense_amount,
         category_id=category.id,
         user_id=current_user.id,
-        family_id=current_user.family_id
+        family_id=current_user.family_id,
+        bucket_id=budget_bucket.id if budget_bucket else None
     )
     db.session.add(new_expense)
     db.session.commit()
 
-    # Check budget after adding expense
-    current_date = datetime.utcnow()
-    month_str = f"{current_date.month:02d}"
-    year_str = str(current_date.year)
+    # Check the master pool after accounting for unspent bucket reserves.
+    month_str = f"{expense_date.month:02d}"
+    year_str = str(expense_date.year)
 
     monthly_total = db.session.query(
         func.sum(Expense.amount).label('total')
@@ -840,12 +924,39 @@ def add_expense():
     ).scalar() or 0.0
 
     family = current_user.family
-    if family.monthly_budget and monthly_total > family.monthly_budget:
-        percentage = (monthly_total / family.monthly_budget) * 100
-        flash(f'⚠️ Budget Alert: Your family has spent {percentage:.1f}% of the monthly budget!', 'warning')
-    elif family.monthly_budget and monthly_total > (family.monthly_budget * 0.8):
-        percentage = (monthly_total / family.monthly_budget) * 100
-        flash(f'💡 You\'re at {percentage:.1f}% of your monthly budget.', 'info')
+    budget_bucket_items = ExpectedExpense.query.filter_by(
+        family_id=current_user.family_id,
+        month=expense_date.month,
+        year=expense_date.year,
+        is_bucket=True
+    ).all()
+    bucket_summaries = build_budget_bucket_summaries(
+        budget_bucket_items,
+        current_user.family_id,
+        month_str,
+        year_str
+    )
+    bucket_unspent_total = sum(bucket['remaining'] for bucket in bucket_summaries)
+    protected_total = monthly_total + bucket_unspent_total
+
+    if budget_bucket:
+        linked_summary = next(
+            (bucket for bucket in bucket_summaries if bucket['bucket'].id == budget_bucket.id),
+            None
+        )
+        if linked_summary and linked_summary['is_overflow']:
+            flash(
+                f"Bucket Alert: {budget_bucket.name} is over by Rs. {linked_summary['overflow']:,.0f}. "
+                "The overflow now comes from the general budget pool.",
+                'warning'
+            )
+
+    if family.monthly_budget and protected_total > family.monthly_budget:
+        percentage = (protected_total / family.monthly_budget) * 100
+        flash(f'Budget Alert: Your family has committed {percentage:.1f}% of the monthly budget.', 'warning')
+    elif family.monthly_budget and protected_total > (family.monthly_budget * 0.8):
+        percentage = (protected_total / family.monthly_budget) * 100
+        flash(f"You are at {percentage:.1f}% of your monthly budget after reserved buckets.", 'info')
 
     # Send them back to wherever they submitted the form from
     return back_or('dashboard')
@@ -865,6 +976,7 @@ def add_expected():
     month = request.form.get('month')
     year = request.form.get('year')
     due_day = request.form.get('due_day', 1)
+    is_bucket = request.form.get('is_bucket') == 'on'
 
     if not (name and amount and category_id and month and year and due_day):
         flash('Please provide name, amount, category, due day, month and year.', 'error')
@@ -892,6 +1004,8 @@ def add_expected():
     new_expected = ExpectedExpense(
         name=name.strip(),
         amount=expected_amount,
+        is_bucket=is_bucket,
+        allocated_amount=expected_amount if is_bucket else 0.0,
         category_id=category.id,
         due_day=expected_due_day,
         month=expected_month,
@@ -913,6 +1027,10 @@ def toggle_expected(id):
         id=id,
         family_id=current_user.family_id
     ).first_or_404()
+
+    if ee.is_bucket:
+        flash('Reserved buckets fill from linked daily expenses instead of being marked paid.', 'info')
+        return back_or('dashboard')
 
     if ee.is_paid:
         if ee.linked_expense_id:
@@ -1014,6 +1132,10 @@ def edit_expense(id):
             linked_plan.month = expense_date.month
             linked_plan.year = expense_date.year
             linked_plan.due_day = expense_date.day
+            expense.bucket_id = None
+        else:
+            budget_bucket = find_budget_bucket(current_user.family_id, category.id, expense_date)
+            expense.bucket_id = budget_bucket.id if budget_bucket else None
 
         db.session.commit()
         flash('Expense updated successfully.', 'success')
@@ -1041,6 +1163,12 @@ def delete_expected(id):
         id=id,
         family_id=current_user.family_id
     ).first_or_404()
+
+    if ee.is_bucket:
+        Expense.query.filter_by(
+            bucket_id=ee.id,
+            family_id=current_user.family_id
+        ).update({'bucket_id': None})
 
     if ee.linked_expense_id:
         linked_expense = Expense.query.filter_by(
@@ -1079,6 +1207,7 @@ def edit_expected(id):
         month = request.form.get('month')
         year = request.form.get('year')
         due_day = request.form.get('due_day')
+        requested_is_bucket = request.form.get('is_bucket') == 'on'
 
         category = Category.query.filter_by(
             id=category_id,
@@ -1087,6 +1216,10 @@ def edit_expected(id):
 
         if not (name and amount and category and month and year and due_day):
             flash('Please provide every planned expense field.', 'error')
+            return redirect(url_for('edit_expected', id=id))
+
+        if planned.is_paid and requested_is_bucket != planned.is_bucket:
+            flash('Unpost this planned payment before changing it into or out of a bucket.', 'error')
             return redirect(url_for('edit_expected', id=id))
 
         try:
@@ -1102,6 +1235,11 @@ def edit_expected(id):
 
         planned.name = name
         planned.amount = planned_amount
+        planned.is_bucket = requested_is_bucket
+        planned.allocated_amount = planned_amount if requested_is_bucket else 0.0
+        if requested_is_bucket:
+            planned.is_paid = False
+            planned.paid_at = None
         planned.category_id = category.id
         planned.month = planned_month
         planned.year = planned_year
@@ -1117,6 +1255,7 @@ def edit_expected(id):
                 linked_expense.amount = planned_amount
                 linked_expense.category_id = category.id
                 linked_expense.date = expected_expense_date(planned)
+                linked_expense.bucket_id = None
 
         db.session.commit()
         flash('Planned expense updated successfully.', 'success')
@@ -1172,6 +1311,8 @@ def copy_expected_plan():
         db.session.add(ExpectedExpense(
             name=item.name,
             amount=item.amount,
+            is_bucket=item.is_bucket,
+            allocated_amount=expected_budget_amount(item) if item.is_bucket else 0.0,
             due_day=item.due_day,
             category_id=item.category_id,
             month=next_month,

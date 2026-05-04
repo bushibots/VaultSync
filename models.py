@@ -56,12 +56,16 @@ class Expense(db.Model):
     category = db.relationship('Category')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    bucket_id = db.Column(db.Integer, db.ForeignKey('expected_expense.id'), nullable=True)
+    bucket = db.relationship('ExpectedExpense', foreign_keys=[bucket_id], back_populates='bucket_expenses')
 
 
 class ExpectedExpense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False)
     amount = db.Column(db.Float, nullable=False)
+    is_bucket = db.Column(db.Boolean, default=False, nullable=False)
+    allocated_amount = db.Column(db.Float, default=0.0, nullable=False)
     is_paid = db.Column(db.Boolean, default=False, nullable=False)
     due_day = db.Column(db.Integer, default=1, nullable=False)
     paid_at = db.Column(db.DateTime, nullable=True)
@@ -69,6 +73,7 @@ class ExpectedExpense(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     category = db.relationship('Category')
     linked_expense = db.relationship('Expense', foreign_keys=[linked_expense_id])
+    bucket_expenses = db.relationship('Expense', foreign_keys='Expense.bucket_id', back_populates='bucket')
     family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
     month = db.Column(db.Integer, nullable=False)
     year = db.Column(db.Integer, nullable=False)
