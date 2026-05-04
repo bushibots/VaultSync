@@ -241,6 +241,7 @@ const MobileMenu = {
             self.isOpen = true;
             sidebar.classList.add('active');
             document.body.classList.add('menu-open');
+            menuToggle.classList.add('active');
             menuToggle.setAttribute('aria-expanded', 'true');
             if (overlay) {
                 overlay.classList.remove('fading');
@@ -259,6 +260,7 @@ const MobileMenu = {
             self.isOpen = false;
             sidebar.classList.remove('active');
             document.body.classList.remove('menu-open');
+            menuToggle.classList.remove('active');
             menuToggle.setAttribute('aria-expanded', 'false');
             
             if (overlay) {
@@ -272,7 +274,13 @@ const MobileMenu = {
             }
         };
 
-        menuToggle.addEventListener('click', openMenu);
+        menuToggle.addEventListener('click', () => {
+            if (self.isOpen) {
+                closeMenuPanel();
+            } else {
+                openMenu();
+            }
+        });
 
         if (closeMenu) closeMenu.addEventListener('click', closeMenuPanel);
 
