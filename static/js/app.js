@@ -406,7 +406,7 @@ const Preferences = {
             guide_title: 'VaultSync Feature Guide',
             guide_subtitle: 'Every feature, what it does, and how to use it correctly.',
             macro_title: 'Macro Dashboard',
-            macro_body: 'Use the dashboard to view monthly spending, budget, projected savings, and the category chart.',
+            macro_body: 'Use the dashboard to view monthly spending, reserved buckets, remaining budget, and the category chart.',
             diary_title: 'Daily Expense Diary',
             diary_body: 'Quickly add small everyday expenses. These are the same expenses that roll into the dashboard.',
             plan_title: 'Expected Monthly Expenditure',

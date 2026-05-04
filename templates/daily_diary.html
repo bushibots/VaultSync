@@ -189,6 +189,9 @@
                                     <span class="px-2 py-1 rounded-full text-xs font-bold text-white" style="background-color: {{ exp.category.color }}">
                                         {{ exp.category.name }}
                                     </span>
+                                    {% if exp.bucket %}
+                                    <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Bucket</span>
+                                    {% endif %}
                                 </div>
                                 <p class="text-xs text-slate-500 mt-1">
                                     Logged by {{ exp.user.username }}

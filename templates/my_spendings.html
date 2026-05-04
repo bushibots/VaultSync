@@ -106,6 +106,9 @@
                                         <span class="px-2 py-1 rounded text-xs font-bold text-white" style="background-color: {{ exp.category.color }}">
                                             {{ exp.category.name }}
                                         </span>
+                                        {% if exp.bucket %}
+                                        <span class="ml-1 px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">Bucket</span>
+                                        {% endif %}
                                     </td>
                                     <td class="px-4 py-3 text-slate-800 font-bold">&#8377;{{ "{:,.0f}".format(exp.amount) }}</td>
                                     <td class="px-4 py-3">
