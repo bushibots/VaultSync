@@ -179,6 +179,10 @@ def repair_schema():
         'description': 'description TEXT',
         'bucket_id': 'bucket_id INTEGER',
     }
+    category_columns = {
+        column['name']
+        for column in inspector.get_columns('category')
+    } if inspector.has_table('category') else set()
 
     added = []
     with db.engine.begin() as connection:
@@ -219,11 +223,16 @@ def repair_schema():
                 continue
             connection.execute(text(f'ALTER TABLE expense ADD COLUMN {ddl}'))
             added.append(f'expense.{column_name}')
+        if 'is_color_auto' not in category_columns:
+            connection.execute(text(
+                'ALTER TABLE category ADD COLUMN is_color_auto BOOLEAN NOT NULL DEFAULT 0'
+            ))
+            added.append('category.is_color_auto')
 
     if added:
-        print(f"Added missing expected_expense columns: {', '.join(added)}")
+        print(f"Added missing schema items: {', '.join(added)}")
     else:
-        print('Schema already has the expected_expense budget-plan columns.')
+        print('Schema already has the expected columns and tables.')
 
 
 @login_manager.user_loader
