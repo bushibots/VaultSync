@@ -66,9 +66,57 @@ PRESET_CATEGORIES = [
     ('Personal Care', '#db2777', 0),
 ]
 
+# Professional color palette for auto-assignment - distinct, accessible, and visually appealing
+AUTO_COLOR_PALETTE = [
+    '#3b82f6',  # Blue
+    '#ef4444',  # Red
+    '#10b981',  # Emerald
+    '#f59e0b',  # Amber
+    '#8b5cf6',  # Violet
+    '#ec4899',  # Pink
+    '#06b6d4',  # Cyan
+    '#f97316',  # Orange
+    '#6366f1',  # Indigo
+    '#14b8a6',  # Teal
+    '#d946ef',  # Fuchsia
+    '#e11d48',  # Rose
+    '#2563eb',  # Blue-600
+    '#059669',  # Emerald-600
+    '#7c2d12',  # Orange-900
+    '#4f46e5',  # Indigo-600
+    '#0891b2',  # Cyan-600
+    '#be185d',  # Pink-900
+    '#1e40af',  # Blue-800
+    '#15803d',  # Green-700
+    '#92400e',  # Amber-900
+    '#6d28d9',  # Violet-700
+    '#06b6d4',  # Cyan-500
+    '#be123c',  # Rose-700
+]
+
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
 AI_ORGANIZER_BATCH_SIZE = 25
 _ai_organizer_scheduler_started = False
+
+
+def get_next_auto_color(family_id):
+    """Generate the next distinct color for a new category in auto-color mode."""
+    existing_categories = Category.query.filter_by(family_id=family_id, is_color_auto=True).all()
+    color_index = len(existing_categories) % len(AUTO_COLOR_PALETTE)
+    return AUTO_COLOR_PALETTE[color_index]
+
+
+def reassign_auto_colors(family_id):
+    """Reassign auto colors to all categories in auto-color mode, ensuring distinctness."""
+    auto_categories = Category.query.filter_by(family_id=family_id, is_color_auto=True).order_by(
+        Category.id.asc()
+    ).all()
+    
+    for idx, category in enumerate(auto_categories):
+        color_index = idx % len(AUTO_COLOR_PALETTE)
+        category.color = AUTO_COLOR_PALETTE[color_index]
+    
+    db.session.commit()
 
 
 @app.cli.command('repair-schema')
@@ -177,6 +225,7 @@ def ensure_preset_categories(family_id):
             color=color,
             monthly_limit=monthly_limit,
             is_fixed=True,
+            is_color_auto=False,  # Preset categories have fixed colors
             family_id=family_id
         ))
         created += 1
@@ -640,7 +689,36 @@ def call_gemini_json(prompt, response_schema):
     return parse_gemini_json_text(response_payload)
 
 
-def build_expense_organization_prompt(expenses, categories):
+def build_expense_organization_prompt(expenses, categories, exceptions=None):
+    """
+    Build the prompt for AI expense organization.
+    
+    Args:
+        expenses: List of Expense objects to organize
+        categories: List of Category objects
+        exceptions: List of AIExpenseException objects describing rules to exclude expenses
+    """
+    exception_context = ''
+    if exceptions:
+        exception_rules = []
+        for exc in exceptions:
+            if not exc.is_active:
+                continue
+            rule_desc = f"- {exc.description}: "
+            if exc.match_keywords:
+                rule_desc += f"Exclude if item_name contains any of: {exc.match_keywords}. "
+            if exc.match_description_contains:
+                rule_desc += f"Exclude if description contains any of: {exc.match_description_contains}. "
+            exception_rules.append(rule_desc)
+        
+        if exception_rules:
+            exception_context = (
+                '\nIMPORTANT EXCLUSION RULES:\n'
+                'Some expenses should be excluded from organization (e.g., separate household members with different budgets).\n'
+                + '\n'.join(exception_rules) +
+                '\nIf an expense matches any exclusion rule, set its confidence to 0 and reason to "Excluded by exception rule".\n'
+            )
+    
     expense_rows = [
         {
             'expense_id': expense.id,
@@ -649,6 +727,7 @@ def build_expense_organization_prompt(expenses, categories):
             'description': expense.description or '',
             'amount': round(float(expense.amount), 2),
             'current_category': expense.category.name if expense.category else '',
+            'spender': expense.user.username if expense.user else 'Unknown',
         }
         for expense in expenses
     ]
@@ -666,7 +745,8 @@ def build_expense_organization_prompt(expenses, categories):
         'You organize household expenses for VaultSync.\n'
         'Choose exactly one category for each expense from the provided categories. '
         'Use item_name and description as the main evidence. Treat current_category as a weak hint only. '
-        'Never invent a category. If uncertain, choose the closest existing category and use lower confidence.\n\n'
+        'Never invent a category. If uncertain, choose the closest existing category and use lower confidence.\n'
+        f'{exception_context}\n'
         f'Categories:\n{json.dumps(category_rows, ensure_ascii=False)}\n\n'
         f'Expenses:\n{json.dumps(expense_rows, ensure_ascii=False)}\n\n'
         'Return only JSON matching the schema.'
@@ -696,6 +776,8 @@ def expense_organization_schema(category_names):
 
 
 def organize_expenses_for_family(family_id, start_date, end_date):
+    from models import AIExpenseException
+    
     categories = Category.query.filter_by(
         family_id=family_id
     ).order_by(Category.name.asc()).all()
@@ -723,6 +805,13 @@ def organize_expenses_for_family(family_id, start_date, end_date):
         }
 
     category_by_name = {category.name: category for category in categories}
+    
+    # Load active exceptions for this family
+    exceptions = AIExpenseException.query.filter_by(
+        family_id=family_id,
+        is_active=True
+    ).all()
+    
     linked_plans = {
         plan.linked_expense_id: plan
         for plan in ExpectedExpense.query.filter(
@@ -735,10 +824,11 @@ def organize_expenses_for_family(family_id, start_date, end_date):
     changed = 0
     unchanged = 0
     skipped = 0
+    excluded = 0
     reasons = []
 
     for batch in chunks(expenses, AI_ORGANIZER_BATCH_SIZE):
-        prompt = build_expense_organization_prompt(batch, categories)
+        prompt = build_expense_organization_prompt(batch, categories, exceptions)
         payload = call_gemini_json(prompt, expense_organization_schema(list(category_by_name.keys())))
         classifications = payload.get('classifications') or []
         classification_by_id = {
@@ -751,6 +841,13 @@ def organize_expenses_for_family(family_id, start_date, end_date):
             classification = classification_by_id.get(expense.id)
             if not classification:
                 skipped += 1
+                continue
+
+            # Check if AI marked this as excluded (confidence 0 means exception rule matched)
+            confidence = float(classification.get('confidence') or 1.0)
+            reason = str(classification.get('reason') or '')
+            if confidence == 0 or 'exception rule' in reason.lower():
+                excluded += 1
                 continue
 
             category = category_by_name.get(str(classification.get('category_name') or '').strip())
@@ -776,7 +873,7 @@ def organize_expenses_for_family(family_id, start_date, end_date):
             if len(reasons) < 5:
                 reasons.append(
                     f"{expense.item_name}: {old_category} -> {category.name} "
-                    f"({classification.get('reason', '').strip()})"
+                    f"({reason})"
                 )
 
     db.session.commit()
@@ -785,6 +882,7 @@ def organize_expenses_for_family(family_id, start_date, end_date):
         'changed': changed,
         'unchanged': unchanged,
         'skipped': skipped,
+        'excluded': excluded,
         'message': '; '.join(reasons)
     }
 
@@ -2010,8 +2108,8 @@ def add_category():
         flash('Please join a family before adding categories.', 'error')
         return back_or('dashboard')
 
-    if not (name and color):
-        flash('Please provide a category name and color.', 'error')
+    if not name:
+        flash('Please provide a category name.', 'error')
         return back_or('dashboard')
 
     try:
@@ -2026,14 +2124,24 @@ def add_category():
         flash('A category with that name already exists.', 'error')
         return back_or('dashboard')
 
+    # Auto-color assignment: if no color provided, use auto-generate mode
+    is_color_auto = not color
+    if not color:
+        color = get_next_auto_color(current_user.family_id)
+
     new_cat = Category(
         name=name,
         color=color,
         monthly_limit=monthly_limit,
+        is_color_auto=is_color_auto,
         family_id=current_user.family_id
     )
     db.session.add(new_cat)
     db.session.commit()
+    
+    # Re-assign colors to all auto-color categories to maintain distinctness
+    reassign_auto_colors(current_user.family_id)
+    
     flash('Category added successfully.', 'success')
     return back_or('dashboard')
 
@@ -2110,6 +2218,7 @@ def edit_category(id):
     category.color = color
     category.monthly_limit = monthly_limit
     category.is_fixed = is_fixed
+    category.is_color_auto = False  # User manually set the color, so disable auto-color
     db.session.commit()
     flash('Category updated successfully.', 'success')
     return redirect(request.form.get('next') or url_for('dashboard'))
@@ -2494,6 +2603,12 @@ def admin_panel():
     latest_savings_payload = savings_forecast_payload(latest_savings_forecast)
     savings_chart_data = savings_forecast_chart_data(family, latest_savings_forecast)
 
+    # Fetch AI Expense Organizer exceptions
+    from models import AIExpenseException
+    ai_exceptions = AIExpenseException.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(AIExpenseException.created_at.desc()).all()
+
     return render_template('admin_panel.html',
                           user=current_user,
                           family=family,
@@ -2510,6 +2625,7 @@ def admin_panel():
                           latest_savings_forecast=latest_savings_forecast,
                           latest_savings_payload=latest_savings_payload,
                           savings_chart_data=savings_chart_data,
+                          ai_exceptions=ai_exceptions,
                           ai_notes=family.ai_notes or '',
                           ai_organizer_configured=bool(os.environ.get('GEMINI_API_KEY', '').strip()),
                           ai_organizer_model=GEMINI_MODEL,
@@ -2614,6 +2730,94 @@ def admin_ai_savings_forecast():
         'success' if forecast.expected_savings >= 0 else 'warning'
     )
     return redirect(url_for('admin_panel', tab='ai-forecast'))
+
+
+@app.route('/admin_panel/ai_expense_exception/add', methods=['POST'])
+@login_required
+def add_ai_expense_exception():
+    """Add an exception rule for the AI Expense Organizer."""
+    from models import AIExpenseException
+    
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('admin_panel'))
+
+    if not current_user.family_id:
+        flash('Please join a family first.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    description = request.form.get('description', '').strip()
+    match_keywords = request.form.get('match_keywords', '').strip()
+    match_description = request.form.get('match_description_contains', '').strip()
+    action = request.form.get('action', 'exclude').strip()
+
+    if not description:
+        flash('Please provide a description for this exception rule.', 'error')
+        return redirect(url_for('admin_panel', tab='ai-exceptions'))
+
+    if not (match_keywords or match_description):
+        flash('Please provide at least one matching criteria (keywords or description).', 'error')
+        return redirect(url_for('admin_panel', tab='ai-exceptions'))
+
+    if action not in ('exclude', 'separate'):
+        action = 'exclude'
+
+    exception = AIExpenseException(
+        family_id=current_user.family_id,
+        description=description,
+        match_keywords=match_keywords,
+        match_description_contains=match_description,
+        action=action,
+        is_active=True
+    )
+    db.session.add(exception)
+    db.session.commit()
+    flash('Exception rule added successfully!', 'success')
+    return redirect(url_for('admin_panel', tab='ai-exceptions'))
+
+
+@app.route('/admin_panel/ai_expense_exception/<int:exc_id>/toggle', methods=['POST'])
+@login_required
+def toggle_ai_expense_exception(exc_id):
+    """Enable/disable an exception rule."""
+    from models import AIExpenseException
+    
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('admin_panel'))
+
+    exception = AIExpenseException.query.filter_by(
+        id=exc_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    exception.is_active = not exception.is_active
+    db.session.commit()
+    status = "enabled" if exception.is_active else "disabled"
+    flash(f'Exception rule {status}.', 'success')
+    return redirect(url_for('admin_panel', tab='ai-exceptions'))
+
+
+@app.route('/admin_panel/ai_expense_exception/<int:exc_id>/delete', methods=['POST'])
+@login_required
+def delete_ai_expense_exception(exc_id):
+    """Delete an exception rule."""
+    from models import AIExpenseException
+    
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('admin_panel'))
+
+    exception = AIExpenseException.query.filter_by(
+        id=exc_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    description = exception.description
+    db.session.delete(exception)
+    db.session.commit()
+    flash(f'Exception rule "{description}" deleted.', 'success')
+    return redirect(url_for('admin_panel', tab='ai-exceptions'))
 
 
 @app.route('/admin_panel/categories/<int:category_id>/limit', methods=['POST'])
