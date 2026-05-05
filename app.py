@@ -39,10 +39,41 @@ load_local_env()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(32)
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL',
-    'sqlite:///' + os.path.join(basedir, 'vaultsync.db')
-)
+
+
+def is_windows_drive_path(path):
+    return (
+        len(path) >= 3
+        and path[0].isalpha()
+        and path[1] == ':'
+        and path[2] in ('/', '\\')
+    )
+
+
+def build_database_uri():
+    default_db_path = os.path.join(basedir, 'vaultsync.db')
+    configured_uri = os.environ.get('DATABASE_URL')
+
+    if not configured_uri:
+        db_path = default_db_path
+    elif not configured_uri.startswith('sqlite:///'):
+        return configured_uri
+    else:
+        db_path = configured_uri.removeprefix('sqlite:///')
+        if db_path == ':memory:':
+            return configured_uri
+        if os.name != 'nt' and is_windows_drive_path(db_path):
+            db_path = default_db_path
+        elif not os.path.isabs(db_path):
+            db_path = os.path.join(basedir, db_path)
+
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    return 'sqlite:///' + db_path.replace('\\', '/')
+
+
+app.config['SQLALCHEMY_DATABASE_URI'] = build_database_uri()
 db.init_app(app)
 migrate = Migrate(app, db)
 
