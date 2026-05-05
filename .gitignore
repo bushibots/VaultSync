@@ -12,6 +12,7 @@ venv/
 # Database
 instance/
 *.db
+flask-dev*.log
 
 # OS
 .DS_Store

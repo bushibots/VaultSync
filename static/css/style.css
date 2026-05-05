@@ -106,6 +106,325 @@ body.dark-mode .bg-red-50 {
     background-color: rgba(30, 41, 59, 0.95) !important;
 }
 
+/* Spending chart */
+.spending-chart-card {
+    overflow: hidden;
+}
+
+.chart-icon-wrap {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.chart-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: max-content;
+    padding: 4px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.chart-mode-toggle button {
+    min-width: 72px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 7px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.chart-mode-toggle button.active {
+    background: #ffffff;
+    color: #1d4ed8;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.1);
+}
+
+.spending-chart-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.95fr) minmax(240px, 1.05fr);
+    gap: 24px;
+    align-items: center;
+}
+
+.chart-stage {
+    position: relative;
+    width: min(100%, 330px);
+    aspect-ratio: 1;
+    margin: 0 auto;
+    border-radius: 999px;
+    background:
+        radial-gradient(circle at center, #ffffff 0 46%, transparent 47%),
+        linear-gradient(145deg, #f8fafc, #eef2f7);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+}
+
+.chart-stage canvas {
+    position: relative;
+    z-index: 1;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart-center {
+    position: absolute;
+    inset: 30%;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    text-align: center;
+}
+
+.chart-center span,
+.chart-center small {
+    max-width: 100%;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.chart-center strong {
+    max-width: 100%;
+    color: #0f172a;
+    font-size: clamp(18px, 3.2vw, 28px);
+    line-height: 1.1;
+    margin: 5px 0;
+    overflow-wrap: anywhere;
+}
+
+.chart-details {
+    min-width: 0;
+}
+
+.chart-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.chart-stat-grid > div {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.chart-stat-grid span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.chart-stat-grid strong {
+    display: block;
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chart-legend-list {
+    display: grid;
+    gap: 8px;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.chart-legend-row {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    min-height: 48px;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #ffffff;
+    text-align: left;
+    transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.chart-legend-row:hover,
+.chart-legend-row.active {
+    transform: translateY(-1px);
+    border-color: #93c5fd;
+    background: #f8fbff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.legend-color {
+    width: 12px;
+    height: 28px;
+    border-radius: 999px;
+}
+
+.legend-main {
+    min-width: 0;
+}
+
+.legend-name {
+    display: block;
+    color: #1f2937;
+    font-size: 12px;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.legend-track {
+    display: block;
+    height: 5px;
+    margin-top: 7px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e2e8f0;
+}
+
+.legend-track span {
+    display: block;
+    height: 100%;
+    min-width: 5px;
+    border-radius: inherit;
+}
+
+.legend-value {
+    color: #475569;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.chart-empty-state {
+    display: flex;
+    min-height: 170px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 800;
+    background: #f8fafc;
+}
+
+.chart-empty-state.hidden {
+    display: none;
+}
+
+.chart-empty-state i {
+    color: #94a3b8;
+}
+
+body.dark-mode .chart-icon-wrap {
+    background: rgba(79, 70, 229, 0.18);
+    color: #a5b4fc;
+}
+
+body.dark-mode .chart-mode-toggle,
+body.dark-mode .chart-stat-grid > div,
+body.dark-mode .chart-empty-state {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+body.dark-mode .chart-mode-toggle button {
+    color: #94a3b8;
+}
+
+body.dark-mode .chart-mode-toggle button.active {
+    background: #1e293b;
+    color: #bfdbfe;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+}
+
+body.dark-mode .chart-stage {
+    background:
+        radial-gradient(circle at center, #111827 0 46%, transparent 47%),
+        linear-gradient(145deg, #0f172a, #1e293b);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.14);
+}
+
+body.dark-mode .chart-center strong,
+body.dark-mode .chart-stat-grid strong,
+body.dark-mode .legend-name {
+    color: #e5e7eb;
+}
+
+body.dark-mode .chart-center span,
+body.dark-mode .chart-center small,
+body.dark-mode .chart-stat-grid span,
+body.dark-mode .legend-value,
+body.dark-mode .chart-empty-state {
+    color: #94a3b8;
+}
+
+body.dark-mode .chart-legend-row {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+body.dark-mode .chart-legend-row:hover,
+body.dark-mode .chart-legend-row.active {
+    background: #162033;
+    border-color: #60a5fa;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.25);
+}
+
+body.dark-mode .legend-track {
+    background: #273449;
+}
+
+@media (max-width: 1023px) {
+    .spending-chart-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-stage {
+        width: min(100%, 300px);
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-mode-toggle {
+        width: 100%;
+    }
+
+    .chart-mode-toggle button {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .chart-stat-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-legend-row {
+        grid-template-columns: 10px minmax(0, 1fr);
+    }
+
+    .legend-value {
+        grid-column: 2;
+    }
+}
+
 /* ============================================
    Animations
    ============================================ */
