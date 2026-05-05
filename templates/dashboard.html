@@ -541,16 +541,47 @@
                 </div>
 
                 <!-- Interactive Chart -->
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 flex flex-col justify-center">
-                    <div class="flex items-center mb-6">
-                        <div class="bg-indigo-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-chart-pie text-indigo-600" aria-hidden="true"></i>
+                <div class="spending-chart-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                        <div class="flex items-center min-w-0">
+                            <div class="chart-icon-wrap rounded-full p-3 mr-3 flex-shrink-0">
+                                <i class="fas fa-chart-pie" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h2 class="text-lg md:text-xl font-bold text-slate-800">Spending Breakdown</h2>
+                                <p class="text-xs text-slate-500 mt-1">{{ month_name }} {{ selected_year }} category mix</p>
+                            </div>
                         </div>
-                        <h2 class="text-lg md:text-xl font-bold text-slate-800">Spending Breakdown</h2>
+                        <div class="chart-mode-toggle" role="group" aria-label="Chart label mode">
+                            <button type="button" class="active" data-chart-mode="amount">Amount</button>
+                            <button type="button" data-chart-mode="share">Share</button>
+                        </div>
                     </div>
-                    <div class="flex justify-center items-center">
-                        <div class="w-full max-w-xs">
-                            <canvas id="expenseChart" role="img" aria-label="Pie chart showing spending breakdown by category"></canvas>
+                    <div class="spending-chart-layout">
+                        <div class="chart-stage">
+                            <canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas>
+                            <div class="chart-center" aria-hidden="true">
+                                <span id="chartCenterLabel">Total spent</span>
+                                <strong id="chartCenterTotal">&#8377;0</strong>
+                                <small id="chartCenterHint">All categories</small>
+                            </div>
+                        </div>
+                        <div class="chart-details">
+                            <div class="chart-stat-grid">
+                                <div>
+                                    <span>Total</span>
+                                    <strong id="chartTotalMetric">&#8377;0</strong>
+                                </div>
+                                <div>
+                                    <span>Top</span>
+                                    <strong id="chartTopMetric">-</strong>
+                                </div>
+                            </div>
+                            <div id="expenseLegend" class="chart-legend-list" aria-label="Spending by category"></div>
+                            <div id="expenseChartEmpty" class="chart-empty-state hidden">
+                                <i class="fas fa-receipt" aria-hidden="true"></i>
+                                <span>No spending recorded for this month.</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -662,93 +693,227 @@
             if (!input.value) input.value = new Date().toISOString().split('T')[0];
         });
 
-        // Python dynamically injects the categories, data, and colors!
         const dynamicLabels = {{ chart_labels | tojson | safe }};
         const dynamicData = {{ chart_data | safe }};
         const dynamicColors = {{ chart_colors | tojson | safe }};
-        
+
+        const formatCurrency = (value) => `Rs. ${Math.round(value || 0).toLocaleString('en-IN')}`;
+        const chartRows = dynamicLabels
+            .map((label, index) => ({
+                label,
+                value: Number(dynamicData[index]) || 0,
+                color: dynamicColors[index] || '#3b82f6'
+            }))
+            .filter((row) => row.value > 0)
+            .sort((a, b) => b.value - a.value);
+
         const chartCanvas = document.getElementById('expenseChart');
+        const legendEl = document.getElementById('expenseLegend');
+        const emptyEl = document.getElementById('expenseChartEmpty');
+        const totalMetricEl = document.getElementById('chartTotalMetric');
+        const topMetricEl = document.getElementById('chartTopMetric');
+        const centerLabelEl = document.getElementById('chartCenterLabel');
+        const centerTotalEl = document.getElementById('chartCenterTotal');
+        const centerHintEl = document.getElementById('chartCenterHint');
+        const modeButtons = document.querySelectorAll('[data-chart-mode]');
+        let chartMode = 'amount';
+        let selectedIndex = null;
+
         if (chartCanvas && window.Chart) {
-            new Chart(chartCanvas.getContext('2d'), {
-                type: 'doughnut',
-                data: {
-                    labels: dynamicLabels,
-                    datasets: [{
-                        data: dynamicData,
-                        backgroundColor: dynamicColors,
-                        borderColor: '#ffffff',
-                        borderWidth: 3,
-                        borderRadius: 8,
-                        hoverOffset: 8,
-                        offset: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    layout: {
-                        padding: 10
+            const total = chartRows.reduce((sum, row) => sum + row.value, 0);
+            const topRow = chartRows[0];
+
+            if (totalMetricEl) totalMetricEl.textContent = formatCurrency(total);
+            if (topMetricEl) topMetricEl.textContent = topRow ? topRow.label : '-';
+            if (centerTotalEl) centerTotalEl.textContent = formatCurrency(total);
+
+            const getTheme = () => {
+                const isDark = document.body.classList.contains('dark-mode');
+                return {
+                    isDark,
+                    border: isDark ? '#111827' : '#ffffff',
+                    tooltipBg: isDark ? 'rgba(15, 23, 42, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+                    tooltipText: isDark ? '#e5e7eb' : '#111827',
+                    tooltipBorder: isDark ? 'rgba(148, 163, 184, 0.28)' : 'rgba(15, 23, 42, 0.12)'
+                };
+            };
+
+            const updateCenter = (index = null) => {
+                if (!centerLabelEl || !centerTotalEl || !centerHintEl) return;
+                const row = index === null ? null : chartRows[index];
+                if (!row) {
+                    centerLabelEl.textContent = 'Total spent';
+                    centerTotalEl.textContent = formatCurrency(total);
+                    centerHintEl.textContent = chartRows.length ? `${chartRows.length} categories` : 'No categories';
+                    return;
+                }
+                const share = total ? ((row.value / total) * 100).toFixed(1) : '0.0';
+                centerLabelEl.textContent = row.label;
+                centerTotalEl.textContent = formatCurrency(row.value);
+                centerHintEl.textContent = `${share}% of spend`;
+            };
+
+            const updateDatasetFocus = (chart) => {
+                const dataset = chart.data.datasets[0];
+                dataset.backgroundColor = chartRows.map((row, index) => (
+                    selectedIndex === null || selectedIndex === index ? row.color : `${row.color}55`
+                ));
+                dataset.offset = chartRows.map((_, index) => selectedIndex === index ? 10 : 1);
+                chart.update();
+            };
+
+            const renderLegend = (chart) => {
+                if (!legendEl) return;
+                legendEl.innerHTML = '';
+                chartRows.forEach((row, index) => {
+                    const share = total ? (row.value / total) * 100 : 0;
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = `chart-legend-row${selectedIndex === index ? ' active' : ''}`;
+                    button.setAttribute('aria-pressed', selectedIndex === index ? 'true' : 'false');
+
+                    const colorSwatch = document.createElement('span');
+                    colorSwatch.className = 'legend-color';
+                    colorSwatch.style.backgroundColor = row.color;
+
+                    const main = document.createElement('span');
+                    main.className = 'legend-main';
+
+                    const name = document.createElement('span');
+                    name.className = 'legend-name';
+                    name.textContent = row.label;
+
+                    const track = document.createElement('span');
+                    track.className = 'legend-track';
+
+                    const fill = document.createElement('span');
+                    fill.style.width = `${Math.max(share, 3)}%`;
+                    fill.style.backgroundColor = row.color;
+
+                    const value = document.createElement('span');
+                    value.className = 'legend-value';
+                    value.textContent = chartMode === 'amount' ? formatCurrency(row.value) : `${share.toFixed(1)}%`;
+
+                    track.appendChild(fill);
+                    main.appendChild(name);
+                    main.appendChild(track);
+                    button.appendChild(colorSwatch);
+                    button.appendChild(main);
+                    button.appendChild(value);
+                    button.addEventListener('click', () => {
+                        selectedIndex = selectedIndex === index ? null : index;
+                        updateCenter(selectedIndex);
+                        updateDatasetFocus(chart);
+                        renderLegend(chart);
+                    });
+                    legendEl.appendChild(button);
+                });
+            };
+
+            if (!chartRows.length) {
+                chartCanvas.hidden = true;
+                if (emptyEl) emptyEl.classList.remove('hidden');
+                updateCenter();
+            } else {
+                const chart = new Chart(chartCanvas.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: chartRows.map((row) => row.label),
+                        datasets: [{
+                            data: chartRows.map((row) => row.value),
+                            backgroundColor: chartRows.map((row) => row.color),
+                            borderColor: getTheme().border,
+                            borderWidth: 4,
+                            borderRadius: 10,
+                            hoverBorderWidth: 5,
+                            hoverOffset: 12,
+                            offset: chartRows.map(() => 1),
+                            spacing: 2
+                        }]
                     },
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                padding: 16,
-                                font: { size: 12, weight: '600', family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
-                                usePointStyle: true,
-                                pointStyle: 'circle',
-                                color: '#374151',
-                                boxWidth: 12,
-                                boxHeight: 12,
-                                generateLabels: function(chart) {
-                                    const data = chart.data;
-                                    if (data.labels.length && data.datasets.length) {
-                                        return data.labels.map((label, i) => {
-                                            const value = data.datasets[0].data[i];
-                                            const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
-                                            const percentage = ((value / total) * 100).toFixed(1);
-                                            return {
-                                                text: `${label}: Rs. ${value.toLocaleString('en-IN')} (${percentage}%)`,
-                                                fillStyle: data.datasets[0].backgroundColor[i],
-                                                hidden: false,
-                                                index: i
-                                            };
-                                        });
-                                    }
-                                    return [];
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            animateRotate: true,
+                            duration: 850,
+                            easing: 'easeOutQuart'
+                        },
+                        layout: {
+                            padding: 8
+                        },
+                        onHover: (event, elements) => {
+                            if (selectedIndex !== null) return;
+                            updateCenter(elements.length ? elements[0].index : null);
+                        },
+                        onClick: (event, elements, chart) => {
+                            if (!elements.length) {
+                                selectedIndex = null;
+                            } else {
+                                const index = elements[0].index;
+                                selectedIndex = selectedIndex === index ? null : index;
+                            }
+                            updateCenter(selectedIndex);
+                            updateDatasetFocus(chart);
+                            renderLegend(chart);
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: getTheme().tooltipBg,
+                                titleColor: getTheme().tooltipText,
+                                bodyColor: getTheme().tooltipText,
+                                padding: 14,
+                                cornerRadius: 10,
+                                titleFont: { size: 13, weight: '700', family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
+                                bodyFont: { size: 12, family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
+                                borderColor: getTheme().tooltipBorder,
+                                borderWidth: 1,
+                                displayColors: true,
+                                boxPadding: 8,
+                                callbacks: {
+                                    label: (context) => {
+                                        const value = context.raw;
+                                        const share = total ? ((value / total) * 100).toFixed(1) : '0.0';
+                                        return `${formatCurrency(value)} (${share}%)`;
+                                    },
+                                    afterLabel: () => `Month total: ${formatCurrency(total)}`
                                 }
                             }
                         },
-                        tooltip: {
-                            enabled: true,
-                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                            padding: 14,
-                            titleFont: { size: 14, weight: 'bold', family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
-                            bodyFont: { size: 12, family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
-                            borderColor: 'rgba(255, 255, 255, 0.3)',
-                            borderWidth: 1,
-                            displayColors: true,
-                            boxPadding: 8,
-                            callbacks: {
-                                title: function(context) {
-                                    return context[0].label || 'Category';
-                                },
-                                label: function(context) {
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    const value = context.raw;
-                                    const percentage = ((value / total) * 100).toFixed(1);
-                                    return `Rs. ${value.toLocaleString('en-IN')} (${percentage}%)`;
-                                },
-                                afterLabel: function(context) {
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    return `Total: Rs. ${total.toLocaleString('en-IN')}`;
-                                }
-                            }
-                        }
-                    },
-                    cutout: '60%'
-                }
-            });
+                        cutout: '72%'
+                    }
+                });
+
+                updateCenter();
+                renderLegend(chart);
+
+                modeButtons.forEach((button) => {
+                    button.addEventListener('click', () => {
+                        chartMode = button.dataset.chartMode;
+                        modeButtons.forEach((item) => item.classList.toggle('active', item === button));
+                        renderLegend(chart);
+                    });
+                });
+
+                const refreshChartTheme = () => {
+                    const theme = getTheme();
+                    chart.data.datasets[0].borderColor = theme.border;
+                    chart.options.plugins.tooltip.backgroundColor = theme.tooltipBg;
+                    chart.options.plugins.tooltip.titleColor = theme.tooltipText;
+                    chart.options.plugins.tooltip.bodyColor = theme.tooltipText;
+                    chart.options.plugins.tooltip.borderColor = theme.tooltipBorder;
+                    chart.update();
+                };
+
+                new MutationObserver(refreshChartTheme).observe(document.body, {
+                    attributes: true,
+                    attributeFilter: ['class']
+                });
+            }
         }
     </script>
 </body>
