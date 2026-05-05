@@ -25,7 +25,7 @@
         <header class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold text-slate-800">My Personal Ledger</h1>
             <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-sm font-bold">
-                My Total: ₹{{ "{:,.0f}".format(total_spent) }}
+                My Total: &#8377;{{ "{:,.0f}".format(total_spent) }}
             </div>
         </header>
 
@@ -49,7 +49,7 @@
 
             <!-- Daily Tracker Form -->
             <div class="lg:col-span-1">
-                <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 sticky top-0 {% if not user.family_id %}opacity-50 pointer-events-none{% endif %}"
+                <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100 sticky top-0 {% if not user.family_id %}opacity-50 pointer-events-none{% endif %}">
                     <h2 class="text-xl font-bold text-slate-800 mb-6">Log Daily Expense</h2>
                     <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-4">
                         
@@ -62,9 +62,14 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
                             <input type="text" name="item_name" class="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., Snacks, Bus fare" required>
                         </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                            <textarea name="description" rows="2" class="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500" placeholder="Optional details for AI organization"></textarea>
+                        </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Temporary Category</label>
                             <select name="category_id" class="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500" required>
                                 {% for cat in categories %}
                                 <option value="{{ cat.id }}">{{ cat.name }}</option>
@@ -101,13 +106,18 @@
                                 {% for exp in expenses %}
                                 <tr class="border-b hover:bg-gray-50">
                                     <td class="px-4 py-3 whitespace-nowrap">{{ exp.date.strftime('%b %d, %Y') }}</td>
-                                    <td class="px-4 py-3 font-bold text-blue-600">{{ exp.item_name }}</td>
+                                    <td class="px-4 py-3 font-bold text-blue-600">
+                                        {{ exp.item_name }}
+                                        {% if exp.description %}
+                                        <div class="text-xs text-slate-500 font-normal mt-1">{{ exp.description|truncate(50, True) }}</div>
+                                        {% endif %}
+                                    </td>
                                     <td class="px-4 py-3">
                                         <span class="px-2 py-1 rounded text-xs font-bold text-white" style="background-color: {{ exp.category.color }}">
                                             {{ exp.category.name }}
                                         </span>
                                         {% if exp.bucket %}
-                                        <span class="ml-1 px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">Bucket</span>
+                                        <span class="ml-1 px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">Uses reserved bucket</span>
                                         {% endif %}
                                     </td>
                                     <td class="px-4 py-3 text-slate-800 font-bold">&#8377;{{ "{:,.0f}".format(exp.amount) }}</td>

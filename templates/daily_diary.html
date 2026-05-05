@@ -126,18 +126,22 @@
                     </div>
 
                     {% if categories %}
-                    <form action="{{ url_for('add_expense') }}" method="POST" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto] gap-3 items-end" data-loading>
+                    <form action="{{ url_for('add_expense') }}" method="POST" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto] gap-3 items-end" data-loading>
                         <input type="hidden" name="expense_date" value="{{ selected_date.strftime('%Y-%m-%d') }}">
                         <div>
                             <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Item Name</label>
                             <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="Tea, parking, snack" required autofocus>
                         </div>
                         <div>
+                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Description</label>
+                            <input type="text" name="description" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional AI context">
+                        </div>
+                        <div>
                             <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Amount</label>
                             <input type="number" name="amount" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="0.00" min="0.01" step="0.01" required>
                         </div>
                         <div>
-                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Category</label>
+                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Temporary Category</label>
                             <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
                                 {% for cat in categories %}
                                 <option value="{{ cat.id }}">{{ cat.name }}</option>
@@ -190,9 +194,12 @@
                                         {{ exp.category.name }}
                                     </span>
                                     {% if exp.bucket %}
-                                    <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Bucket</span>
+                                    <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Uses reserved bucket</span>
                                     {% endif %}
                                 </div>
+                                {% if exp.description %}
+                                <p class="text-xs text-slate-500 mt-1">{{ exp.description }}</p>
+                                {% endif %}
                                 <p class="text-xs text-slate-500 mt-1">
                                     Logged by {{ exp.user.username }}
                                 </p>

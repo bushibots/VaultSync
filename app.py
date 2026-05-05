@@ -6,16 +6,43 @@ import csv
 import json
 import os
 import secrets
+import threading
+import time
+import urllib.error
+import urllib.request
 from io import StringIO
 from datetime import date, datetime, timedelta
 from sqlalchemy import func, inspect, text
 from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion
 
 
+def load_local_env(path='.env'):
+    """Load simple KEY=value pairs from a local env file without extra dependencies."""
+    env_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), path)
+    if not os.path.exists(env_path):
+        return
+
+    with open(env_path, encoding='utf-8') as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_local_env()
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_super_secret_static_key_here_use_this_for_production'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(32)
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'vaultsync.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL',
+    'sqlite:///' + os.path.join(basedir, 'vaultsync.db')
+)
 db.init_app(app)
 migrate = Migrate(app, db)
 
@@ -38,6 +65,10 @@ PRESET_CATEGORIES = [
     ('Emergency', '#be123c', 0),
     ('Personal Care', '#db2777', 0),
 ]
+
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
+AI_ORGANIZER_BATCH_SIZE = 25
+_ai_organizer_scheduler_started = False
 
 
 @app.cli.command('repair-schema')
@@ -65,6 +96,10 @@ def repair_schema():
         column['name']
         for column in inspector.get_columns('expense')
     }
+    expense_column_ddls = {
+        'description': 'description TEXT',
+        'bucket_id': 'bucket_id INTEGER',
+    }
 
     added = []
     with db.engine.begin() as connection:
@@ -73,9 +108,11 @@ def repair_schema():
                 continue
             connection.execute(text(f'ALTER TABLE expected_expense ADD COLUMN {ddl}'))
             added.append(column_name)
-        if 'bucket_id' not in expense_columns:
-            connection.execute(text('ALTER TABLE expense ADD COLUMN bucket_id INTEGER'))
-            added.append('expense.bucket_id')
+        for column_name, ddl in expense_column_ddls.items():
+            if column_name in expense_columns:
+                continue
+            connection.execute(text(f'ALTER TABLE expense ADD COLUMN {ddl}'))
+            added.append(f'expense.{column_name}')
 
     if added:
         print(f"Added missing expected_expense columns: {', '.join(added)}")
@@ -229,6 +266,7 @@ def serialize_expense(expense):
     return {
         'date': expense.date.isoformat(),
         'item_name': expense.item_name,
+        'description': expense.description or '',
         'amount': round(float(expense.amount), 2),
         'category': expense.category.name if expense.category else 'Uncategorized',
         'spender': expense.user.username if expense.user else 'Unknown',
@@ -507,6 +545,272 @@ def compare_suggestion_to_current(suggestion):
         'category_rows': category_rows,
     }
 
+
+def chunks(items, size):
+    for index in range(0, len(items), size):
+        yield items[index:index + size]
+
+
+def parse_gemini_json_text(response_payload):
+    candidates = response_payload.get('candidates') or []
+    if not candidates:
+        raise ValueError('Gemini returned no candidates.')
+
+    parts = (candidates[0].get('content') or {}).get('parts') or []
+    text_parts = [part.get('text', '') for part in parts if part.get('text')]
+    if not text_parts:
+        raise ValueError('Gemini returned no JSON text.')
+
+    raw_text = ''.join(text_parts).strip()
+    if raw_text.startswith('```'):
+        raw_text = raw_text.strip('`')
+        if raw_text.lower().startswith('json'):
+            raw_text = raw_text[4:].strip()
+
+    return json.loads(raw_text)
+
+
+def call_gemini_json(prompt, response_schema):
+    api_key = os.environ.get('GEMINI_API_KEY', '').strip()
+    if not api_key:
+        raise ValueError('GEMINI_API_KEY is not set on the server.')
+
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+    payload = {
+        'contents': [
+            {
+                'parts': [
+                    {'text': prompt}
+                ]
+            }
+        ],
+        'generationConfig': {
+            'temperature': 0.1,
+            'responseMimeType': 'application/json',
+            'responseJsonSchema': response_schema,
+        }
+    }
+    body = json.dumps(payload).encode('utf-8')
+    request_obj = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            'Content-Type': 'application/json',
+            'x-goog-api-key': api_key,
+        },
+        method='POST'
+    )
+
+    try:
+        with urllib.request.urlopen(request_obj, timeout=60) as response:
+            response_payload = json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode('utf-8', errors='replace')
+        raise ValueError(f'Gemini API error {exc.code}: {error_body[:500]}') from exc
+    except urllib.error.URLError as exc:
+        raise ValueError(f'Could not reach Gemini API: {exc.reason}') from exc
+
+    return parse_gemini_json_text(response_payload)
+
+
+def build_expense_organization_prompt(expenses, categories):
+    expense_rows = [
+        {
+            'expense_id': expense.id,
+            'date': expense.date.isoformat(),
+            'item_name': expense.item_name,
+            'description': expense.description or '',
+            'amount': round(float(expense.amount), 2),
+            'current_category': expense.category.name if expense.category else '',
+        }
+        for expense in expenses
+    ]
+    category_rows = [
+        {
+            'category_id': category.id,
+            'name': category.name,
+            'monthly_limit': round(float(category.monthly_limit or 0), 2),
+            'is_preset': bool(category.is_fixed),
+        }
+        for category in categories
+    ]
+
+    return (
+        'You organize household expenses for VaultSync.\n'
+        'Choose exactly one category for each expense from the provided categories. '
+        'Use item_name and description as the main evidence. Treat current_category as a weak hint only. '
+        'Never invent a category. If uncertain, choose the closest existing category and use lower confidence.\n\n'
+        f'Categories:\n{json.dumps(category_rows, ensure_ascii=False)}\n\n'
+        f'Expenses:\n{json.dumps(expense_rows, ensure_ascii=False)}\n\n'
+        'Return only JSON matching the schema.'
+    )
+
+
+def expense_organization_schema(category_names):
+    return {
+        'type': 'object',
+        'properties': {
+            'classifications': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'expense_id': {'type': 'integer'},
+                        'category_name': {'type': 'string', 'enum': category_names},
+                        'confidence': {'type': 'number'},
+                        'reason': {'type': 'string'},
+                    },
+                    'required': ['expense_id', 'category_name', 'confidence', 'reason']
+                }
+            }
+        },
+        'required': ['classifications']
+    }
+
+
+def organize_expenses_for_family(family_id, start_date, end_date):
+    categories = Category.query.filter_by(
+        family_id=family_id
+    ).order_by(Category.name.asc()).all()
+    if not categories:
+        return {
+            'scanned': 0,
+            'changed': 0,
+            'unchanged': 0,
+            'skipped': 0,
+            'message': 'No categories available.'
+        }
+
+    expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= start_date,
+        Expense.date <= end_date
+    ).order_by(Expense.date.asc(), Expense.id.asc()).all()
+    if not expenses:
+        return {
+            'scanned': 0,
+            'changed': 0,
+            'unchanged': 0,
+            'skipped': 0,
+            'message': 'No expenses found in that date range.'
+        }
+
+    category_by_name = {category.name: category for category in categories}
+    linked_plans = {
+        plan.linked_expense_id: plan
+        for plan in ExpectedExpense.query.filter(
+            ExpectedExpense.family_id == family_id,
+            ExpectedExpense.linked_expense_id.in_([expense.id for expense in expenses])
+        ).all()
+        if plan.linked_expense_id
+    }
+
+    changed = 0
+    unchanged = 0
+    skipped = 0
+    reasons = []
+
+    for batch in chunks(expenses, AI_ORGANIZER_BATCH_SIZE):
+        prompt = build_expense_organization_prompt(batch, categories)
+        payload = call_gemini_json(prompt, expense_organization_schema(list(category_by_name.keys())))
+        classifications = payload.get('classifications') or []
+        classification_by_id = {
+            int(item.get('expense_id')): item
+            for item in classifications
+            if item.get('expense_id') is not None
+        }
+
+        for expense in batch:
+            classification = classification_by_id.get(expense.id)
+            if not classification:
+                skipped += 1
+                continue
+
+            category = category_by_name.get(str(classification.get('category_name') or '').strip())
+            if not category:
+                skipped += 1
+                continue
+
+            if expense.category_id == category.id:
+                unchanged += 1
+                continue
+
+            old_category = expense.category.name if expense.category else 'Uncategorized'
+            expense.category_id = category.id
+            linked_plan = linked_plans.get(expense.id)
+            if linked_plan:
+                linked_plan.category_id = category.id
+                expense.bucket_id = None
+            else:
+                bucket = find_budget_bucket(family_id, category.id, expense.date)
+                expense.bucket_id = bucket.id if bucket else None
+
+            changed += 1
+            if len(reasons) < 5:
+                reasons.append(
+                    f"{expense.item_name}: {old_category} -> {category.name} "
+                    f"({classification.get('reason', '').strip()})"
+                )
+
+    db.session.commit()
+    return {
+        'scanned': len(expenses),
+        'changed': changed,
+        'unchanged': unchanged,
+        'skipped': skipped,
+        'message': '; '.join(reasons)
+    }
+
+
+def run_daily_ai_organization():
+    with app.app_context():
+        target_date = datetime.now().date()
+        families = Family.query.filter_by(is_archived=False).all()
+        for family in families:
+            try:
+                organize_expenses_for_family(family.id, target_date, target_date)
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.warning('Scheduled AI expense organization failed for family %s: %s', family.id, exc)
+
+
+def seconds_until_daily_organization():
+    now = datetime.now()
+    target = now.replace(hour=23, minute=30, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return max(60, int((target - now).total_seconds()))
+
+
+def ai_organizer_scheduler_loop():
+    while True:
+        time.sleep(seconds_until_daily_organization())
+        run_daily_ai_organization()
+        time.sleep(60)
+
+
+def start_ai_organizer_scheduler():
+    global _ai_organizer_scheduler_started
+    if _ai_organizer_scheduler_started:
+        return
+    if os.environ.get('DISABLE_AI_ORGANIZER_SCHEDULER') == '1':
+        return
+    if not os.environ.get('GEMINI_API_KEY', '').strip():
+        return
+
+    _ai_organizer_scheduler_started = True
+    thread = threading.Thread(target=ai_organizer_scheduler_loop, daemon=True)
+    thread.start()
+
+
+if os.environ.get('RUN_AI_ORGANIZER_SCHEDULER') == '1':
+    start_ai_organizer_scheduler()
+
+
+@app.before_request
+def ensure_ai_organizer_scheduler_running():
+    start_ai_organizer_scheduler()
+
 # --- AUTH ROUTES ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -771,6 +1075,7 @@ def dashboard():
                             budget_buckets=budget_buckets,
                             bucket_allocated_total=bucket_allocated_total,
                             bucket_spent_total=bucket_spent_total,
+                            bucket_unspent_total=bucket_unspent_total,
                             bucket_overflow_total=bucket_overflow_total,
                             preset_categories=PRESET_CATEGORIES,
                             selected_month=selected_month,
@@ -872,6 +1177,7 @@ def my_spendings():
 @login_required
 def add_expense():
     item_name = request.form.get('item_name', '').strip()
+    description = request.form.get('description', '').strip()
     amount = request.form.get('amount')
     category_id = request.form.get('category_id')
     expense_date_str = request.form.get('expense_date')
@@ -902,6 +1208,7 @@ def add_expense():
     new_expense = Expense(
         date=expense_date,
         item_name=item_name,
+        description=description,
         amount=expense_amount,
         category_id=category.id,
         user_id=current_user.id,
@@ -1029,7 +1336,7 @@ def toggle_expected(id):
     ).first_or_404()
 
     if ee.is_bucket:
-        flash('Reserved buckets fill from linked daily expenses instead of being marked paid.', 'info')
+        flash('Reserved buckets are drawn down by linked daily expenses instead of being marked paid.', 'info')
         return back_or('dashboard')
 
     if ee.is_paid:
@@ -1048,6 +1355,7 @@ def toggle_expected(id):
         linked_expense = Expense(
             date=expected_expense_date(ee),
             item_name=f"Budget Plan: {ee.name}",
+            description='Posted from Expected Monthly Expenditure.',
             amount=ee.amount,
             category_id=ee.category_id,
             user_id=current_user.id,
@@ -1087,6 +1395,7 @@ def edit_expense(id):
 
     if request.method == 'POST':
         item_name = request.form.get('item_name', '').strip()
+        description = request.form.get('description', '').strip()
         amount = request.form.get('amount')
         category_id = request.form.get('category_id')
         expense_date_str = request.form.get('expense_date')
@@ -1111,6 +1420,7 @@ def edit_expense(id):
             return redirect(url_for('edit_expense', id=id))
 
         expense.item_name = item_name
+        expense.description = description
         expense.amount = expense_amount
         expense.category_id = category.id
         expense.date = expense_date
@@ -1702,9 +2012,9 @@ def export_ai_data():
     def generate():
         data = StringIO()
         writer = csv.writer(data)
-        writer.writerow(('Date', 'Spender', 'Item Name', 'Category', 'Amount'))
+        writer.writerow(('Date', 'Spender', 'Item Name', 'Description', 'Category', 'Amount'))
         for exp in expenses:
-            writer.writerow((exp.date.strftime("%Y-%m-%d"), exp.user.username, exp.item_name, exp.category.name, exp.amount))
+            writer.writerow((exp.date.strftime("%Y-%m-%d"), exp.user.username, exp.item_name, exp.description or '', exp.category.name, exp.amount))
             yield data.getvalue()
             data.seek(0)
             data.truncate(0)
@@ -1826,6 +2136,9 @@ def admin_panel():
                           planned_paid_total=float(planned_paid_total),
                           planned_unpaid_total=float(planned_total - planned_paid_total),
                           ai_suggestions_count=ai_suggestions_count,
+                          ai_organizer_configured=bool(os.environ.get('GEMINI_API_KEY', '').strip()),
+                          ai_organizer_model=GEMINI_MODEL,
+                          today=current_date.date(),
                           budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0,
                           year_range=range(2024, datetime.utcnow().year + 3))
 
@@ -1852,6 +2165,42 @@ def update_budget():
         flash('Please enter a valid budget amount.', 'error')
 
     return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin_panel/ai_organize', methods=['POST'])
+@login_required
+def admin_ai_organize_expenses():
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    today = datetime.now().date()
+    start_date = parse_date_arg(request.form.get('start_date'), today)
+    end_date = parse_date_arg(request.form.get('end_date'), start_date)
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
+
+    try:
+        result = organize_expenses_for_family(current_user.family_id, start_date, end_date)
+    except ValueError as exc:
+        db.session.rollback()
+        flash(f'AI organizer could not run: {exc}', 'error')
+        return redirect(url_for('admin_panel', tab='ai-organizer'))
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('AI organizer failed')
+        flash(f'AI organizer failed unexpectedly: {exc}', 'error')
+        return redirect(url_for('admin_panel', tab='ai-organizer'))
+
+    flash(
+        f"AI organizer scanned {result['scanned']} expense(s), changed {result['changed']}, "
+        f"left {result['unchanged']} unchanged, skipped {result['skipped']}.",
+        'success' if result['changed'] else 'info'
+    )
+    if result.get('message'):
+        flash(result['message'], 'info')
+
+    return redirect(url_for('admin_panel', tab='ai-organizer'))
 
 
 @app.route('/admin_panel/categories/<int:category_id>/limit', methods=['POST'])
@@ -2148,4 +2497,11 @@ if __name__ == '__main__':
         db.create_all()
         print("Database tables created successfully")
 
-    app.run(debug=True)
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        start_ai_organizer_scheduler()
+
+    app.run(
+        host=os.environ.get('FLASK_RUN_HOST', '127.0.0.1'),
+        port=int(os.environ.get('FLASK_RUN_PORT', '5000')),
+        debug=os.environ.get('FLASK_DEBUG', '1') == '1'
+    )

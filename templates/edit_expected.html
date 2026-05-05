@@ -57,7 +57,7 @@
                         <input type="checkbox" name="is_bucket" class="mt-1 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500" {% if planned.is_bucket %}checked{% endif %} {% if planned.is_paid %}disabled{% endif %}>
                         <span>
                             <span class="font-bold text-slate-800">Reserved Bucket</span>
-                            <span class="block text-xs text-slate-500 mt-0.5">Buckets reserve this amount immediately and fill from daily expenses in the same category.</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Buckets reserve this amount immediately. Daily expenses in the same category draw them down.</span>
                             {% if planned.is_paid %}
                             <span class="block text-xs text-yellow-700 font-semibold mt-1">Unpost before changing this payment type.</span>
                             {% endif %}
