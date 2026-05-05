@@ -46,6 +46,7 @@ class Category(db.Model):
     color = db.Column(db.String(20), nullable=False)
     monthly_limit = db.Column(db.Float, default=0.0)
     is_fixed = db.Column(db.Boolean, default=False)
+    is_color_auto = db.Column(db.Boolean, default=True)  # True = auto-generate distinct color, False = fixed color
     family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
 
 class Expense(db.Model):
@@ -117,6 +118,26 @@ class AISavingsForecast(db.Model):
     admin_notes = db.Column(db.Text, default='')
     raw_json = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AIExpenseException(db.Model):
+    """Exception rules to prevent AI from confusing expenses between household members with different budgets."""
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    description = db.Column(db.String(200), nullable=False)  # e.g., "Father's expenses - separate household"
+    
+    # Match criteria: AI should exclude expenses matching these patterns
+    match_keywords = db.Column(db.Text, default='')  # CSV of keywords (case-insensitive), e.g., "father,dad,father's"
+    match_description_contains = db.Column(db.Text, default='')  # CSV patterns in description
+    match_user_ids = db.Column(db.Text, default='')  # CSV of user IDs whose expenses match
+    
+    # Action: what to do when matched
+    action = db.Column(db.String(20), default='exclude')  # 'exclude' = skip from AI organization, 'separate' = flag as separate
+    
+    # Status
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class AuditLog(db.Model):

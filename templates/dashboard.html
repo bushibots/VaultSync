@@ -676,41 +676,77 @@
                     datasets: [{
                         data: dynamicData,
                         backgroundColor: dynamicColors,
-                        borderWidth: 0,
-                        borderRadius: 6
+                        borderColor: '#ffffff',
+                        borderWidth: 3,
+                        borderRadius: 8,
+                        hoverOffset: 8,
+                        offset: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
+                    layout: {
+                        padding: 10
+                    },
                     plugins: {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 15,
-                                font: { size: 11, weight: 'bold' },
+                                padding: 16,
+                                font: { size: 12, weight: '600', family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
                                 usePointStyle: true,
-                                pointStyle: 'circle'
+                                pointStyle: 'circle',
+                                color: '#374151',
+                                boxWidth: 12,
+                                boxHeight: 12,
+                                generateLabels: function(chart) {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        return data.labels.map((label, i) => {
+                                            const value = data.datasets[0].data[i];
+                                            const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
+                                            const percentage = ((value / total) * 100).toFixed(1);
+                                            return {
+                                                text: `${label}: Rs. ${value.toLocaleString('en-IN')} (${percentage}%)`,
+                                                fillStyle: data.datasets[0].backgroundColor[i],
+                                                hidden: false,
+                                                index: i
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
                             }
                         },
                         tooltip: {
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            padding: 12,
-                            titleFont: { size: 13, weight: 'bold' },
-                            bodyFont: { size: 11 },
-                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                            enabled: true,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            padding: 14,
+                            titleFont: { size: 14, weight: 'bold', family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
+                            bodyFont: { size: 12, family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
+                            borderColor: 'rgba(255, 255, 255, 0.3)',
                             borderWidth: 1,
                             displayColors: true,
+                            boxPadding: 8,
                             callbacks: {
+                                title: function(context) {
+                                    return context[0].label || 'Category';
+                                },
                                 label: function(context) {
                                     const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    const percentage = total ? ((context.raw / total) * 100).toFixed(1) : '0.0';
-                                    return `Rs. ${context.raw.toLocaleString('en-IN')} (${percentage}%)`;
+                                    const value = context.raw;
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `Rs. ${value.toLocaleString('en-IN')} (${percentage}%)`;
+                                },
+                                afterLabel: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    return `Total: Rs. ${total.toLocaleString('en-IN')}`;
                                 }
                             }
                         }
                     },
-                    cutout: '65%'
+                    cutout: '60%'
                 }
             });
         }

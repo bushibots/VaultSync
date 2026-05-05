@@ -81,6 +81,9 @@
                 <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('ai-organizer')">
                     <i class="fas fa-wand-magic-sparkles mr-2"></i>AI Organizer
                 </button>
+                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('ai-exceptions')">
+                    <i class="fas fa-shield-alt mr-2"></i>Expense Exceptions
+                </button>
                 <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('settings')">
                     <i class="fas fa-cog mr-2"></i>Settings
                 </button>
@@ -605,6 +608,142 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- AI Expense Exceptions Tab -->
+        <div id="ai-exceptions" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">
+                <i class="fas fa-shield-alt mr-2 text-blue-500"></i>Expense Exceptions for AI Organizer
+            </h2>
+
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+                <p class="text-sm text-gray-700 mb-2">
+                    <strong>Purpose:</strong> Create exception rules to prevent the AI from confusing expenses between household members with different budgets (e.g., father lives in another home, mom and child in another).
+                </p>
+                <p class="text-sm text-gray-600 mt-3">
+                    When an expense matches an exception rule, it will be excluded from automatic organization, allowing you to categorize it manually.
+                </p>
+            </div>
+
+            <!-- Add Exception Form -->
+            <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200 mb-8">
+                <h3 class="font-bold text-gray-800 mb-4">
+                    <i class="fas fa-plus-circle mr-2 text-blue-600"></i>Create Exception Rule
+                </h3>
+
+                <form method="POST" action="{{ url_for('add_ai_expense_exception') }}" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            Rule Description <span class="text-red-500">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            name="description" 
+                            placeholder="e.g., Father's expenses - separate household"
+                            class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm"
+                            required
+                            maxlength="200"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">A clear description of what this exception rule is for.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            Match Keywords <span class="text-gray-500">(Optional)</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            name="match_keywords" 
+                            placeholder="e.g., father, dad, father's"
+                            class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm"
+                            maxlength="500"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Comma-separated keywords. Expenses with item_name containing any of these will be excluded (case-insensitive).</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            Match Description Contains <span class="text-gray-500">(Optional)</span>
+                        </label>
+                        <textarea 
+                            name="match_description_contains" 
+                            placeholder="e.g., father's home, father's expenses"
+                            class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm"
+                            rows="3"
+                            maxlength="500"
+                        ></textarea>
+                        <p class="text-xs text-gray-500 mt-1">Comma-separated patterns. Expenses with description containing any of these will be excluded (case-insensitive).</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Action</label>
+                        <select name="action" class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm">
+                            <option value="exclude">Exclude from AI organization</option>
+                            <option value="separate">Flag as separate household</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">What should happen when this rule matches an expense.</p>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg duration-200 flex items-center gap-2 w-full justify-center"
+                    >
+                        <i class="fas fa-plus"></i>Create Exception Rule
+                    </button>
+                </form>
+            </div>
+
+            <!-- Active Exception Rules -->
+            {% if ai_exceptions %}
+            <div class="space-y-4">
+                <h3 class="font-bold text-gray-800 text-lg">
+                    <i class="fas fa-list mr-2 text-blue-600"></i>Exception Rules ({{ ai_exceptions | length }})
+                </h3>
+
+                {% for exc in ai_exceptions %}
+                <div class="border-2 {% if exc.is_active %}border-blue-200 bg-blue-50{% else %}border-gray-300 bg-gray-50{% endif %} rounded-lg p-4">
+                    <div class="flex items-start justify-between gap-4 mb-3">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-3">
+                                <h4 class="font-bold text-gray-800">{{ exc.description }}</h4>
+                                <span class="text-xs font-bold {% if exc.is_active %}bg-blue-100 text-blue-800{% else %}bg-gray-200 text-gray-700{% endif %} px-3 py-1 rounded-full">
+                                    {% if exc.is_active %}Active{% else %}Disabled{% endif %}
+                                </span>
+                                <span class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{{ exc.action }}</span>
+                            </div>
+                            
+                            <div class="mt-3 space-y-2 text-sm text-gray-700">
+                                {% if exc.match_keywords %}
+                                <p><strong>Keywords:</strong> <code class="bg-white px-2 py-1 rounded border border-gray-300 text-xs">{{ exc.match_keywords }}</code></p>
+                                {% endif %}
+                                {% if exc.match_description_contains %}
+                                <p><strong>Description patterns:</strong> <code class="bg-white px-2 py-1 rounded border border-gray-300 text-xs">{{ exc.match_description_contains }}</code></p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col gap-2 whitespace-nowrap">
+                            <form method="POST" action="{{ url_for('toggle_ai_expense_exception', exc_id=exc.id) }}" class="inline">
+                                <button type="submit" class="text-xs font-bold {% if exc.is_active %}bg-yellow-100 text-yellow-800 hover:bg-yellow-200{% else %}bg-green-100 text-green-800 hover:bg-green-200{% endif %} px-4 py-2 rounded-lg duration-200">
+                                    {% if exc.is_active %}<i class="fas fa-pause mr-1"></i>Disable{% else %}<i class="fas fa-play mr-1"></i>Enable{% endif %}
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ url_for('delete_ai_expense_exception', exc_id=exc.id) }}" class="inline" onsubmit="return confirm('Delete this exception rule?');">
+                                <button type="submit" class="text-xs font-bold bg-red-100 text-red-800 hover:bg-red-200 px-4 py-2 rounded-lg duration-200">
+                                    <i class="fas fa-trash mr-1"></i>Delete
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-info-circle text-2xl mb-3"></i>
+                <p>No exception rules created yet. Add one to protect specific expenses from AI organization.</p>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Settings Tab -->
