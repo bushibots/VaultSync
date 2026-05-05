@@ -13,6 +13,7 @@ class Family(db.Model):
     invite_code = db.Column(db.String(20), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(12))
     created_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     monthly_budget = db.Column(db.Float, default=170000)
+    ai_notes = db.Column(db.Text, default='')
     is_archived = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     users = db.relationship('User', backref='family', lazy=True, foreign_keys='User.family_id')
@@ -20,6 +21,7 @@ class Family(db.Model):
     expenses = db.relationship('Expense', backref='family', lazy=True)
     expected_expenses = db.relationship('ExpectedExpense', backref='family', lazy=True)
     budget_suggestions = db.relationship('BudgetSuggestion', backref='family', lazy=True)
+    savings_forecasts = db.relationship('AISavingsForecast', backref='family', lazy=True)
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -96,6 +98,24 @@ class BudgetSuggestion(db.Model):
     notes = db.Column(db.Text, default='')
     raw_json = db.Column(db.Text, nullable=False)
     is_applied = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AISavingsForecast(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.relationship('User')
+    source_start_date = db.Column(db.Date, nullable=False)
+    forecast_end_date = db.Column(db.Date, nullable=False)
+    current_spent = db.Column(db.Float, default=0.0, nullable=False)
+    predicted_additional_spend = db.Column(db.Float, default=0.0, nullable=False)
+    predicted_total_spend = db.Column(db.Float, default=0.0, nullable=False)
+    expected_savings = db.Column(db.Float, default=0.0, nullable=False)
+    confidence_level = db.Column(db.String(20), default='medium', nullable=False)
+    confidence_score = db.Column(db.Float, default=0.5, nullable=False)
+    admin_notes = db.Column(db.Text, default='')
+    raw_json = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
