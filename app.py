@@ -797,7 +797,7 @@ def build_savings_forecast_schema(category_names):
             'forecast_end_date': {'type': 'string'},
             'predicted_additional_spend': {'type': 'number'},
             'predicted_total_spend': {'type': 'number'},
-            'expected_savings': {'type': 'number'},
+            'expected_savings': {'type': 'number', 'description': 'MUST copy the backend-calculated savings value exactly'},
             'confidence_level': {'type': 'string', 'enum': ['low', 'medium', 'high']},
             'confidence_score': {'type': 'number'},
             'assumptions': {'type': 'array', 'items': {'type': 'string'}},
@@ -843,6 +843,7 @@ def build_savings_forecast_context(family_id, admin_notes):
     elapsed_days = max((today - month_start).days + 1, 1)
     remaining_days = max((month_end - today).days, 0)
 
+    # Backend-First Math: Get actual expenses for current month (up to today)
     expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= month_start,
@@ -868,9 +869,28 @@ def build_savings_forecast_context(family_id, admin_notes):
     )
 
     category_spending = summarize_expenses(expenses).get('by_category', {})
+    
+    # BACKEND-FIRST MATH: Calculate totals directly in Python
     current_spent = round(sum(float(expense.amount) for expense in expenses), 2)
     simple_pace_total = round((current_spent / elapsed_days) * days_in_month, 2) if elapsed_days else current_spent
-
+    
+    # Backend-First Math: Filter ONLY unpaid ExpectedExpense items (is_paid == False)
+    # Paid items are already recorded in Expense table, so we exclude them to avoid double-counting
+    unpaid_expected = [
+        item for item in expected_items
+        if not item.is_paid  # Strictly filter: only send future obligations
+    ]
+    
+    # BACKEND-FIRST MATH: Pre-calculate total unpaid expected expenses
+    total_unpaid_expected = round(
+        sum(float(expected_budget_amount(item)) for item in unpaid_expected),
+        2
+    )
+    
+    # BACKEND-FIRST MATH: Calculate savings in Python, not in AI
+    monthly_budget = float(family.monthly_budget or 0)
+    calculated_savings = round(monthly_budget - (current_spent + total_unpaid_expected), 2)
+    
     unpaid_planned = [
         {
             'name': item.name,
@@ -879,8 +899,7 @@ def build_savings_forecast_context(family_id, admin_notes):
             'due_date': expected_expense_date(item).isoformat(),
             'type': 'reserved_bucket' if item.is_bucket else 'planned_bill',
         }
-        for item in expected_items
-        if not item.is_paid
+        for item in unpaid_expected
     ]
 
     return {
@@ -890,6 +909,8 @@ def build_savings_forecast_context(family_id, admin_notes):
         'month_end': month_end,
         'current_spent': current_spent,
         'simple_pace_total': simple_pace_total,
+        'total_unpaid_expected': total_unpaid_expected,
+        'calculated_savings': calculated_savings,
         'categories': categories,
         'payload': {
             'currency': 'INR',
@@ -927,11 +948,18 @@ def build_savings_forecast_context(family_id, admin_notes):
                 for item in bucket_summaries
             ],
             'important_admin_notes': admin_notes,
+            'backend_calculated_values': {
+                'total_actual_spent': current_spent,
+                'total_unpaid_expected': total_unpaid_expected,
+                'calculated_savings': calculated_savings,
+            },
             'instructions_for_ai': [
-                'Estimate family savings at the end of the current month.',
-                'Use actual expenses, spending pace, unpaid planned items, bucket reserves, category limits, and admin notes.',
-                'Admin notes are important rules. Follow them when reasonable and mention how they affected the forecast.',
-                'Return conservative numbers in INR. expected_savings can be negative if overspending is likely.',
+                'Analyze family spending patterns, forecast category spend, and provide strategic recommendations.',
+                'CRITICAL: The exact calculated remaining savings for this month is Rs {calculated_savings}. The total spent so far is Rs {current_spent}. The total unpaid expected expenses are Rs {total_unpaid_expected}.',
+                'You must treat these numbers as absolute facts. Do NOT recalculate them, and do NOT output any other numbers for expected_savings.',
+                'Your job is to explain spending patterns and provide smart category forecasts, not to recalculate totals.',
+                'Use actual expenses, unpaid planned items, bucket reserves, category limits, and admin notes to inform your analysis.',
+                'Admin notes are important rules. Follow them when reasonable and mention how they affected your recommendations.',
                 'Do not invent category names. Use only the provided categories in category_forecasts.',
             ]
         }
@@ -939,12 +967,24 @@ def build_savings_forecast_context(family_id, admin_notes):
 
 
 def build_savings_forecast_prompt(context_payload):
+    backend_values = context_payload.get('backend_calculated_values', {})
+    calculated_savings = backend_values.get('calculated_savings', 0)
+    total_actual_spent = backend_values.get('total_actual_spent', 0)
+    total_unpaid_expected = backend_values.get('total_unpaid_expected', 0)
+    
     return (
         'You are VaultSync savings forecast AI.\n'
-        'Analyze this family budget data and forecast expected savings by month end. '
-        'Prefer conservative estimates and explain the key risks/actions briefly.\n\n'
+        'Analyze this family budget data and provide category forecasts and strategic recommendations.\n'
+        'IMPORTANT: You must accept and use the backend-calculated values as absolute facts.\n\n'
         f'{json.dumps(context_payload, ensure_ascii=False)}\n\n'
-        'Return only JSON matching the schema.'
+        f'HARDCODED FACTS FOR THIS FORECAST:\n'
+        f'- Exact calculated remaining savings: Rs {calculated_savings}\n'
+        f'- Total actual spent to date: Rs {total_actual_spent}\n'
+        f'- Total unpaid expected expenses: Rs {total_unpaid_expected}\n'
+        f'\n'
+        f'You MUST return these exact values in your response. Do NOT recalculate them.\n'
+        f'Your analysis should focus on spending patterns, risks, and recommended actions.\n'
+        f'Return only JSON matching the schema. No markdown, no prose outside JSON.'
     )
 
 
@@ -952,6 +992,9 @@ def normalize_savings_forecast_payload(payload, context):
     month_end = context['month_end']
     current_spent = context['current_spent']
     monthly_budget = float(context['family'].monthly_budget or 0)
+    
+    # Backend-First Math: Use the pre-calculated savings value
+    backend_calculated_savings = context['calculated_savings']
 
     try:
         predicted_total = float(payload.get('predicted_total_spend'))
@@ -968,7 +1011,11 @@ def normalize_savings_forecast_payload(payload, context):
     try:
         expected_savings = float(payload.get('expected_savings'))
     except (TypeError, ValueError):
-        expected_savings = monthly_budget - predicted_total
+        # If AI didn't provide expected_savings, use backend calculation
+        expected_savings = backend_calculated_savings
+    
+    # Backend-First Math: Ensure we use the correct pre-calculated savings
+    expected_savings = backend_calculated_savings
 
     try:
         confidence_score = float(payload.get('confidence_score'))
