@@ -13,7 +13,7 @@ import urllib.request
 from io import StringIO
 from datetime import date, datetime, timedelta
 from sqlalchemy import func, inspect, text
-from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion
+from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion, AISavingsForecast
 
 
 def load_local_env(path='.env'):
@@ -103,6 +103,33 @@ def repair_schema():
 
     added = []
     with db.engine.begin() as connection:
+        family_columns = {
+            column['name']
+            for column in inspector.get_columns('family')
+        } if inspector.has_table('family') else set()
+        if 'ai_notes' not in family_columns:
+            connection.execute(text('ALTER TABLE family ADD COLUMN ai_notes TEXT'))
+            added.append('family.ai_notes')
+        if not inspector.has_table('ai_savings_forecast'):
+            connection.execute(text("""
+                CREATE TABLE ai_savings_forecast (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    family_id INTEGER NOT NULL,
+                    created_by_user_id INTEGER NOT NULL,
+                    source_start_date DATE NOT NULL,
+                    forecast_end_date DATE NOT NULL,
+                    current_spent FLOAT NOT NULL DEFAULT 0,
+                    predicted_additional_spend FLOAT NOT NULL DEFAULT 0,
+                    predicted_total_spend FLOAT NOT NULL DEFAULT 0,
+                    expected_savings FLOAT NOT NULL DEFAULT 0,
+                    confidence_level VARCHAR(20) NOT NULL DEFAULT 'medium',
+                    confidence_score FLOAT NOT NULL DEFAULT 0.5,
+                    admin_notes TEXT,
+                    raw_json TEXT NOT NULL,
+                    created_at DATETIME
+                )
+            """))
+            added.append('ai_savings_forecast')
         for column_name, ddl in expected_expense_columns.items():
             if column_name in columns:
                 continue
@@ -759,6 +786,297 @@ def organize_expenses_for_family(family_id, start_date, end_date):
         'unchanged': unchanged,
         'skipped': skipped,
         'message': '; '.join(reasons)
+    }
+
+
+def build_savings_forecast_schema(category_names):
+    return {
+        'type': 'object',
+        'properties': {
+            'forecast_title': {'type': 'string'},
+            'forecast_end_date': {'type': 'string'},
+            'predicted_additional_spend': {'type': 'number'},
+            'predicted_total_spend': {'type': 'number'},
+            'expected_savings': {'type': 'number'},
+            'confidence_level': {'type': 'string', 'enum': ['low', 'medium', 'high']},
+            'confidence_score': {'type': 'number'},
+            'assumptions': {'type': 'array', 'items': {'type': 'string'}},
+            'important_notes_response': {'type': 'array', 'items': {'type': 'string'}},
+            'risk_flags': {'type': 'array', 'items': {'type': 'string'}},
+            'recommended_actions': {'type': 'array', 'items': {'type': 'string'}},
+            'category_forecasts': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'category': {'type': 'string', 'enum': category_names},
+                        'current_spent': {'type': 'number'},
+                        'predicted_month_end_spend': {'type': 'number'},
+                        'note': {'type': 'string'},
+                    },
+                    'required': ['category', 'current_spent', 'predicted_month_end_spend', 'note']
+                }
+            }
+        },
+        'required': [
+            'forecast_title',
+            'forecast_end_date',
+            'predicted_additional_spend',
+            'predicted_total_spend',
+            'expected_savings',
+            'confidence_level',
+            'confidence_score',
+            'assumptions',
+            'important_notes_response',
+            'risk_flags',
+            'recommended_actions',
+            'category_forecasts'
+        ]
+    }
+
+
+def build_savings_forecast_context(family_id, admin_notes):
+    family = db.session.get(Family, family_id)
+    today = datetime.now().date()
+    month_start, month_end = month_bounds(today.year, today.month)
+    days_in_month = (month_end - month_start).days + 1
+    elapsed_days = max((today - month_start).days + 1, 1)
+    remaining_days = max((month_end - today).days, 0)
+
+    expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= month_start,
+        Expense.date <= today
+    ).order_by(Expense.date.asc(), Expense.id.asc()).all()
+
+    categories = Category.query.filter_by(
+        family_id=family_id
+    ).order_by(Category.name.asc()).all()
+
+    expected_items = ExpectedExpense.query.filter_by(
+        family_id=family_id,
+        month=today.month,
+        year=today.year
+    ).order_by(ExpectedExpense.due_day.asc(), ExpectedExpense.id.asc()).all()
+
+    bucket_items = [item for item in expected_items if item.is_bucket]
+    bucket_summaries = build_budget_bucket_summaries(
+        bucket_items,
+        family_id,
+        f"{today.month:02d}",
+        str(today.year)
+    )
+
+    category_spending = summarize_expenses(expenses).get('by_category', {})
+    current_spent = round(sum(float(expense.amount) for expense in expenses), 2)
+    simple_pace_total = round((current_spent / elapsed_days) * days_in_month, 2) if elapsed_days else current_spent
+
+    unpaid_planned = [
+        {
+            'name': item.name,
+            'category': item.category.name if item.category else 'Uncategorized',
+            'amount': round(expected_budget_amount(item), 2),
+            'due_date': expected_expense_date(item).isoformat(),
+            'type': 'reserved_bucket' if item.is_bucket else 'planned_bill',
+        }
+        for item in expected_items
+        if not item.is_paid
+    ]
+
+    return {
+        'family': family,
+        'today': today,
+        'month_start': month_start,
+        'month_end': month_end,
+        'current_spent': current_spent,
+        'simple_pace_total': simple_pace_total,
+        'categories': categories,
+        'payload': {
+            'currency': 'INR',
+            'generated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+            'month_start_date': month_start.isoformat(),
+            'today': today.isoformat(),
+            'forecast_end_date': month_end.isoformat(),
+            'days_in_month': days_in_month,
+            'elapsed_days': elapsed_days,
+            'remaining_days': remaining_days,
+            'monthly_budget': round(float(family.monthly_budget or 0), 2),
+            'current_spent': current_spent,
+            'simple_pace_projection': simple_pace_total,
+            'simple_pace_savings': round(float(family.monthly_budget or 0) - simple_pace_total, 2),
+            'category_spending_to_date': category_spending,
+            'categories': [
+                {
+                    'name': category.name,
+                    'monthly_limit': round(float(category.monthly_limit or 0), 2),
+                    'is_preset': bool(category.is_fixed),
+                }
+                for category in categories
+            ],
+            'current_month_expenses': [serialize_expense(expense) for expense in expenses],
+            'unpaid_planned_items_and_reserves': unpaid_planned,
+            'reserved_bucket_status': [
+                {
+                    'name': item['bucket'].name,
+                    'category': item['bucket'].category.name if item['bucket'].category else 'Uncategorized',
+                    'allocated': round(item['allocated'], 2),
+                    'spent': round(item['spent'], 2),
+                    'remaining': round(item['remaining'], 2),
+                    'overflow': round(item['overflow'], 2),
+                }
+                for item in bucket_summaries
+            ],
+            'important_admin_notes': admin_notes,
+            'instructions_for_ai': [
+                'Estimate family savings at the end of the current month.',
+                'Use actual expenses, spending pace, unpaid planned items, bucket reserves, category limits, and admin notes.',
+                'Admin notes are important rules. Follow them when reasonable and mention how they affected the forecast.',
+                'Return conservative numbers in INR. expected_savings can be negative if overspending is likely.',
+                'Do not invent category names. Use only the provided categories in category_forecasts.',
+            ]
+        }
+    }
+
+
+def build_savings_forecast_prompt(context_payload):
+    return (
+        'You are VaultSync savings forecast AI.\n'
+        'Analyze this family budget data and forecast expected savings by month end. '
+        'Prefer conservative estimates and explain the key risks/actions briefly.\n\n'
+        f'{json.dumps(context_payload, ensure_ascii=False)}\n\n'
+        'Return only JSON matching the schema.'
+    )
+
+
+def normalize_savings_forecast_payload(payload, context):
+    month_end = context['month_end']
+    current_spent = context['current_spent']
+    monthly_budget = float(context['family'].monthly_budget or 0)
+
+    try:
+        predicted_total = float(payload.get('predicted_total_spend'))
+    except (TypeError, ValueError):
+        predicted_total = context['simple_pace_total']
+
+    predicted_total = max(predicted_total, current_spent)
+    try:
+        predicted_additional = float(payload.get('predicted_additional_spend'))
+    except (TypeError, ValueError):
+        predicted_additional = predicted_total - current_spent
+    predicted_additional = max(predicted_additional, 0.0)
+
+    try:
+        expected_savings = float(payload.get('expected_savings'))
+    except (TypeError, ValueError):
+        expected_savings = monthly_budget - predicted_total
+
+    try:
+        confidence_score = float(payload.get('confidence_score'))
+    except (TypeError, ValueError):
+        confidence_score = 0.5
+    confidence_score = min(max(confidence_score, 0.0), 1.0)
+
+    confidence_level = str(payload.get('confidence_level') or 'medium').strip().lower()
+    if confidence_level not in {'low', 'medium', 'high'}:
+        confidence_level = 'medium'
+
+    payload['forecast_title'] = str(payload.get('forecast_title') or 'End-of-month savings forecast')[:160]
+    payload['forecast_end_date'] = month_end.isoformat()
+    payload['predicted_additional_spend'] = round(predicted_additional, 2)
+    payload['predicted_total_spend'] = round(predicted_total, 2)
+    payload['expected_savings'] = round(expected_savings, 2)
+    payload['confidence_level'] = confidence_level
+    payload['confidence_score'] = round(confidence_score, 2)
+
+    for key in ('assumptions', 'important_notes_response', 'risk_flags', 'recommended_actions'):
+        values = payload.get(key)
+        if not isinstance(values, list):
+            values = []
+        payload[key] = [str(value).strip() for value in values if str(value).strip()][:8]
+
+    category_names = {category.name for category in context['categories']}
+    normalized_category_forecasts = []
+    for item in payload.get('category_forecasts') or []:
+        if not isinstance(item, dict):
+            continue
+        category_name = str(item.get('category') or '').strip()
+        if category_name not in category_names:
+            continue
+        try:
+            current_category_spent = float(item.get('current_spent') or 0)
+        except (TypeError, ValueError):
+            current_category_spent = 0.0
+        try:
+            predicted_category_spend = float(item.get('predicted_month_end_spend') or 0)
+        except (TypeError, ValueError):
+            predicted_category_spend = current_category_spent
+        normalized_category_forecasts.append({
+            'category': category_name,
+            'current_spent': round(max(current_category_spent, 0.0), 2),
+            'predicted_month_end_spend': round(max(predicted_category_spend, 0.0), 2),
+            'note': str(item.get('note') or '').strip()[:240],
+        })
+    payload['category_forecasts'] = normalized_category_forecasts
+    return payload
+
+
+def create_ai_savings_forecast(family_id, user_id, admin_notes):
+    context = build_savings_forecast_context(family_id, admin_notes)
+    category_names = [category.name for category in context['categories']]
+    if not category_names:
+        raise ValueError('Create categories before running a savings forecast.')
+
+    prompt = build_savings_forecast_prompt(context['payload'])
+    payload = call_gemini_json(prompt, build_savings_forecast_schema(category_names))
+    payload = normalize_savings_forecast_payload(payload, context)
+
+    forecast = AISavingsForecast(
+        family_id=family_id,
+        created_by_user_id=user_id,
+        source_start_date=context['month_start'],
+        forecast_end_date=context['month_end'],
+        current_spent=context['current_spent'],
+        predicted_additional_spend=payload['predicted_additional_spend'],
+        predicted_total_spend=payload['predicted_total_spend'],
+        expected_savings=payload['expected_savings'],
+        confidence_level=payload['confidence_level'],
+        confidence_score=payload['confidence_score'],
+        admin_notes=admin_notes,
+        raw_json=json.dumps(payload),
+        created_at=datetime.utcnow()
+    )
+    db.session.add(forecast)
+    db.session.commit()
+    return forecast
+
+
+def savings_forecast_payload(forecast):
+    if not forecast:
+        return {}
+    try:
+        return json.loads(forecast.raw_json)
+    except (TypeError, ValueError):
+        return {}
+
+
+def savings_forecast_chart_data(family, forecast):
+    monthly_budget = float(family.monthly_budget or 0)
+    if not forecast:
+        return {
+            'monthly_budget': round(monthly_budget, 2),
+            'current_spent': 0,
+            'predicted_additional_spend': 0,
+            'expected_savings': max(round(monthly_budget, 2), 0),
+            'expected_overspend': 0,
+        }
+
+    expected_savings = float(forecast.expected_savings or 0)
+    return {
+        'monthly_budget': round(monthly_budget, 2),
+        'current_spent': round(float(forecast.current_spent or 0), 2),
+        'predicted_additional_spend': round(float(forecast.predicted_additional_spend or 0), 2),
+        'expected_savings': round(max(expected_savings, 0.0), 2),
+        'expected_overspend': round(max(-expected_savings, 0.0), 2),
     }
 
 
@@ -2056,6 +2374,7 @@ def admin_panel():
 
     # Calculate spending stats
     current_date = datetime.utcnow()
+    current_month_start, current_month_end = month_bounds(current_date.year, current_date.month)
     month_str = f"{current_date.month:02d}"
     year_str = str(current_date.year)
 
@@ -2122,6 +2441,11 @@ def admin_panel():
     ai_suggestions_count = BudgetSuggestion.query.filter_by(
         family_id=current_user.family_id
     ).count()
+    latest_savings_forecast = AISavingsForecast.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(AISavingsForecast.created_at.desc(), AISavingsForecast.id.desc()).first()
+    latest_savings_payload = savings_forecast_payload(latest_savings_forecast)
+    savings_chart_data = savings_forecast_chart_data(family, latest_savings_forecast)
 
     return render_template('admin_panel.html',
                           user=current_user,
@@ -2136,9 +2460,15 @@ def admin_panel():
                           planned_paid_total=float(planned_paid_total),
                           planned_unpaid_total=float(planned_total - planned_paid_total),
                           ai_suggestions_count=ai_suggestions_count,
+                          latest_savings_forecast=latest_savings_forecast,
+                          latest_savings_payload=latest_savings_payload,
+                          savings_chart_data=savings_chart_data,
+                          ai_notes=family.ai_notes or '',
                           ai_organizer_configured=bool(os.environ.get('GEMINI_API_KEY', '').strip()),
                           ai_organizer_model=GEMINI_MODEL,
                           today=current_date.date(),
+                          current_month_start=current_month_start,
+                          current_month_end=current_month_end,
                           budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0,
                           year_range=range(2024, datetime.utcnow().year + 3))
 
@@ -2201,6 +2531,42 @@ def admin_ai_organize_expenses():
         flash(result['message'], 'info')
 
     return redirect(url_for('admin_panel', tab='ai-organizer'))
+
+
+@app.route('/admin_panel/ai_savings_forecast', methods=['POST'])
+@login_required
+def admin_ai_savings_forecast():
+    if current_user.user_type != 'family_manager':
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    admin_notes = request.form.get('ai_notes', '').strip()
+    current_user.family.ai_notes = admin_notes
+
+    try:
+        forecast = create_ai_savings_forecast(
+            current_user.family_id,
+            current_user.id,
+            admin_notes
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        if current_user.family:
+            current_user.family.ai_notes = admin_notes
+            db.session.commit()
+        flash(f'AI savings forecast could not run: {exc}', 'error')
+        return redirect(url_for('admin_panel', tab='ai-forecast'))
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('AI savings forecast failed')
+        flash(f'AI savings forecast failed unexpectedly: {exc}', 'error')
+        return redirect(url_for('admin_panel', tab='ai-forecast'))
+
+    flash(
+        f'AI forecast saved: expected month-end savings Rs. {forecast.expected_savings:,.0f}.',
+        'success' if forecast.expected_savings >= 0 else 'warning'
+    )
+    return redirect(url_for('admin_panel', tab='ai-forecast'))
 
 
 @app.route('/admin_panel/categories/<int:category_id>/limit', methods=['POST'])
@@ -2352,6 +2718,7 @@ def delete_family():
     Category.query.filter_by(family_id=family_id).delete()
     ExpectedExpense.query.filter_by(family_id=family_id).delete()
     BudgetSuggestion.query.filter_by(family_id=family_id).delete()
+    AISavingsForecast.query.filter_by(family_id=family_id).delete()
 
     # Remove all members from family
     User.query.filter_by(family_id=family_id).update({User.family_id: None})
