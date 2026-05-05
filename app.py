@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import secrets
+import sqlite3
 import threading
 import time
 import urllib.error
@@ -50,12 +51,46 @@ def is_windows_drive_path(path):
     )
 
 
+def sqlite_has_table(db_path, table_name):
+    if not os.path.exists(db_path):
+        return False
+
+    try:
+        connection = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+        try:
+            row = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,)
+            ).fetchone()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return False
+
+    return row is not None
+
+
+def choose_sqlite_path(preferred_path, fallback_paths=None):
+    fallback_paths = fallback_paths or []
+    candidates = [preferred_path] + [
+        path for path in fallback_paths
+        if path and os.path.abspath(path) != os.path.abspath(preferred_path)
+    ]
+
+    for candidate in candidates:
+        if sqlite_has_table(candidate, 'user'):
+            return candidate
+
+    return preferred_path
+
+
 def build_database_uri():
     default_db_path = os.path.join(basedir, 'vaultsync.db')
+    instance_db_path = os.path.join(app.instance_path, 'vaultsync.db')
     configured_uri = os.environ.get('DATABASE_URL')
 
     if not configured_uri:
-        db_path = default_db_path
+        db_path = choose_sqlite_path(default_db_path, [instance_db_path])
     elif not configured_uri.startswith('sqlite:///'):
         return configured_uri
     else:
@@ -63,9 +98,11 @@ def build_database_uri():
         if db_path == ':memory:':
             return configured_uri
         if os.name != 'nt' and is_windows_drive_path(db_path):
-            db_path = default_db_path
+            db_path = choose_sqlite_path(default_db_path, [instance_db_path])
         elif not os.path.isabs(db_path):
-            db_path = os.path.join(basedir, db_path)
+            app_db_path = os.path.join(basedir, db_path)
+            flask_instance_db_path = os.path.join(app.instance_path, db_path)
+            db_path = choose_sqlite_path(app_db_path, [flask_instance_db_path])
 
     db_dir = os.path.dirname(db_path)
     if db_dir:
