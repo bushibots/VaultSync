@@ -50,6 +50,7 @@ class Expense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     item_name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, default='')
     amount = db.Column(db.Float, nullable=False)
     
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)

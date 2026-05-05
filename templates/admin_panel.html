@@ -74,6 +74,9 @@
                 <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('budget')">
                     <i class="fas fa-wallet mr-2"></i>Budget & Limits
                 </button>
+                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('ai-organizer')">
+                    <i class="fas fa-wand-magic-sparkles mr-2"></i>AI Organizer
+                </button>
                 <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('settings')">
                     <i class="fas fa-cog mr-2"></i>Settings
                 </button>
@@ -380,6 +383,56 @@
             </div>
         </div>
 
+        <!-- AI Organizer Tab -->
+        <div id="ai-organizer" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">
+                <i class="fas fa-wand-magic-sparkles mr-2 text-purple-500"></i>AI Expense Organizer
+            </h2>
+
+            <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem] gap-6">
+                <div class="bg-purple-50 rounded-lg p-6 border border-purple-200">
+                    <div class="flex items-start justify-between gap-3 mb-5">
+                        <div>
+                            <h3 class="font-semibold text-gray-700">Organize Expense Categories</h3>
+                            <p class="text-sm text-gray-600 mt-1">Gemini reads the expense name and description, then chooses the closest existing family category.</p>
+                        </div>
+                        {% if ai_organizer_configured %}
+                        <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full">Ready</span>
+                        {% else %}
+                        <span class="text-xs bg-yellow-100 text-yellow-800 font-bold px-3 py-1 rounded-full">Needs key</span>
+                        {% endif %}
+                    </div>
+
+                    <form method="POST" action="{{ url_for('admin_ai_organize_expenses') }}" class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Start Date</label>
+                            <input type="date" name="start_date" value="{{ today.strftime('%Y-%m-%d') }}" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">End Date</label>
+                            <input type="date" name="end_date" value="{{ today.strftime('%Y-%m-%d') }}" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none" required>
+                        </div>
+                        <button type="submit" class="bg-purple-600 text-white font-bold py-3 px-5 rounded-lg hover:bg-purple-700 duration-200 flex items-center justify-center gap-2" onclick="return confirm('Let AI reorganize expense categories in this date range?')">
+                            <i class="fas fa-wand-magic-sparkles"></i>Organize
+                        </button>
+                    </form>
+                </div>
+
+                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
+                    <h3 class="font-semibold text-gray-700 mb-3">Automation</h3>
+                    <div class="space-y-3 text-sm text-gray-600">
+                        <p><span class="font-bold text-gray-800">Daily run:</span> 11:30 PM server time</p>
+                        <p><span class="font-bold text-gray-800">Scope:</span> current date only</p>
+                        <p><span class="font-bold text-gray-800">Model:</span> {{ ai_organizer_model }}</p>
+                        <p><span class="font-bold text-gray-800">Key:</span> GEMINI_API_KEY {% if ai_organizer_configured %}configured{% else %}missing{% endif %}</p>
+                    </div>
+                    <div class="mt-4 p-3 bg-white border border-slate-200 rounded-lg text-xs text-gray-500">
+                        Category choice in the log remains available as a fallback. The organizer can correct it later from the richer name and description.
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings Tab -->
         <div id="settings" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
             <h2 class="text-2xl font-bold text-slate-800 mb-6">
@@ -466,6 +519,14 @@
             navigator.clipboard.writeText(text).then(() => {
                 alert('Invite code copied to clipboard!');
             });
+        }
+
+        const initialTab = new URLSearchParams(window.location.search).get('tab');
+        if (initialTab && document.getElementById(initialTab)) {
+            const button = Array.from(document.querySelectorAll('.tab-btn')).find((btn) => {
+                return btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(`'${initialTab}'`);
+            });
+            if (button) button.click();
         }
     </script>
 </body>
