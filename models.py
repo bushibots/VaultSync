@@ -22,6 +22,7 @@ class Family(db.Model):
     expected_expenses = db.relationship('ExpectedExpense', backref='family', lazy=True)
     budget_suggestions = db.relationship('BudgetSuggestion', backref='family', lazy=True)
     savings_forecasts = db.relationship('AISavingsForecast', backref='family', lazy=True)
+    budget_reports = db.relationship('BudgetReport', backref='family_relation', lazy=True)
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -138,6 +139,42 @@ class AIExpenseException(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BudgetReport(db.Model):
+    """Daily AI-generated budget report with suggestions and insights."""
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    family = db.relationship('Family', overlaps='budget_reports,family_relation')
+    
+    # Report date
+    report_date = db.Column(db.Date, nullable=False, index=True)  # Date of the report
+    
+    # Summary metrics for the day/week
+    total_spent_today = db.Column(db.Float, default=0.0, nullable=False)
+    total_spent_this_week = db.Column(db.Float, default=0.0, nullable=False)
+    total_spent_this_month = db.Column(db.Float, default=0.0, nullable=False)
+    monthly_budget = db.Column(db.Float, default=0.0, nullable=False)
+    budget_remaining = db.Column(db.Float, default=0.0, nullable=False)
+    budget_used_percentage = db.Column(db.Float, default=0.0, nullable=False)
+    
+    # AI Analysis
+    top_spending_category = db.Column(db.String(100), default='')
+    top_spending_amount = db.Column(db.Float, default=0.0, nullable=False)
+    spending_trend = db.Column(db.String(20), default='stable')  # 'increasing', 'decreasing', 'stable'
+    
+    # AI Suggestions and insights
+    summary = db.Column(db.Text, default='')  # Summary of the budget health
+    suggestions = db.Column(db.Text, default='')  # JSON string with list of suggestions
+    warnings = db.Column(db.Text, default='')  # JSON string with warning messages
+    insights = db.Column(db.Text, default='')  # JSON string with insights and analysis
+    
+    # Category breakdown
+    category_breakdown = db.Column(db.Text, default='')  # JSON string with category spending details
+    
+    # Status
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class AuditLog(db.Model):

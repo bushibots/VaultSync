@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Report - {{ report.report_date.strftime('%B %d, %Y') }} - VaultSync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <!-- Header -->
+    <header class="bg-white dark:bg-gray-800 shadow">
+        <div class="max-w-6xl mx-auto px-4 py-6 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-blue-600 dark:text-blue-400">Budget Report</h1>
+                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">{{ report.report_date.strftime('%A, %B %d, %Y') }}</p>
+            </div>
+            <nav class="flex gap-4">
+                <a href="{{ url_for('daily_reports') }}" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">Back to Reports</a>
+                {% if is_family_manager %}
+                <form method="POST" action="{{ url_for('delete_report', report_id=report.id) }}" style="display: inline;" onsubmit="return confirm('Delete this report?');">
+                    <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Delete</button>
+                </form>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        {% set daily_target = (report.monthly_budget / 30) if report.monthly_budget else 0 %}
+        {% set weekly_target = (report.monthly_budget / 4.3) if report.monthly_budget else 0 %}
+        <!-- Key Metrics -->
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <p class="text-gray-600 dark:text-gray-400 text-sm font-medium">Today's Spending</p>
+                <p class="text-3xl font-bold text-blue-600 dark:text-blue-400 mt-2">Rs {{ "{:,.0f}".format(report.total_spent_today) }}</p>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
+                    <div class="bg-blue-500 h-2 rounded-full" style="width: {{ min((report.total_spent_today / daily_target * 100) if daily_target else 0, 100) }}%"></div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Daily target: Rs {{ "{:,.0f}".format(daily_target) }}</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <p class="text-gray-600 dark:text-gray-400 text-sm font-medium">This Week's Spending</p>
+                <p class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">Rs {{ "{:,.0f}".format(report.total_spent_this_week) }}</p>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
+                    <div class="bg-purple-500 h-2 rounded-full" style="width: {{ min((report.total_spent_this_week / weekly_target * 100) if weekly_target else 0, 100) }}%"></div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Trend: <strong>{{ report.spending_trend.capitalize() }}</strong></p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <p class="text-gray-600 dark:text-gray-400 text-sm font-medium">This Month's Spending</p>
+                <p class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">Rs {{ "{:,.0f}".format(report.total_spent_this_month) }}</p>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
+                    <div class="bg-green-500 h-2 rounded-full" style="width: {{ min(report.budget_used_percentage, 100) }}%"></div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Budget: Rs {{ "{:,.0f}".format(report.monthly_budget) }}</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <p class="text-gray-600 dark:text-gray-400 text-sm font-medium">Budget Status</p>
+                <p class="text-3xl font-bold {% if report.budget_used_percentage > 80 %}text-red-600 dark:text-red-400{% elif report.budget_used_percentage > 60 %}text-orange-600 dark:text-orange-400{% else %}text-green-600 dark:text-green-400{% endif %} mt-2">{{ '%.1f'|format(report.budget_used_percentage) }}%</p>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
+                    <div class="{% if report.budget_used_percentage > 80 %}bg-red-500{% elif report.budget_used_percentage > 60 %}bg-orange-500{% else %}bg-green-500{% endif %} h-2 rounded-full" style="width: {{ min(report.budget_used_percentage, 100) }}%"></div>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Remaining: Rs {{ "{:,.0f}".format(report.budget_remaining) }}</p>
+            </div>
+        </section>
+
+        <!-- Summary -->
+        {% if report.summary %}
+        <section class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-chart-line mr-2 text-blue-600"></i>Summary</h2>
+            <p class="text-gray-700 dark:text-gray-300 leading-relaxed text-lg">{{ report.summary }}</p>
+        </section>
+        {% endif %}
+
+        <!-- Suggestions, Warnings, and Insights -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- Suggestions -->
+            {% if suggestions %}
+            <div class="bg-blue-50 dark:bg-blue-900 rounded-lg shadow p-6">
+                <h3 class="text-xl font-bold mb-4 text-blue-900 dark:text-blue-200"><i class="fas fa-lightbulb mr-2"></i>Suggestions</h3>
+                <ul class="space-y-3">
+                    {% for suggestion in suggestions %}
+                    <li class="flex gap-3">
+                        <span class="text-blue-600 dark:text-blue-400 font-bold text-lg flex-shrink-0"><i class="fas fa-check"></i></span>
+                        <span class="text-blue-900 dark:text-blue-100">{{ suggestion }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Warnings -->
+            {% if warnings %}
+            <div class="bg-red-50 dark:bg-red-900 rounded-lg shadow p-6">
+                <h3 class="text-xl font-bold mb-4 text-red-900 dark:text-red-200"><i class="fas fa-triangle-exclamation mr-2"></i>Warnings</h3>
+                <ul class="space-y-3">
+                    {% for warning in warnings %}
+                    <li class="flex gap-3">
+                        <span class="text-red-600 dark:text-red-400 font-bold text-lg flex-shrink-0">!</span>
+                        <span class="text-red-900 dark:text-red-100">{{ warning }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Insights -->
+            {% if insights %}
+            <div class="bg-amber-50 dark:bg-amber-900 rounded-lg shadow p-6">
+                <h3 class="text-xl font-bold mb-4 text-amber-900 dark:text-amber-200"><i class="fas fa-magnifying-glass-chart mr-2"></i>Insights</h3>
+                <ul class="space-y-3">
+                    {% for insight in insights %}
+                    <li class="flex gap-3">
+                        <span class="text-amber-600 dark:text-amber-400 font-bold text-lg flex-shrink-0"><i class="fas fa-arrow-right"></i></span>
+                        <span class="text-amber-900 dark:text-amber-100">{{ insight }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Category Breakdown -->
+        {% if category_breakdown %}
+        <section class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-chart-pie mr-2 text-indigo-600"></i>Spending by Category</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Chart -->
+                <div class="flex justify-center items-center">
+                    <canvas id="categoryChart" style="max-width: 300px;"></canvas>
+                </div>
+
+                <!-- Category List -->
+                <div class="space-y-3">
+                    {% set total = category_breakdown.values() | sum %}
+                    {% for category, amount in category_breakdown_items %}
+                    <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-medium">{{ category }}</span>
+                            <span class="font-bold text-gray-900 dark:text-white">Rs {{ "{:,.0f}".format(amount) }}</span>
+                        </div>
+                        <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                            <div class="bg-blue-500 h-2 rounded-full" style="width: {{ (amount / total * 100) if total > 0 else 0 }}%"></div>
+                        </div>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ '%.1f'|format(amount / total * 100) if total > 0 else 0 }}% of spending</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- Report Meta -->
+        <section class="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+            <div class="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
+                <div>
+                    <p>Generated: {{ report.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
+                    <p>Report Date: {{ report.report_date.strftime('%B %d, %Y') }}</p>
+                </div>
+                <div class="text-right">
+                    <p>Top Category: <strong>{{ report.top_spending_category }}</strong></p>
+                    <p>Top Category Amount: <strong>Rs {{ "{:,.0f}".format(report.top_spending_amount) }}</strong></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Navigation -->
+        <div class="mt-8 flex justify-between">
+            <a href="{{ url_for('daily_reports') }}" class="px-6 py-3 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">Back to All Reports</a>
+            
+            {% if not report.is_read %}
+            <form method="POST" action="{{ url_for('mark_report_read', report_id=report.id) }}" style="display: inline;">
+                <button type="submit" class="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700">Mark as Read</button>
+            </form>
+            {% endif %}
+        </div>
+    </main>
+
+    <!-- Chart Script -->
+    <script>
+        {% if category_breakdown %}
+        const ctx = document.getElementById('categoryChart').getContext('2d');
+        const categoryData = {{ category_breakdown | tojson }};
+        const labels = Object.keys(categoryData);
+        const data = Object.values(categoryData);
+        
+        // Generate distinct colors
+        const colors = [
+            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+            '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6'
+        ];
+        
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, labels.length),
+                    borderColor: '#fff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#6b7280',
+                            font: { size: 12 }
+                        }
+                    }
+                }
+            }
+        });
+        {% endif %}
+    </script>
+</body>
+</html>
