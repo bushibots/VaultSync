@@ -151,6 +151,25 @@ body.dark-mode .bg-red-50 {
     align-items: center;
 }
 
+@media (max-width: 1024px) {
+    .spending-chart-layout {
+        gap: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .spending-chart-layout {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .spending-chart-layout {
+        gap: 12px;
+    }
+}
+
 .chart-stage {
     position: relative;
     width: min(100%, 330px);
@@ -161,6 +180,18 @@ body.dark-mode .bg-red-50 {
         radial-gradient(circle at center, #ffffff 0 46%, transparent 47%),
         linear-gradient(145deg, #f8fafc, #eef2f7);
     box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+}
+
+@media (max-width: 768px) {
+    .chart-stage {
+        width: min(100%, 280px);
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-stage {
+        width: min(100%, 240px);
+    }
 }
 
 .chart-stage canvas {
@@ -182,6 +213,18 @@ body.dark-mode .bg-red-50 {
     text-align: center;
 }
 
+@media (max-width: 768px) {
+    .chart-center {
+        inset: 25%;
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-center {
+        inset: 20%;
+    }
+}
+
 .chart-center span,
 .chart-center small {
     max-width: 100%;
@@ -198,6 +241,17 @@ body.dark-mode .bg-red-50 {
     line-height: 1.1;
     margin: 5px 0;
     overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+    .chart-center span,
+    .chart-center small {
+        font-size: 9px;
+    }
+    
+    .chart-center strong {
+        font-size: clamp(14px, 2.5vw, 20px);
+    }
 }
 
 .chart-details {
@@ -245,6 +299,20 @@ body.dark-mode .bg-red-50 {
     padding-right: 4px;
 }
 
+@media (max-width: 768px) {
+    .chart-legend-list {
+        max-height: 200px;
+        gap: 6px;
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-legend-list {
+        max-height: 150px;
+        gap: 4px;
+    }
+}
+
 .chart-legend-row {
     display: grid;
     grid-template-columns: 12px minmax(0, 1fr) auto;
@@ -258,6 +326,22 @@ body.dark-mode .bg-red-50 {
     background: #ffffff;
     text-align: left;
     transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+@media (max-width: 768px) {
+    .chart-legend-row {
+        min-height: 44px;
+        padding: 8px;
+        gap: 8px;
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-legend-row {
+        min-height: 40px;
+        padding: 6px;
+        gap: 6px;
+    }
 }
 
 .chart-legend-row:hover,
@@ -309,6 +393,26 @@ body.dark-mode .bg-red-50 {
     font-size: 12px;
     font-weight: 900;
     white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .legend-name {
+        font-size: 11px;
+    }
+    
+    .legend-value {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .legend-name {
+        font-size: 10px;
+    }
+    
+    .legend-value {
+        font-size: 10px;
+    }
 }
 
 .chart-empty-state {
@@ -541,6 +645,31 @@ body.dark-mode .legend-track {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
 }
 
+@media (max-width: 768px) {
+    .stat-card {
+        padding: 16px;
+        border-radius: 12px;
+    }
+    
+    .stat-card h3 {
+        font-size: 11px;
+    }
+    
+    .stat-card p {
+        font-size: 18px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stat-card {
+        padding: 12px;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+    }
+}
+
 /* ============================================
    Components - Forms
    ============================================ */
@@ -556,6 +685,13 @@ body.dark-mode .legend-track {
 
 .form-input::placeholder {
     color: #d1d5db;
+}
+
+@media (max-width: 768px) {
+    .form-input {
+        font-size: 16px;
+        padding: 10px;
+    }
 }
 
 .input-field:focus {
@@ -747,8 +883,7 @@ body.dark-mode .legend-track {
     color: rgb(226, 232, 240);
 }
 
-.sidebar-nav a.active,
-.sidebar-nav a[href*="dashboard"] {
+.sidebar-nav a.active {
     background-color: rgba(59, 130, 246, 0.3);
     color: rgb(147, 197, 253);
 }
@@ -1246,21 +1381,16 @@ select {
     .sidebar {
         width: 15rem !important;
     }
-
-    #close-menu {
-        display: none !important;
-    }
 }
 
 /* Ensure all nav items are visible on any device */
 .sidebar-nav {
-    min-height: 200px;
-    max-height: calc(100vh - 400px);
+    min-height: 0;
 }
 
 @media (max-width: 767px) {
     .sidebar-nav {
-        max-height: calc(100dvh - 300px);
+        min-height: 0;
     }
 }
 

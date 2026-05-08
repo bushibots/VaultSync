@@ -45,9 +45,17 @@
             <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
                 <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
             </a>
+            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Reports</span>
+            </a>
             <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
                 <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
             </a>
+            {% if is_family_manager %}
+            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
+                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
+            </a>
+            {% endif %}
         </nav>
 
         <div class="mt-auto space-y-4">
@@ -74,14 +82,20 @@
             <header class="mb-8 animate-slide-in">
                 <p class="text-xs md:text-sm text-blue-600 font-semibold">VaultSync Manual</p>
                 <h1 class="text-3xl md:text-4xl font-bold text-slate-800 mt-2" data-i18n="guide_title">VaultSync Feature Guide</h1>
-                <p class="text-slate-500 text-sm mt-2 max-w-3xl" data-i18n="guide_subtitle">Every feature, what it does, and how to use it correctly.</p>
+                <p class="text-slate-500 text-sm mt-2 max-w-3xl" data-i18n="guide_subtitle">Current tools for budget tracking, planning, AI reports, and family administration.</p>
             </header>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
                     <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-gauge-high text-blue-600 mr-2"></i><span data-i18n="macro_title">Macro Dashboard</span></h2>
                     <p class="text-slate-600 text-sm leading-6" data-i18n="macro_body">Use the dashboard to view monthly spending, reserved buckets, remaining budget, and the category chart.</p>
-                    <p class="text-slate-500 text-sm mt-3">Choose month/year at the top. Only expenses from that selected month and your family are included.</p>
+                    <p class="text-slate-500 text-sm mt-3">Choose month/year at the top. The donut, burn rate, projected total, safe daily spend, and budget health all follow that selected month.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-file-lines text-cyan-700 mr-2"></i>Daily AI Reports</h2>
+                    <p class="text-slate-600 text-sm leading-6">VaultSync generates a daily budget report at 11:58 PM when Gemini is configured.</p>
+                    <p class="text-slate-500 text-sm mt-3">Reports appear in the Reports section with budget status, category breakdown, warnings, insights, and suggestions for what to do better next.</p>
                 </section>
 
                 <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
@@ -94,6 +108,12 @@
                     <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-calendar-check text-teal-600 mr-2"></i><span data-i18n="plan_title">Expected Monthly Expenditure</span></h2>
                     <p class="text-slate-600 text-sm leading-6" data-i18n="plan_body">Write monthly bills in advance. They appear in charts and Recent Activity only after you mark them paid.</p>
                     <p class="text-slate-500 text-sm mt-3">Use due day for bill timing, Mark Paid when money actually leaves, Unpost to move it back to upcoming, and Copy This Plan To Next Month for repeat bills.</p>
+                </section>
+
+                <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-screwdriver-wrench text-orange-600 mr-2"></i>Budget Tools</h2>
+                    <p class="text-slate-600 text-sm leading-6">Budget Health shows how much of the monthly budget is used. Safe Daily Spend turns the remaining balance into a daily target for the rest of the month.</p>
+                    <p class="text-slate-500 text-sm mt-3">Daily Burn compares actual average spend against the daily target, while projected total warns when the current pace is likely to exceed budget.</p>
                 </section>
 
                 <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
@@ -123,7 +143,7 @@
                 <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6">
                     <h2 class="text-xl font-bold text-slate-800 mb-3"><i class="fas fa-cog text-indigo-600 mr-2"></i><span data-i18n="admin_title">Admin Panel</span></h2>
                     <p class="text-slate-600 text-sm leading-6" data-i18n="admin_body">Family managers can update budget, members, and family settings.</p>
-                    <p class="text-slate-500 text-sm mt-3">The admin panel also shows member spending, planned upcoming totals, saved AI suggestions, category limits, preset category repair, and invite-code regeneration.</p>
+                    <p class="text-slate-500 text-sm mt-3">The Admin Panel link now lives in the main sidebar for managers, so it stays reachable on mobile. The panel includes member spending, planned upcoming totals, saved AI suggestions, category limits, preset category repair, and invite-code regeneration.</p>
                 </section>
 
                 <section class="bg-white rounded-xl shadow-md border border-gray-100 p-6 lg:col-span-2">

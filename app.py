@@ -14,7 +14,7 @@ import urllib.request
 from io import StringIO
 from datetime import date, datetime, timedelta
 from sqlalchemy import func, inspect, text
-from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion, AISavingsForecast
+from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion, AISavingsForecast, BudgetReport
 
 
 def load_local_env(path='.env'):
@@ -118,6 +118,21 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access this page.'
 login_manager.login_message_category = 'info'
+
+app.jinja_env.globals.update(min=min, max=max)
+
+
+@app.template_filter('fromjson')
+def fromjson_filter(value):
+    """Decode JSON stored in text columns for compact template loops."""
+    if not value:
+        return []
+    if isinstance(value, (list, dict)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
 
 PRESET_CATEGORIES = [
     ('Groceries', '#16a34a', 0),
@@ -250,6 +265,35 @@ def repair_schema():
                 )
             """))
             added.append('ai_savings_forecast')
+        if not inspector.has_table('budget_report'):
+            connection.execute(text("""
+                CREATE TABLE budget_report (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    family_id INTEGER NOT NULL,
+                    report_date DATE NOT NULL,
+                    total_spent_today FLOAT NOT NULL DEFAULT 0,
+                    total_spent_this_week FLOAT NOT NULL DEFAULT 0,
+                    total_spent_this_month FLOAT NOT NULL DEFAULT 0,
+                    monthly_budget FLOAT NOT NULL DEFAULT 0,
+                    budget_remaining FLOAT NOT NULL DEFAULT 0,
+                    budget_used_percentage FLOAT NOT NULL DEFAULT 0,
+                    top_spending_category VARCHAR(100),
+                    top_spending_amount FLOAT NOT NULL DEFAULT 0,
+                    spending_trend VARCHAR(20),
+                    summary TEXT,
+                    suggestions TEXT,
+                    warnings TEXT,
+                    insights TEXT,
+                    category_breakdown TEXT,
+                    is_read BOOLEAN,
+                    created_at DATETIME,
+                    FOREIGN KEY(family_id) REFERENCES family (id)
+                )
+            """))
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS ix_budget_report_report_date ON budget_report (report_date)'
+            ))
+            added.append('budget_report')
         for column_name, ddl in expected_expense_columns.items():
             if column_name in columns:
                 continue
@@ -279,6 +323,20 @@ def load_user(user_id):
 def back_or(endpoint):
     """Redirect back to the submitting page, falling back to a known route."""
     return redirect(request.referrer or url_for(endpoint))
+
+
+def is_family_manager(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'user_type', None) == 'family_manager':
+        return True
+    family = getattr(user, 'family', None)
+    return bool(family and family.created_by_user_id == user.id)
+
+
+@app.context_processor
+def inject_role_helpers():
+    return {'is_family_manager': is_family_manager(current_user)}
 
 
 def ensure_preset_categories(family_id):
@@ -1302,6 +1360,264 @@ def savings_forecast_chart_data(family, forecast):
     }
 
 
+def build_daily_report_context(family_id, report_date=None):
+    """Build context for daily budget report generation."""
+    if not report_date:
+        report_date = datetime.now().date()
+    
+    family = db.session.get(Family, family_id)
+    if not family:
+        raise ValueError(f"Family {family_id} not found")
+    
+    month_start, month_end = month_bounds(report_date.year, report_date.month)
+    week_start = report_date - timedelta(days=report_date.weekday())
+    week_end = week_start + timedelta(days=6)
+    
+    # Get today's expenses
+    today_expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date == report_date
+    ).all()
+    today_total = sum(float(exp.amount) for exp in today_expenses)
+    
+    # Get this week's expenses
+    week_expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= week_start,
+        Expense.date <= min(week_end, report_date)
+    ).all()
+    week_total = sum(float(exp.amount) for exp in week_expenses)
+    
+    # Get this month's expenses
+    month_expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= month_start,
+        Expense.date <= report_date
+    ).all()
+    month_total = sum(float(exp.amount) for exp in month_expenses)
+    
+    # Category breakdown
+    category_spending = {}
+    for exp in month_expenses:
+        cat_name = exp.category.name if exp.category else 'Uncategorized'
+        category_spending[cat_name] = category_spending.get(cat_name, 0.0) + float(exp.amount)
+    
+    # Find top spending category
+    top_category = max(category_spending.items(), key=lambda x: x[1]) if category_spending else ('None', 0)
+    
+    # Budget remaining
+    monthly_budget = float(family.monthly_budget or 0)
+    budget_remaining = max(monthly_budget - month_total, 0)
+    budget_used_pct = (month_total / monthly_budget * 100) if monthly_budget else 0
+    
+    # Daily average
+    days_elapsed = (report_date - month_start).days + 1
+    daily_average = month_total / days_elapsed if days_elapsed > 0 else 0
+    
+    # Spend trend (compare last 7 days vs previous 7 days)
+    seven_days_ago = report_date - timedelta(days=7)
+    last_week_start = seven_days_ago - timedelta(days=7)
+    last_week_total = sum(float(exp.amount) for exp in Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= last_week_start,
+        Expense.date <= seven_days_ago
+    ).all())
+    
+    if last_week_total > 0:
+        week_trend = 'increasing' if week_total > last_week_total else ('decreasing' if week_total < last_week_total else 'stable')
+    else:
+        week_trend = 'stable'
+    
+    return {
+        'family': family,
+        'report_date': report_date,
+        'today_total': today_total,
+        'week_total': week_total,
+        'month_total': month_total,
+        'monthly_budget': monthly_budget,
+        'budget_remaining': budget_remaining,
+        'budget_used_percentage': budget_used_pct,
+        'top_category': top_category[0],
+        'top_category_amount': top_category[1],
+        'daily_average': daily_average,
+        'week_trend': week_trend,
+        'category_breakdown': category_spending,
+        'today_expenses': today_expenses,
+        'month_start': month_start,
+        'month_end': month_end,
+    }
+
+
+def build_daily_report_prompt(context):
+    """Build the prompt for AI daily budget report generation."""
+    return (
+        'You are VaultSync Daily Budget Report AI.\n'
+        'Generate a helpful daily budget report with insights and actionable suggestions.\n'
+        'Focus on spending patterns, warnings, and positive recommendations.\n\n'
+        f'Family Monthly Budget: Rs {context["monthly_budget"]:,.0f}\n'
+        f'Budget Used: {context["budget_used_percentage"]:.1f}%\n'
+        f'Budget Remaining: Rs {context["budget_remaining"]:,.0f}\n\n'
+        f'Today\'s Spending: Rs {context["today_total"]:,.0f}\n'
+        f'This Week\'s Spending: Rs {context["week_total"]:,.0f}\n'
+        f'This Month\'s Spending: Rs {context["month_total"]:,.0f}\n'
+        f'Daily Average: Rs {context["daily_average"]:,.0f}\n'
+        f'Spending Trend: {context["week_trend"]}\n\n'
+        f'Top Category: {context["top_category"]} (Rs {context["top_category_amount"]:,.0f})\n'
+        f'Category Breakdown: {json.dumps(context["category_breakdown"], ensure_ascii=False)}\n\n'
+        'Provide a brief summary (2-3 sentences), 3-4 actionable suggestions, and any warnings.\n'
+        'Return JSON matching the required schema. No markdown, no prose outside JSON.'
+    )
+
+
+def daily_report_schema():
+    return {
+        'type': 'object',
+        'properties': {
+            'summary': {'type': 'string', 'description': 'Brief 2-3 sentence summary of budget health'},
+            'suggestions': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'maxItems': 5,
+                'description': 'Actionable suggestions to improve budget'
+            },
+            'warnings': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'maxItems': 3,
+                'description': 'Warning messages if spending is high'
+            },
+            'insights': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'maxItems': 4,
+                'description': 'Interesting insights about spending patterns'
+            },
+        },
+        'required': ['summary', 'suggestions', 'warnings', 'insights']
+    }
+
+
+def create_daily_budget_report(family_id, report_date=None):
+    """Generate a daily budget report with AI suggestions."""
+    if not report_date:
+        report_date = datetime.now().date()
+    
+    context = build_daily_report_context(family_id, report_date)
+    existing_report = BudgetReport.query.filter_by(
+        family_id=family_id,
+        report_date=report_date
+    ).first()
+    if existing_report:
+        db.session.delete(existing_report)
+        db.session.flush()
+    
+    try:
+        prompt = build_daily_report_prompt(context)
+        payload = call_gemini_json(prompt, daily_report_schema())
+    except Exception as exc:
+        app.logger.warning(f'AI daily report failed for family {family_id}: {exc}')
+        # Create a basic report without AI
+        payload = {
+            'summary': f"Spending this month: Rs {context['month_total']:,.0f} of Rs {context['monthly_budget']:,.0f}",
+            'suggestions': ['Review your category spending', 'Keep tracking your expenses daily'],
+            'warnings': [],
+            'insights': [f"Your top spending category is {context['top_category']}"]
+        }
+    
+    # Normalize the AI response
+    suggestions = []
+    if isinstance(payload.get('suggestions'), list):
+        suggestions = [str(s).strip() for s in payload['suggestions'] if str(s).strip()][:5]
+    
+    warnings = []
+    if isinstance(payload.get('warnings'), list):
+        warnings = [str(w).strip() for w in payload['warnings'] if str(w).strip()][:3]
+    
+    insights = []
+    if isinstance(payload.get('insights'), list):
+        insights = [str(i).strip() for i in payload['insights'] if str(i).strip()][:4]
+    
+    # Create the report record
+    report = BudgetReport(
+        family_id=family_id,
+        report_date=report_date,
+        total_spent_today=context['today_total'],
+        total_spent_this_week=context['week_total'],
+        total_spent_this_month=context['month_total'],
+        monthly_budget=context['monthly_budget'],
+        budget_remaining=context['budget_remaining'],
+        budget_used_percentage=context['budget_used_percentage'],
+        top_spending_category=context['top_category'],
+        top_spending_amount=context['top_category_amount'],
+        spending_trend=context['week_trend'],
+        summary=str(payload.get('summary', ''))[:500],
+        suggestions=json.dumps(suggestions),
+        warnings=json.dumps(warnings),
+        insights=json.dumps(insights),
+        category_breakdown=json.dumps(context['category_breakdown']),
+        is_read=False,
+        created_at=datetime.utcnow()
+    )
+    
+    db.session.add(report)
+    db.session.commit()
+    return report
+
+
+def run_daily_budget_reports():
+    """Generate daily budget reports for all families at 11:58 PM."""
+    with app.app_context():
+        target_date = datetime.now().date()
+        families = Family.query.filter_by(is_archived=False).all()
+        for family in families:
+            try:
+                # Check if report already exists for today
+                existing = BudgetReport.query.filter_by(
+                    family_id=family.id,
+                    report_date=target_date
+                ).first()
+                if not existing:
+                    create_daily_budget_report(family.id, target_date)
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.warning(f'Daily budget report generation failed for family {family.id}: {exc}')
+
+
+def seconds_until_daily_report():
+    """Calculate seconds until 11:58 PM."""
+    now = datetime.now()
+    target = now.replace(hour=23, minute=58, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return max(60, int((target - now).total_seconds()))
+
+
+def daily_report_scheduler_loop():
+    """Background scheduler for daily reports at 11:58 PM."""
+    while True:
+        time.sleep(seconds_until_daily_report())
+        run_daily_budget_reports()
+        time.sleep(60)
+
+
+_daily_report_scheduler_started = False
+
+
+def start_daily_report_scheduler():
+    """Start the daily report scheduler if not already running."""
+    global _daily_report_scheduler_started
+    if _daily_report_scheduler_started:
+        return
+    if os.environ.get('DISABLE_DAILY_REPORT_SCHEDULER') == '1':
+        return
+    if not os.environ.get('GEMINI_API_KEY', '').strip():
+        return
+
+    _daily_report_scheduler_started = True
+    thread = threading.Thread(target=daily_report_scheduler_loop, daemon=True)
+    thread.start()
+
+
 def run_daily_ai_organization():
     with app.app_context():
         target_date = datetime.now().date()
@@ -1349,7 +1665,16 @@ if os.environ.get('RUN_AI_ORGANIZER_SCHEDULER') == '1':
 
 @app.before_request
 def ensure_ai_organizer_scheduler_running():
+    if (
+        current_user.is_authenticated
+        and current_user.family
+        and current_user.family.created_by_user_id == current_user.id
+        and current_user.user_type != 'family_manager'
+    ):
+        current_user.user_type = 'family_manager'
+        db.session.commit()
     start_ai_organizer_scheduler()
+    start_daily_report_scheduler()
 
 # --- AUTH ROUTES ---
 @app.route('/register', methods=['GET', 'POST'])
@@ -1594,9 +1919,29 @@ def dashboard():
     planned_after_budget = monthly_income - expected_total
     standard_expected_total = expected_paid_total + expected_unpaid_total
     plan_paid_percentage = (expected_paid_total / standard_expected_total * 100) if standard_expected_total else 0
+    top_category_id = max(totals_map, key=totals_map.get) if totals_map else None
+    top_category = next((cat for cat in all_categories if cat.id == top_category_id), None)
+    selected_days_in_month = calendar.monthrange(selected_year, selected_month)[1]
+    if selected_year == current_date.year and selected_month == current_date.month:
+        days_elapsed = current_date.day
+        days_remaining = max(selected_days_in_month - current_date.day, 0)
+    elif date(selected_year, selected_month, 1) < date(current_date.year, current_date.month, 1):
+        days_elapsed = selected_days_in_month
+        days_remaining = 0
+    else:
+        days_elapsed = 1
+        days_remaining = selected_days_in_month
+    daily_rate = total_spent / days_elapsed if days_elapsed else 0
+    projected_month_total = daily_rate * selected_days_in_month
+    budget_percentage = (total_spent / monthly_income * 100) if monthly_income else 0
+    budget_remaining = monthly_income - total_spent
+    safe_daily_spend = budget_remaining / days_remaining if days_remaining else max(budget_remaining, 0)
+    daily_budget_target = monthly_income / selected_days_in_month if monthly_income else 0
+    burn_percentage = (daily_rate / daily_budget_target * 100) if daily_budget_target else 0
 
     return render_template('dashboard.html',
                             user=current_user,
+                            family=current_user.family,
                             expenses=all_expenses,
                             categories=all_categories,
                             expected_expenses=expected_expenses,
@@ -1607,6 +1952,17 @@ def dashboard():
                             chart_data=chart_data,
                             chart_colors=chart_colors,
                             category_spent=totals_map,
+                            category_spending=totals_map,
+                            top_category=top_category,
+                            days_elapsed=days_elapsed,
+                            days_remaining=days_remaining,
+                            daily_rate=daily_rate,
+                            projected_month_total=projected_month_total,
+                            daily_budget_target=daily_budget_target,
+                            safe_daily_spend=safe_daily_spend,
+                            budget_percentage=budget_percentage,
+                            budget_remaining=budget_remaining,
+                            burn_percentage=burn_percentage,
                             expected_total=expected_total,
                             expected_paid_total=expected_paid_total,
                             expected_unpaid_total=expected_unpaid_total,
@@ -1813,7 +2169,7 @@ def add_expense():
 @login_required
 def add_expected():
     # Admin-only access
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return back_or('dashboard')
 
@@ -1867,7 +2223,7 @@ def add_expected():
 @app.route('/toggle_expected/<int:id>')
 @login_required
 def toggle_expected(id):
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return back_or('dashboard')
     ee = ExpectedExpense.query.filter_by(
@@ -1964,7 +2320,7 @@ def edit_expense(id):
         expense.amount = expense_amount
         expense.category_id = category.id
         expense.date = expense_date
-        if current_user.user_type == 'family_manager' and user_id:
+        if is_family_manager(current_user) and user_id:
             spender = User.query.filter_by(
                 id=user_id,
                 family_id=current_user.family_id,
@@ -2005,7 +2361,7 @@ def edit_expense(id):
 @app.route('/delete_expected/<int:id>', methods=['POST'])
 @login_required
 def delete_expected(id):
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return back_or('dashboard')
 
@@ -2037,7 +2393,7 @@ def delete_expected(id):
 @app.route('/edit_expected/<int:id>', methods=['GET', 'POST'])
 @login_required
 def edit_expected(id):
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return back_or('dashboard')
 
@@ -2124,7 +2480,7 @@ def edit_expected(id):
 @app.route('/copy_expected_plan', methods=['POST'])
 @login_required
 def copy_expected_plan():
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return back_or('dashboard')
 
@@ -2477,7 +2833,7 @@ def import_ai_budget():
 @app.route('/ai_budget/apply/<int:id>', methods=['POST'])
 @login_required
 def apply_ai_budget(id):
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return redirect(url_for('ai_budget'))
 
@@ -2575,7 +2931,7 @@ def export_ai_data():
 @login_required
 def admin_panel():
     """Admin panel for family management"""
-    if not current_user.is_authenticated or current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2717,7 +3073,7 @@ def admin_panel():
 @login_required
 def update_budget():
     """Update family monthly budget"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2740,7 +3096,7 @@ def update_budget():
 @app.route('/admin_panel/ai_organize', methods=['POST'])
 @login_required
 def admin_ai_organize_expenses():
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2776,7 +3132,7 @@ def admin_ai_organize_expenses():
 @app.route('/admin_panel/ai_savings_forecast', methods=['POST'])
 @login_required
 def admin_ai_savings_forecast():
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2815,7 +3171,7 @@ def add_ai_expense_exception():
     """Add an exception rule for the AI Expense Organizer."""
     from models import AIExpenseException
     
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('admin_panel'))
 
@@ -2859,7 +3215,7 @@ def toggle_ai_expense_exception(exc_id):
     """Enable/disable an exception rule."""
     from models import AIExpenseException
     
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('admin_panel'))
 
@@ -2881,7 +3237,7 @@ def delete_ai_expense_exception(exc_id):
     """Delete an exception rule."""
     from models import AIExpenseException
     
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('admin_panel'))
 
@@ -2900,7 +3256,7 @@ def delete_ai_expense_exception(exc_id):
 @app.route('/admin_panel/categories/<int:category_id>/limit', methods=['POST'])
 @login_required
 def update_category_limit(category_id):
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2927,7 +3283,7 @@ def update_category_limit(category_id):
 @login_required
 def promote_member(member_id):
     """Promote member to family manager"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2942,7 +3298,7 @@ def promote_member(member_id):
 @login_required
 def demote_member(member_id):
     """Demote member from family manager"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2963,7 +3319,7 @@ def demote_member(member_id):
 @login_required
 def remove_member(member_id):
     """Remove member from family"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2984,7 +3340,7 @@ def remove_member(member_id):
 @login_required
 def update_family():
     """Update family settings"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -3003,7 +3359,7 @@ def update_family():
 @app.route('/admin_panel/family/regenerate_invite', methods=['POST'])
 @login_required
 def regenerate_invite_code():
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -3021,7 +3377,7 @@ def regenerate_invite_code():
 @login_required
 def archive_family():
     """Archive family"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -3035,7 +3391,7 @@ def archive_family():
 @login_required
 def delete_family():
     """Delete family - PERMANENT"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
@@ -3063,7 +3419,7 @@ def delete_family():
 @login_required
 def reports():
     """Analytics and reports for family spending"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
         return redirect(url_for('dashboard'))
 
@@ -3152,7 +3508,7 @@ def reports():
 @login_required
 def reports_data():
     """JSON endpoint for report charts"""
-    if current_user.user_type != 'family_manager':
+    if not is_family_manager(current_user):
         return jsonify({'error': 'Unauthorized'}), 403
 
     family = current_user.family
@@ -3187,13 +3543,142 @@ def reports_data():
         }
     })
 
+
+# --- DAILY REPORTS ROUTES ---
+@app.route('/reports', methods=['GET'])
+@login_required
+def daily_reports():
+    """View daily budget reports with AI suggestions."""
+    if not current_user.family_id:
+        flash('Please join a family before viewing reports.', 'error')
+        return redirect(url_for('dashboard'))
+
+    # Get all reports for this family, paginated
+    page = request.args.get('page', 1, type=int)
+    reports = BudgetReport.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(BudgetReport.report_date.desc()).paginate(page=page, per_page=10)
+
+    # Mark older reports as unread if there are new ones
+    unread_reports = BudgetReport.query.filter_by(
+        family_id=current_user.family_id,
+        is_read=False
+    ).order_by(BudgetReport.report_date.desc()).all()
+
+    # Get latest report for prominent display
+    latest_report = BudgetReport.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(BudgetReport.report_date.desc()).first()
+
+    return render_template('reports.html',
+                          user=current_user,
+                          reports=reports,
+                          latest_report=latest_report,
+                          unread_count=len(unread_reports))
+
+
+@app.route('/reports/<int:report_id>', methods=['GET'])
+@login_required
+def view_report(report_id):
+    """View a specific daily budget report."""
+    report = BudgetReport.query.filter_by(
+        id=report_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    # Mark as read
+    if not report.is_read:
+        report.is_read = True
+        db.session.commit()
+
+    # Parse JSON fields
+    try:
+        suggestions = json.loads(report.suggestions) if report.suggestions else []
+        warnings = json.loads(report.warnings) if report.warnings else []
+        insights = json.loads(report.insights) if report.insights else []
+        category_breakdown = json.loads(report.category_breakdown) if report.category_breakdown else {}
+    except (json.JSONDecodeError, TypeError):
+        suggestions = []
+        warnings = []
+        insights = []
+        category_breakdown = {}
+    category_breakdown_items = sorted(
+        category_breakdown.items(),
+        key=lambda item: float(item[1] or 0),
+        reverse=True
+    )
+
+    return render_template('report_detail.html',
+                          user=current_user,
+                          report=report,
+                          suggestions=suggestions,
+                          warnings=warnings,
+                          insights=insights,
+                          category_breakdown=category_breakdown,
+                          category_breakdown_items=category_breakdown_items)
+
+
+@app.route('/reports/<int:report_id>/mark_read', methods=['POST'])
+@login_required
+def mark_report_read(report_id):
+    """Mark a report as read."""
+    report = BudgetReport.query.filter_by(
+        id=report_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    report.is_read = True
+    db.session.commit()
+    flash('Report marked as read.', 'success')
+    return redirect(request.referrer or url_for('daily_reports'))
+
+
+@app.route('/reports/<int:report_id>/delete', methods=['POST'])
+@login_required
+def delete_report(report_id):
+    """Delete a daily budget report."""
+    if not is_family_manager(current_user):
+        flash('Unauthorized: family manager only', 'error')
+        return redirect(url_for('daily_reports'))
+
+    report = BudgetReport.query.filter_by(
+        id=report_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+
+    report_date = report.report_date
+    db.session.delete(report)
+    db.session.commit()
+    flash(f'Report for {report_date.strftime("%B %d, %Y")} deleted.', 'success')
+    return redirect(url_for('daily_reports'))
+
+
+@app.route('/reports/generate_now', methods=['POST'])
+@login_required
+def generate_report_now():
+    """Generate a report immediately (for testing or manual trigger)."""
+    if not is_family_manager(current_user):
+        flash('Unauthorized: family manager only', 'error')
+        return redirect(url_for('daily_reports'))
+
+    try:
+        report = create_daily_budget_report(current_user.family_id)
+        flash('Daily budget report generated successfully!', 'success')
+        return redirect(url_for('view_report', report_id=report.id))
+    except Exception as exc:
+        app.logger.exception('Failed to generate report')
+        flash(f'Failed to generate report: {exc}', 'error')
+        return redirect(url_for('daily_reports'))
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         print("Database tables created successfully")
 
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('FLASK_DEBUG', '1') != '1':
         start_ai_organizer_scheduler()
+        start_daily_report_scheduler()
 
     app.run(
         host=os.environ.get('FLASK_RUN_HOST', '127.0.0.1'),

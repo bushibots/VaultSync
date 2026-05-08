@@ -49,9 +49,17 @@
             <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
                 <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
             </a>
+            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
+                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Reports</span>
+            </a>
             <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
                 <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
             </a>
+            {% if is_family_manager %}
+            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
+                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
+            </a>
+            {% endif %}
         </nav>
         <div class="mt-auto space-y-4">
             <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
@@ -73,11 +81,6 @@
                 </p>
                 <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
             </div>
-            {% if current_user.user_type == 'family_manager' %}
-            <a href="{{ url_for('admin_panel') }}" class="block px-4 py-2 mt-2 rounded-lg bg-indigo-600 text-white font-bold shadow-md hover:bg-indigo-700 transition-colors">
-                <i class="fas fa-cog mr-2" aria-hidden="true"></i>Admin Panel
-            </a>
-            {% endif %}
             <!-- Logout Button -->
             <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
                 <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i>Logout
@@ -391,7 +394,7 @@
                             </div>
                         </div>
 
-                        {% if user.user_type == 'family_manager' %}
+                        {% if is_family_manager %}
                         <form action="{{ url_for('add_expected') }}" method="POST" class="space-y-3 mb-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <input type="text" name="name" placeholder="Expected item e.g., Electricity" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-sm" list="budget-plan-suggestions" required>
@@ -471,7 +474,7 @@
                                     </div>
                                     <div class="flex items-center gap-3">
                                         <span class="font-semibold text-sm {% if ee.is_bucket %}text-slate-600{% else %}text-red-500{% endif %}">&#8377;{{ "{:,.0f}".format((ee.allocated_amount or ee.amount) if ee.is_bucket else ee.amount) }}</span>
-                                        {% if user.user_type == 'family_manager' %}
+                                        {% if is_family_manager %}
                                         <a href="{{ url_for('edit_expected', id=ee.id) }}" class="text-sm text-indigo-500 hover:underline">Edit</a>
                                         {% if not ee.is_bucket %}
                                         <a href="{{ url_for('toggle_expected', id=ee.id) }}" class="text-sm {% if ee.is_paid %}text-yellow-600{% else %}text-blue-500{% endif %} hover:underline">{% if ee.is_paid %}Unpost{% else %}Mark Paid{% endif %}</a>
@@ -569,12 +572,20 @@
                         <div class="chart-details">
                             <div class="chart-stat-grid">
                                 <div>
-                                    <span>Total</span>
+                                    <span>Spent</span>
                                     <strong id="chartTotalMetric">&#8377;0</strong>
+                                </div>
+                                <div>
+                                    <span>Budget Left</span>
+                                    <strong id="chartBudgetLeftMetric">&#8377;{{ "{:,.0f}".format(budget_remaining) }}</strong>
                                 </div>
                                 <div>
                                     <span>Top</span>
                                     <strong id="chartTopMetric">-</strong>
+                                </div>
+                                <div>
+                                    <span>Categories</span>
+                                    <strong id="chartCategoryCountMetric">0</strong>
                                 </div>
                             </div>
                             <div id="expenseLegend" class="chart-legend-list" aria-label="Spending by category"></div>
@@ -676,6 +687,200 @@
                 </div>
             </div>
 
+            <!-- Budget Tools & Analysis Section -->
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-fire text-orange-600" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-800">Daily Burn</h3>
+                    </div>
+                    <p class="text-sm text-slate-600 mb-1">Average per day</p>
+                    <p class="text-2xl font-bold text-orange-600">&#8377;{{ "{:,.0f}".format(daily_rate) }}</p>
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <div class="flex items-center justify-between text-sm mb-2">
+                            <span class="text-slate-600">Daily target</span>
+                            <span class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(daily_budget_target) }}</span>
+                        </div>
+                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div class="h-full {% if burn_percentage > 120 %}bg-red-500{% elif burn_percentage > 100 %}bg-yellow-500{% else %}bg-green-500{% endif %}" style="width: {{ min(burn_percentage, 100) }}%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-coins text-green-600" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-800">Budget Health</h3>
+                    </div>
+                    <p class="text-sm text-slate-600 mb-1">Spent from budget</p>
+                    <p class="text-2xl font-bold {% if budget_percentage > 100 %}text-red-600{% elif budget_percentage > 75 %}text-yellow-600{% else %}text-green-600{% endif %}">{{ "{:.1f}".format(budget_percentage) }}%</p>
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <div class="flex items-center justify-between text-sm mb-2">
+                            <span class="text-slate-600">Remaining</span>
+                            <span class="font-bold {% if budget_remaining < 0 %}text-red-600{% else %}text-slate-800{% endif %}">&#8377;{{ "{:,.0f}".format(budget_remaining) }}</span>
+                        </div>
+                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-600" style="width: {{ min(budget_percentage, 100) }}%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-cyan-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-calendar-day text-cyan-700" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-800">Safe Daily Spend</h3>
+                    </div>
+                    <p class="text-sm text-slate-600 mb-1">{% if days_remaining %}For {{ days_remaining }} days left{% else %}Month complete{% endif %}</p>
+                    <p class="text-2xl font-bold {% if safe_daily_spend < daily_budget_target * 0.5 %}text-red-600{% else %}text-cyan-700{% endif %}">&#8377;{{ "{:,.0f}".format(safe_daily_spend) }}</p>
+                    <p class="text-xs text-slate-500 mt-4">Projected month total: <span class="{% if projected_month_total > income %}text-red-600{% else %}text-green-600{% endif %} font-bold">&#8377;{{ "{:,.0f}".format(projected_month_total) }}</span></p>
+                </div>
+
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-lightbulb text-purple-600" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-800">Quick Read</h3>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                            <p class="text-xs text-blue-700 font-semibold">Top category</p>
+                            <p class="text-sm font-bold text-blue-900 mt-1">{% if top_category %}{{ top_category.name }}{% else %}No spending yet{% endif %}</p>
+                        </div>
+                        <div class="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                            <p class="text-xs text-indigo-700 font-semibold">Daily AI report</p>
+                            <p class="text-sm font-bold text-indigo-900 mt-1">Runs at 11:58 PM</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 mb-6 md:mb-8">
+                <!-- Daily Burn Rate -->
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-fire text-orange-600" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg md:text-xl font-bold text-slate-800">Daily Burn Rate</h3>
+                    </div>
+                    <script>
+                        (function() {
+                            const total = {{ total_spent }};
+                            const currentDate = new Date();
+                            const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+                            const daysElapsed = currentDate.getDate();
+                            const dailyRate = daysElapsed > 0 ? total / daysElapsed : 0;
+                            const projectedTotal = dailyRate * daysInMonth;
+                            const budget = {{ family.monthly_budget }};
+                            const burnPercentage = budget > 0 ? (dailyRate / (budget / daysInMonth)) * 100 : 0;
+                            
+                            document.write(`
+                                <div class="space-y-4">
+                                    <div>
+                                        <p class="text-sm text-slate-600 mb-1">Average per day</p>
+                                        <p class="text-2xl font-bold text-orange-600">₹${ Math.round(dailyRate).toLocaleString('en-IN') }</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-slate-600 mb-1">Projected month total</p>
+                                        <p class="text-xl font-bold ${ projectedTotal > budget ? 'text-red-600' : 'text-green-600' }">₹${ Math.round(projectedTotal).toLocaleString('en-IN') }</p>
+                                    </div>
+                                    <div class="pt-3 border-t border-gray-200">
+                                        <div class="flex items-center justify-between text-sm mb-2">
+                                            <span class="text-slate-600">Burn Health</span>
+                                            <span class="font-bold ${ burnPercentage > 120 ? 'text-red-600' : burnPercentage > 100 ? 'text-yellow-600' : 'text-green-600' }">${ Math.round(burnPercentage) }%</span>
+                                        </div>
+                                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div class="h-full ${ burnPercentage > 120 ? 'bg-red-500' : burnPercentage > 100 ? 'bg-yellow-500' : 'bg-green-500' }" style="width: ${ Math.min(burnPercentage, 100) }%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `);
+                        })();
+                    </script>
+                </div>
+
+                <!-- Budget Summary -->
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-coins text-green-600" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg md:text-xl font-bold text-slate-800">Budget Summary</h3>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <p class="text-sm text-slate-600 mb-1">Total Budget</p>
+                            <p class="text-2xl font-bold text-blue-600">₹{{ "{:,.0f}".format(family.monthly_budget) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-600 mb-1">Spent</p>
+                            <p class="text-xl font-bold text-red-500">₹{{ "{:,.0f}".format(total_spent) }}</p>
+                        </div>
+                        <div class="pt-3 border-t border-gray-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm text-slate-600">Progress</span>
+                                <span class="text-sm font-bold text-slate-800">{{ "{:.1f}".format(budget_percentage) }}%</span>
+                            </div>
+                            <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
+                                <div class="h-full bg-gradient-to-r from-blue-500 to-blue-600" style="width: {{ min(budget_percentage, 100) }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Category Insights -->
+                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                    <div class="flex items-center mb-4">
+                        <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
+                            <i class="fas fa-lightbulb text-purple-600" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="text-lg md:text-xl font-bold text-slate-800">Quick Insights</h3>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                            <p class="text-xs text-blue-700 font-semibold">📊 Top Category</p>
+                            <p class="text-sm font-bold text-blue-900 mt-1">
+                                {% if top_category %}{{ top_category.name }}{% else %}N/A{% endif %}
+                            </p>
+                        </div>
+                        <div class="p-3 bg-green-50 rounded-lg border border-green-100">
+                            <p class="text-xs text-green-700 font-semibold">✅ Budget Status</p>
+                            <p class="text-sm font-bold mt-1">
+                                {% if total_spent < family.monthly_budget * 0.5 %}
+                                    <span class="text-green-900">On Track ✓</span>
+                                {% elif total_spent < family.monthly_budget %}
+                                    <span class="text-yellow-900">Approaching Limit ⚠</span>
+                                {% else %}
+                                    <span class="text-red-900">Over Budget ⛔</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                            <p class="text-xs text-indigo-700 font-semibold">💡 Days Remaining</p>
+                            <p class="text-sm font-bold text-indigo-900 mt-1">
+                                <span id="daysRemaining">--</span> days
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                const today = new Date();
+                const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+                const daysRemaining = daysInMonth - today.getDate();
+                document.getElementById('daysRemaining').textContent = daysRemaining;
+            </script>
+            </div>
+
             <!-- Footer -->
             <div class="text-center text-slate-500 text-xs md:text-sm">
                 <p><i class="fas fa-shield-alt mr-1"></i>VaultSync &copy; 2026 - Your Family's Financial Hub</p>
@@ -712,6 +917,7 @@
         const emptyEl = document.getElementById('expenseChartEmpty');
         const totalMetricEl = document.getElementById('chartTotalMetric');
         const topMetricEl = document.getElementById('chartTopMetric');
+        const categoryCountMetricEl = document.getElementById('chartCategoryCountMetric');
         const centerLabelEl = document.getElementById('chartCenterLabel');
         const centerTotalEl = document.getElementById('chartCenterTotal');
         const centerHintEl = document.getElementById('chartCenterHint');
@@ -725,6 +931,7 @@
 
             if (totalMetricEl) totalMetricEl.textContent = formatCurrency(total);
             if (topMetricEl) topMetricEl.textContent = topRow ? topRow.label : '-';
+            if (categoryCountMetricEl) categoryCountMetricEl.textContent = chartRows.length.toString();
             if (centerTotalEl) centerTotalEl.textContent = formatCurrency(total);
 
             const getTheme = () => {

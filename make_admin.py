@@ -26,11 +26,11 @@ def main():
             user.family_id = family.id
             print(f"✓ Created new family '{family.name}' with invite code: {family.invite_code}")
         
-        # Promote user to admin
-        user.role = 'admin'
+        # Promote user to family_manager
+        user.user_type = 'family_manager'
         db.session.commit()
         
-        print(f"✓ User '{username}' is now an admin")
+        print(f"✓ User '{username}' is now a family manager")
         print(f"✓ Family ID: {user.family_id}")
         print(f"✓ Family Name: {user.family.name}")
         print(f"✓ Family Invite Code: {user.family.invite_code}")
