@@ -4,6 +4,7 @@ from flask_migrate import Migrate
 import calendar
 import csv
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -181,6 +182,8 @@ GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
 AI_ORGANIZER_BATCH_SIZE = 25
 _ai_organizer_scheduler_started = False
 _ai_plan_scheduler_started = False
+_gemini_key_index = 0
+_gemini_key_lock = threading.Lock()
 
 
 def get_next_auto_color(family_id):
@@ -1017,10 +1020,67 @@ def parse_gemini_json_text(response_payload):
     return json.loads(raw_text)
 
 
+def configured_gemini_keys():
+    placeholder_values = {
+        'your-gemini-api-key-here',
+        'key-one',
+        'key-two',
+        'key-three',
+    }
+
+    def valid_key(value):
+        if not value:
+            return False
+        normalized = value.strip()
+        if not normalized or normalized in placeholder_values:
+            return False
+        if normalized.startswith('your-'):
+            return False
+        return normalized.startswith('AIza')
+
+    keys = []
+    for env_name in ('GEMINI_API_KEY', 'GEMINI_API_KEY_1', 'GEMINI_API_KEY_2', 'GEMINI_API_KEY_3'):
+        key = os.environ.get(env_name, '').strip()
+        if valid_key(key) and key not in keys:
+            keys.append(key)
+
+    combined = os.environ.get('GEMINI_API_KEYS', '').strip()
+    if combined:
+        for key in combined.replace('\n', ',').split(','):
+            key = key.strip()
+            if valid_key(key) and key not in keys:
+                keys.append(key)
+
+    return keys
+
+
+def gemini_configured():
+    return bool(configured_gemini_keys())
+
+
+def next_gemini_key_order():
+    keys = configured_gemini_keys()
+    if not keys:
+        return []
+    global _gemini_key_index
+    with _gemini_key_lock:
+        start = _gemini_key_index % len(keys)
+        _gemini_key_index = (_gemini_key_index + 1) % len(keys)
+    return keys[start:] + keys[:start]
+
+
+def should_try_next_gemini_key(exc):
+    if isinstance(exc, urllib.error.URLError):
+        return True
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in {400, 401, 403, 408, 409, 429, 500, 502, 503, 504}
+    return False
+
+
 def call_gemini_json(prompt, response_schema):
-    api_key = os.environ.get('GEMINI_API_KEY', '').strip()
-    if not api_key:
-        raise ValueError('GEMINI_API_KEY is not set on the server.')
+    api_keys = next_gemini_key_order()
+    if not api_keys:
+        raise ValueError('No Gemini API key is set. Configure GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3, or GEMINI_API_KEYS.')
 
     url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
     payload = {
@@ -1038,26 +1098,37 @@ def call_gemini_json(prompt, response_schema):
         }
     }
     body = json.dumps(payload).encode('utf-8')
-    request_obj = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            'Content-Type': 'application/json',
-            'x-goog-api-key': api_key,
-        },
-        method='POST'
-    )
+    errors = []
 
-    try:
-        with urllib.request.urlopen(request_obj, timeout=60) as response:
-            response_payload = json.loads(response.read().decode('utf-8'))
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode('utf-8', errors='replace')
-        raise ValueError(f'Gemini API error {exc.code}: {error_body[:500]}') from exc
-    except urllib.error.URLError as exc:
-        raise ValueError(f'Could not reach Gemini API: {exc.reason}') from exc
+    for index, api_key in enumerate(api_keys, start=1):
+        request_obj = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                'Content-Type': 'application/json',
+                'x-goog-api-key': api_key,
+            },
+            method='POST'
+        )
 
-    return parse_gemini_json_text(response_payload)
+        try:
+            with urllib.request.urlopen(request_obj, timeout=75) as response:
+                response_payload = json.loads(response.read().decode('utf-8'))
+            return parse_gemini_json_text(response_payload)
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode('utf-8', errors='replace')
+            errors.append(f'key {index}: HTTP {exc.code} {error_body[:220]}')
+            if not should_try_next_gemini_key(exc):
+                break
+        except urllib.error.URLError as exc:
+            errors.append(f'key {index}: network {exc.reason}')
+            if not should_try_next_gemini_key(exc):
+                break
+        except json.JSONDecodeError as exc:
+            errors.append(f'key {index}: invalid JSON response {exc}')
+            break
+
+    raise ValueError('Gemini API failed for all configured keys: ' + ' | '.join(errors))
 
 
 def build_expense_organization_prompt(expenses, categories, exceptions=None):
@@ -1258,6 +1329,236 @@ def organize_expenses_for_family(family_id, start_date, end_date):
     }
 
 
+def average(values):
+    values = [float(value or 0) for value in values]
+    return sum(values) / len(values) if values else 0.0
+
+
+def percentile(values, pct):
+    values = sorted(float(value or 0) for value in values)
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return values[0]
+    position = (len(values) - 1) * pct
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return values[int(position)]
+    return values[lower] + (values[upper] - values[lower]) * (position - lower)
+
+
+def add_months(source_date, months):
+    month_index = source_date.year * 12 + source_date.month - 1 + months
+    year = month_index // 12
+    month = month_index % 12 + 1
+    day = min(source_date.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def inclusive_dates(start, end):
+    current = start
+    while current <= end:
+        yield current
+        current += timedelta(days=1)
+
+
+def historical_month_windows(month_start, count=6):
+    windows = []
+    for offset in range(count, 0, -1):
+        historical_start = add_months(month_start, -offset)
+        historical_end = date(
+            historical_start.year,
+            historical_start.month,
+            calendar.monthrange(historical_start.year, historical_start.month)[1]
+        )
+        windows.append((historical_start, historical_end))
+    return windows
+
+
+def build_forecast_engine(family_id, month_start, today, month_end, monthly_budget, categories, expected_items, bucket_summaries):
+    days_in_month = (month_end - month_start).days + 1
+    elapsed_days = max((today - month_start).days + 1, 1)
+    remaining_days = max((month_end - today).days, 0)
+    lookback_start = add_months(month_start, -6)
+
+    expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= lookback_start,
+        Expense.date <= today
+    ).order_by(Expense.date.asc(), Expense.id.asc()).all()
+    current_expenses = [
+        expense for expense in expenses
+        if month_start <= expense.date <= today
+    ]
+    historical_expenses = [
+        expense for expense in expenses
+        if expense.date < month_start
+    ]
+
+    daily_totals = {}
+    weekday_totals = {index: [] for index in range(7)}
+    category_daily = {}
+    current_by_category = {category.name: 0.0 for category in categories}
+    historical_by_category_months = {category.name: [] for category in categories}
+
+    for expense in current_expenses:
+        amount = float(expense.amount or 0)
+        daily_totals[expense.date] = daily_totals.get(expense.date, 0.0) + amount
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        current_by_category[category_name] = current_by_category.get(category_name, 0.0) + amount
+
+    historical_by_day = {}
+    historical_month_totals = []
+    for window_start, window_end in historical_month_windows(month_start, 6):
+        month_expenses = [
+            expense for expense in historical_expenses
+            if window_start <= expense.date <= window_end
+        ]
+        month_total = sum(float(expense.amount or 0) for expense in month_expenses)
+        historical_month_totals.append(month_total)
+        by_category = {}
+        for expense in month_expenses:
+            category_name = expense.category.name if expense.category else 'Uncategorized'
+            by_category[category_name] = by_category.get(category_name, 0.0) + float(expense.amount or 0)
+        for category in categories:
+            historical_by_category_months[category.name].append(by_category.get(category.name, 0.0))
+
+    for expense in historical_expenses:
+        amount = float(expense.amount or 0)
+        historical_by_day[expense.date] = historical_by_day.get(expense.date, 0.0) + amount
+
+    for day, total in historical_by_day.items():
+        weekday_totals[day.weekday()].append(total)
+
+    current_spent = sum(daily_totals.values())
+    nonzero_daily_values = [total for total in daily_totals.values() if total > 0]
+    calendar_daily_avg = current_spent / elapsed_days if elapsed_days else 0.0
+    active_daily_avg = average(nonzero_daily_values)
+    last_7_start = max(month_start, today - timedelta(days=6))
+    last_7_values = [daily_totals.get(day, 0.0) for day in inclusive_dates(last_7_start, today)]
+    last_7_avg = average(last_7_values)
+    historical_month_avg = average(historical_month_totals)
+    historical_month_median = percentile(historical_month_totals, 0.5)
+    historical_daily_avg = average(list(historical_by_day.values()))
+
+    remaining_weekday_projection = 0.0
+    for day in inclusive_dates(today + timedelta(days=1), month_end):
+        weekday_average = average(weekday_totals.get(day.weekday(), []))
+        remaining_weekday_projection += weekday_average if weekday_average else calendar_daily_avg
+
+    unpaid_expected = [item for item in expected_items if not item.is_paid]
+    unpaid_expected_total = sum(expected_budget_amount(item) for item in unpaid_expected)
+    unpaid_future_total = sum(
+        expected_budget_amount(item)
+        for item in unpaid_expected
+        if expected_expense_date(item) > today
+    )
+    bucket_remaining_total = sum(float(item.get('remaining') or 0) for item in bucket_summaries)
+
+    simple_pace_total = current_spent + (calendar_daily_avg * remaining_days)
+    last_7_pace_total = current_spent + (last_7_avg * remaining_days)
+    weekday_total = current_spent + remaining_weekday_projection
+    historical_blend_total = max(current_spent, (historical_month_avg * 0.55) + (historical_month_median * 0.25) + (simple_pace_total * 0.20))
+    commitments_total = current_spent + unpaid_future_total
+
+    candidate_totals = [
+        simple_pace_total,
+        last_7_pace_total,
+        weekday_total,
+        historical_blend_total,
+        commitments_total,
+    ]
+    weighted_total = (
+        simple_pace_total * 0.28
+        + last_7_pace_total * 0.18
+        + weekday_total * 0.22
+        + historical_blend_total * 0.20
+        + commitments_total * 0.12
+    )
+    lower_guard = max(current_spent, commitments_total * 0.92)
+    upper_guard = percentile(candidate_totals, 0.9) * 1.18 if candidate_totals else weighted_total
+    ensemble_total = min(max(weighted_total, lower_guard), max(upper_guard, lower_guard))
+    predicted_additional = max(ensemble_total - current_spent, 0.0)
+    expected_savings = monthly_budget - ensemble_total
+
+    category_forecasts = []
+    for category in categories:
+        name = category.name
+        current_amount = current_by_category.get(name, 0.0)
+        category_current_share = current_amount / current_spent if current_spent else 0.0
+        category_simple = current_amount + (current_amount / elapsed_days * remaining_days if elapsed_days else 0)
+        category_history = average(historical_by_category_months.get(name, []))
+        category_limit = float(category.monthly_limit or 0)
+        unpaid_category_future = sum(
+            expected_budget_amount(item)
+            for item in unpaid_expected
+            if item.category and item.category.name == name and expected_expense_date(item) > today
+        )
+        category_commitment = current_amount + unpaid_category_future
+        category_model = max(
+            current_amount,
+            category_commitment,
+            (category_simple * 0.45) + (category_history * 0.30) + (ensemble_total * category_current_share * 0.25)
+        )
+        if category_limit:
+            category_model = max(category_model, min(category_limit, category_commitment))
+        if category_model <= 0 and current_amount <= 0:
+            continue
+        category_forecasts.append({
+            'category': name,
+            'current_spent': round(current_amount, 2),
+            'predicted_month_end_spend': round(category_model, 2),
+            'historical_average': round(category_history, 2),
+            'category_limit': round(category_limit, 2),
+            'future_commitments': round(unpaid_category_future, 2),
+            'share_of_current_spend': round(category_current_share * 100, 1),
+        })
+
+    category_forecasts.sort(key=lambda row: row['predicted_month_end_spend'], reverse=True)
+    confidence_score = 0.78
+    if elapsed_days < 7:
+        confidence_score -= 0.18
+    if len([total for total in historical_month_totals if total > 0]) < 3:
+        confidence_score -= 0.12
+    if current_spent > monthly_budget * 0.85:
+        confidence_score -= 0.05
+    confidence_score = min(max(confidence_score, 0.35), 0.92)
+    confidence_level = 'high' if confidence_score >= 0.75 else 'medium' if confidence_score >= 0.55 else 'low'
+
+    return {
+        'current_spent': round(current_spent, 2),
+        'predicted_total_spend': round(max(ensemble_total, current_spent), 2),
+        'predicted_additional_spend': round(predicted_additional, 2),
+        'expected_savings': round(expected_savings, 2),
+        'confidence_score': round(confidence_score, 2),
+        'confidence_level': confidence_level,
+        'daily_averages': {
+            'calendar_daily_average': round(calendar_daily_avg, 2),
+            'active_spend_day_average': round(active_daily_avg, 2),
+            'last_7_day_average': round(last_7_avg, 2),
+            'historical_daily_average': round(historical_daily_avg, 2),
+        },
+        'candidate_totals': {
+            'simple_pace_total': round(simple_pace_total, 2),
+            'last_7_pace_total': round(last_7_pace_total, 2),
+            'weekday_weighted_total': round(weekday_total, 2),
+            'historical_blend_total': round(historical_blend_total, 2),
+            'commitments_floor_total': round(commitments_total, 2),
+        },
+        'historical_month_totals': [round(total, 2) for total in historical_month_totals],
+        'unpaid_expected_total': round(unpaid_expected_total, 2),
+        'unpaid_future_total': round(unpaid_future_total, 2),
+        'bucket_remaining_total': round(bucket_remaining_total, 2),
+        'category_forecasts': category_forecasts,
+        'method': [
+            'weighted ensemble of current pace, last 7 days, weekday pattern, historical months, and known commitments',
+            'unpaid future planned bills and reserved buckets are treated as spending commitments',
+            'category forecasts blend current spend, historical average, category limits, and future commitments'
+        ]
+    }
+
+
 def build_savings_forecast_schema(category_names):
     return {
         'type': 'object',
@@ -1338,10 +1639,20 @@ def build_savings_forecast_context(family_id, admin_notes):
     )
 
     category_spending = summarize_expenses(expenses).get('by_category', {})
-    
-    # BACKEND-FIRST MATH: Calculate totals directly in Python
-    current_spent = round(sum(float(expense.amount) for expense in expenses), 2)
-    simple_pace_total = round((current_spent / elapsed_days) * days_in_month, 2) if elapsed_days else current_spent
+
+    forecast_engine = build_forecast_engine(
+        family_id,
+        month_start,
+        today,
+        month_end,
+        float(family.monthly_budget or 0),
+        categories,
+        expected_items,
+        bucket_summaries
+    )
+
+    current_spent = forecast_engine['current_spent']
+    simple_pace_total = forecast_engine['candidate_totals']['simple_pace_total']
     
     # Backend-First Math: Filter ONLY unpaid ExpectedExpense items (is_paid == False)
     # Paid items are already recorded in Expense table, so we exclude them to avoid double-counting
@@ -1350,15 +1661,9 @@ def build_savings_forecast_context(family_id, admin_notes):
         if not item.is_paid  # Strictly filter: only send future obligations
     ]
     
-    # BACKEND-FIRST MATH: Pre-calculate total unpaid expected expenses
-    total_unpaid_expected = round(
-        sum(float(expected_budget_amount(item)) for item in unpaid_expected),
-        2
-    )
-    
-    # BACKEND-FIRST MATH: Calculate savings in Python, not in AI
+    total_unpaid_expected = forecast_engine['unpaid_expected_total']
     monthly_budget = float(family.monthly_budget or 0)
-    calculated_savings = round(monthly_budget - (current_spent + total_unpaid_expected), 2)
+    calculated_savings = forecast_engine['expected_savings']
     
     unpaid_planned = [
         {
@@ -1394,6 +1699,7 @@ def build_savings_forecast_context(family_id, admin_notes):
             'current_spent': current_spent,
             'simple_pace_projection': simple_pace_total,
             'simple_pace_savings': round(float(family.monthly_budget or 0) - simple_pace_total, 2),
+            'forecast_engine': forecast_engine,
             'category_spending_to_date': category_spending,
             'categories': [
                 {
@@ -1421,13 +1727,16 @@ def build_savings_forecast_context(family_id, admin_notes):
                 'total_actual_spent': current_spent,
                 'total_unpaid_expected': total_unpaid_expected,
                 'calculated_savings': calculated_savings,
+                'predicted_total_spend': forecast_engine['predicted_total_spend'],
+                'predicted_additional_spend': forecast_engine['predicted_additional_spend'],
+                'confidence_score': forecast_engine['confidence_score'],
+                'confidence_level': forecast_engine['confidence_level'],
             },
             'instructions_for_ai': [
-                'Analyze family spending patterns, forecast category spend, and provide strategic recommendations.',
-                'CRITICAL: The exact calculated remaining savings for this month is Rs {calculated_savings}. The total spent so far is Rs {current_spent}. The total unpaid expected expenses are Rs {total_unpaid_expected}.',
-                'You must treat these numbers as absolute facts. Do NOT recalculate them, and do NOT output any other numbers for expected_savings.',
-                'Your job is to explain spending patterns and provide smart category forecasts, not to recalculate totals.',
-                'Use actual expenses, unpaid planned items, bucket reserves, category limits, and admin notes to inform your analysis.',
+                'Use forecast_engine as the source of truth for totals and confidence.',
+                'Analyze the forecast engine candidates and explain why the ensemble result is plausible.',
+                'Do not invent totals. Copy predicted_total_spend, predicted_additional_spend, expected_savings, confidence_level, and confidence_score from backend_calculated_values.',
+                'Use actual expenses, unpaid planned items, bucket reserves, category limits, historical baselines, weekday patterns, and admin notes to inform your analysis.',
                 'Admin notes are important rules. Follow them when reasonable and mention how they affected your recommendations.',
                 'Do not invent category names. Use only the provided categories in category_forecasts.',
             ]
@@ -1440,19 +1749,22 @@ def build_savings_forecast_prompt(context_payload):
     calculated_savings = backend_values.get('calculated_savings', 0)
     total_actual_spent = backend_values.get('total_actual_spent', 0)
     total_unpaid_expected = backend_values.get('total_unpaid_expected', 0)
+    predicted_total = backend_values.get('predicted_total_spend', 0)
+    predicted_additional = backend_values.get('predicted_additional_spend', 0)
     
     return (
-        'You are VaultSync savings forecast AI.\n'
-        'Analyze this family budget data and provide category forecasts and strategic recommendations.\n'
-        'IMPORTANT: You must accept and use the backend-calculated values as absolute facts.\n\n'
+        'You are VaultSync senior forecasting analyst.\n'
+        'You are given a deterministic forecast engine with multiple baselines. Your job is to audit, explain, and enrich it with practical actions.\n'
+        'IMPORTANT: Use backend-calculated values as the numeric source of truth.\n\n'
         f'{json.dumps(context_payload, ensure_ascii=False)}\n\n'
         f'HARDCODED FACTS FOR THIS FORECAST:\n'
+        f'- Exact predicted month-end spend: Rs {predicted_total}\n'
+        f'- Exact predicted additional spend: Rs {predicted_additional}\n'
         f'- Exact calculated remaining savings: Rs {calculated_savings}\n'
         f'- Total actual spent to date: Rs {total_actual_spent}\n'
         f'- Total unpaid expected expenses: Rs {total_unpaid_expected}\n'
         f'\n'
-        f'You MUST return these exact values in your response. Do NOT recalculate them.\n'
-        f'Your analysis should focus on spending patterns, risks, and recommended actions.\n'
+        f'Return those exact numeric values. Analyze candidate totals, outliers, category drivers, risks, and recommended actions.\n'
         f'Return only JSON matching the schema. No markdown, no prose outside JSON.'
     )
 
@@ -1465,34 +1777,19 @@ def normalize_savings_forecast_payload(payload, context):
     # Backend-First Math: Use the pre-calculated savings value
     backend_calculated_savings = context['calculated_savings']
 
-    try:
-        predicted_total = float(payload.get('predicted_total_spend'))
-    except (TypeError, ValueError):
-        predicted_total = context['simple_pace_total']
-
+    forecast_engine = context.get('payload', {}).get('forecast_engine', {})
+    predicted_total = float(forecast_engine.get('predicted_total_spend') or context['simple_pace_total'])
     predicted_total = max(predicted_total, current_spent)
-    try:
-        predicted_additional = float(payload.get('predicted_additional_spend'))
-    except (TypeError, ValueError):
-        predicted_additional = predicted_total - current_spent
-    predicted_additional = max(predicted_additional, 0.0)
-
-    try:
-        expected_savings = float(payload.get('expected_savings'))
-    except (TypeError, ValueError):
-        # If AI didn't provide expected_savings, use backend calculation
-        expected_savings = backend_calculated_savings
-    
-    # Backend-First Math: Ensure we use the correct pre-calculated savings
+    predicted_additional = max(float(forecast_engine.get('predicted_additional_spend') or (predicted_total - current_spent)), 0.0)
     expected_savings = backend_calculated_savings
 
     try:
-        confidence_score = float(payload.get('confidence_score'))
+        confidence_score = float(forecast_engine.get('confidence_score', payload.get('confidence_score')))
     except (TypeError, ValueError):
         confidence_score = 0.5
     confidence_score = min(max(confidence_score, 0.0), 1.0)
 
-    confidence_level = str(payload.get('confidence_level') or 'medium').strip().lower()
+    confidence_level = str(forecast_engine.get('confidence_level') or payload.get('confidence_level') or 'medium').strip().lower()
     if confidence_level not in {'low', 'medium', 'high'}:
         confidence_level = 'medium'
 
@@ -1511,28 +1808,40 @@ def normalize_savings_forecast_payload(payload, context):
         payload[key] = [str(value).strip() for value in values if str(value).strip()][:8]
 
     category_names = {category.name for category in context['categories']}
+    engine_category_rows = {
+        row['category']: row
+        for row in forecast_engine.get('category_forecasts') or []
+    }
     normalized_category_forecasts = []
-    for item in payload.get('category_forecasts') or []:
+    ai_rows = payload.get('category_forecasts') or []
+    for item in ai_rows:
         if not isinstance(item, dict):
             continue
         category_name = str(item.get('category') or '').strip()
         if category_name not in category_names:
             continue
-        try:
-            current_category_spent = float(item.get('current_spent') or 0)
-        except (TypeError, ValueError):
-            current_category_spent = 0.0
-        try:
-            predicted_category_spend = float(item.get('predicted_month_end_spend') or 0)
-        except (TypeError, ValueError):
-            predicted_category_spend = current_category_spent
+        engine_row = engine_category_rows.get(category_name, {})
+        current_category_spent = float(engine_row.get('current_spent', item.get('current_spent') or 0))
+        predicted_category_spend = float(engine_row.get('predicted_month_end_spend', item.get('predicted_month_end_spend') or current_category_spent))
         normalized_category_forecasts.append({
             'category': category_name,
             'current_spent': round(max(current_category_spent, 0.0), 2),
             'predicted_month_end_spend': round(max(predicted_category_spend, 0.0), 2),
             'note': str(item.get('note') or '').strip()[:240],
         })
+    existing_forecast_categories = {row['category'] for row in normalized_category_forecasts}
+    for category_name, engine_row in engine_category_rows.items():
+        if category_name in existing_forecast_categories:
+            continue
+        normalized_category_forecasts.append({
+            'category': category_name,
+            'current_spent': round(max(float(engine_row.get('current_spent') or 0), 0.0), 2),
+            'predicted_month_end_spend': round(max(float(engine_row.get('predicted_month_end_spend') or 0), 0.0), 2),
+            'note': 'Backend forecast engine baseline.',
+        })
+    normalized_category_forecasts.sort(key=lambda row: row['predicted_month_end_spend'], reverse=True)
     payload['category_forecasts'] = normalized_category_forecasts
+    payload['forecast_engine'] = forecast_engine
     return payload
 
 
@@ -1846,7 +2155,7 @@ def start_daily_report_scheduler():
         return
     if os.environ.get('DISABLE_DAILY_REPORT_SCHEDULER') == '1':
         return
-    if not os.environ.get('GEMINI_API_KEY', '').strip():
+    if not gemini_configured():
         return
 
     _daily_report_scheduler_started = True
@@ -1916,7 +2225,7 @@ def start_ai_plan_scheduler():
         return
     if os.environ.get('DISABLE_AI_PLAN_SCHEDULER') == '1':
         return
-    if not os.environ.get('GEMINI_API_KEY', '').strip():
+    if not gemini_configured():
         return
 
     _ai_plan_scheduler_started = True
@@ -1957,7 +2266,7 @@ def start_ai_organizer_scheduler():
         return
     if os.environ.get('DISABLE_AI_ORGANIZER_SCHEDULER') == '1':
         return
-    if not os.environ.get('GEMINI_API_KEY', '').strip():
+    if not gemini_configured():
         return
 
     _ai_organizer_scheduler_started = True
@@ -3643,8 +3952,9 @@ def admin_panel():
                           savings_chart_data=savings_chart_data,
                           ai_exceptions=ai_exceptions,
                           ai_notes=family.ai_notes or '',
-                          ai_organizer_configured=bool(os.environ.get('GEMINI_API_KEY', '').strip()),
+                          ai_organizer_configured=gemini_configured(),
                           ai_organizer_model=GEMINI_MODEL,
+                          gemini_key_count=len(configured_gemini_keys()),
                           today=current_date.date(),
                           current_month_start=current_month_start,
                           current_month_end=current_month_end,

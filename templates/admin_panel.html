@@ -415,7 +415,7 @@
                     <div class="flex items-start justify-between gap-3 mb-5">
                         <div>
                             <h3 class="font-semibold text-gray-700">Run Savings Analysis</h3>
-                            <p class="text-sm text-gray-600 mt-1">Gemini forecasts expected savings through the end of this month only when an admin clicks Analyze.</p>
+                            <p class="text-sm text-gray-600 mt-1">VaultSync now runs a local forecast engine first, then Gemini audits the numbers and writes the action plan.</p>
                         </div>
                         {% if ai_organizer_configured %}
                         <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full">Ready</span>
@@ -440,11 +440,12 @@
                     <div class="space-y-3 text-sm text-gray-600">
                         <p><span class="font-bold text-gray-800">Start:</span> {{ current_month_start.strftime('%b %d, %Y') }}</p>
                         <p><span class="font-bold text-gray-800">End:</span> {{ current_month_end.strftime('%b %d, %Y') }}</p>
-                        <p><span class="font-bold text-gray-800">Run mode:</span> admin click only</p>
+                        <p><span class="font-bold text-gray-800">Run mode:</span> admin click</p>
                         <p><span class="font-bold text-gray-800">Model:</span> {{ ai_organizer_model }}</p>
+                        <p><span class="font-bold text-gray-800">Key pool:</span> {{ gemini_key_count }} configured</p>
                     </div>
                     <div class="mt-4 p-3 bg-white border border-slate-200 rounded-lg text-xs text-gray-500">
-                        The forecast uses current spending, planned unpaid items, reserved buckets, category limits, and the notes above.
+                        The forecast uses current pace, last 7-day pace, historical months, weekday behavior, unpaid bills, reserved buckets, category limits, and the notes above.
                     </div>
                 </div>
             </div>
@@ -479,6 +480,17 @@
                             <p class="font-bold text-slate-800">{{ latest_savings_forecast.confidence_level.title() }} · {{ "{:.0f}".format(latest_savings_forecast.confidence_score * 100) }}%</p>
                         </div>
                     </div>
+                    {% if latest_savings_payload.forecast_engine %}
+                    <div class="mt-5 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-gray-600">
+                        <p class="font-bold text-slate-800 mb-2">Forecast Engine</p>
+                        <div class="space-y-1">
+                            <p>Simple pace: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.simple_pace_total) }}</strong></p>
+                            <p>7-day pace: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.last_7_pace_total) }}</strong></p>
+                            <p>Weekday weighted: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.weekday_weighted_total) }}</strong></p>
+                            <p>Commitments floor: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.commitments_floor_total) }}</strong></p>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="space-y-6">
