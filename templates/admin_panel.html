@@ -480,28 +480,31 @@
                             <p class="font-bold text-slate-800">{{ latest_savings_forecast.confidence_level.title() }} · {{ "{:.0f}".format(latest_savings_forecast.confidence_score * 100) }}%</p>
                         </div>
                     </div>
-                    {% if latest_savings_payload.forecast_engine %}
+                    {% set forecast_engine = latest_savings_payload.get('forecast_engine') if latest_savings_payload else none %}
+                    {% if forecast_engine %}
+                    {% set candidate_totals = forecast_engine.get('candidate_totals', {}) %}
+                    {% set admin_note_rules = forecast_engine.get('admin_note_rules', {}) %}
                     <div class="mt-5 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-gray-600">
                         <p class="font-bold text-slate-800 mb-2">Forecast Engine</p>
                         <div class="space-y-1">
-                            <p>Simple pace: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.simple_pace_total) }}</strong></p>
-                            <p>7-day pace: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.last_7_pace_total) }}</strong></p>
-                            <p>Weekday weighted: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.weekday_weighted_total) }}</strong></p>
-                            <p>Commitments floor: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.commitments_floor_total) }}</strong></p>
-                            <p>Regular pace base: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.regular_current_spend) }}</strong></p>
-                            <p>One-time current: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.one_time_current_spend) }}</strong></p>
-                            <p>Non-pace current: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.locked_current_spend) }}</strong></p>
+                            <p>Simple pace: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('simple_pace_total', 0)) }}</strong></p>
+                            <p>7-day pace: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('last_7_pace_total', 0)) }}</strong></p>
+                            <p>Weekday weighted: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('weekday_weighted_total', 0)) }}</strong></p>
+                            <p>Commitments floor: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('commitments_floor_total', 0)) }}</strong></p>
+                            <p>Regular pace base: <strong>&#8377;{{ "{:,.0f}".format(forecast_engine.get('regular_current_spend', forecast_engine.get('projectable_spend_to_date', 0))) }}</strong></p>
+                            <p>One-time current: <strong>&#8377;{{ "{:,.0f}".format(forecast_engine.get('one_time_current_spend', 0)) }}</strong></p>
+                            <p>Non-pace current: <strong>&#8377;{{ "{:,.0f}".format(forecast_engine.get('locked_current_spend', 0)) }}</strong></p>
                         </div>
-                        {% if latest_savings_payload.forecast_engine.admin_note_rules.current_only_categories %}
+                        {% if admin_note_rules.get('current_only_categories') %}
                         <div class="mt-3 pt-3 border-t border-slate-200">
-                            {% if latest_savings_payload.forecast_engine.admin_note_rules.admin_current_only_categories %}
-                            <p>Admin note locked: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.admin_current_only_categories|join(', ') }}</strong></p>
+                            {% if admin_note_rules.get('admin_current_only_categories') %}
+                            <p>Admin note locked: <strong>{{ admin_note_rules.get('admin_current_only_categories')|join(', ') }}</strong></p>
                             {% endif %}
-                            {% if latest_savings_payload.forecast_engine.admin_note_rules.automatic_current_only_categories %}
-                            <p>Auto fixed-bill lock: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.automatic_current_only_categories|join(', ') }}</strong></p>
+                            {% if admin_note_rules.get('automatic_current_only_categories') %}
+                            <p>Auto fixed-bill lock: <strong>{{ admin_note_rules.get('automatic_current_only_categories')|join(', ') }}</strong></p>
                             {% endif %}
-                            {% if latest_savings_payload.forecast_engine.admin_note_rules.exception_tokens %}
-                            <p>Exceptions kept: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.exception_tokens|join(', ') }}</strong></p>
+                            {% if admin_note_rules.get('exception_tokens') %}
+                            <p>Exceptions kept: <strong>{{ admin_note_rules.get('exception_tokens')|join(', ') }}</strong></p>
                             {% endif %}
                         </div>
                         {% endif %}

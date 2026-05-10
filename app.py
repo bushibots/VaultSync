@@ -2169,9 +2169,22 @@ def savings_forecast_payload(forecast):
     if not forecast:
         return {}
     try:
-        return json.loads(forecast.raw_json)
+        payload = json.loads(forecast.raw_json)
     except (TypeError, ValueError):
         return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    forecast_engine = payload.get('forecast_engine')
+    if isinstance(forecast_engine, dict):
+        forecast_engine.setdefault('candidate_totals', {})
+        forecast_engine.setdefault('admin_note_rules', {})
+        forecast_engine.setdefault('regular_current_spend', forecast_engine.get('projectable_spend_to_date', 0))
+        forecast_engine.setdefault('one_time_current_spend', 0)
+        forecast_engine.setdefault('locked_current_spend', 0)
+        forecast_engine.setdefault('expense_classifications', [])
+
+    return payload
 
 
 def savings_forecast_chart_data(family, forecast):
