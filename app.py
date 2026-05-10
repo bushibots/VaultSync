@@ -2006,6 +2006,231 @@ def archive():
     return render_template('archive.html', user=current_user, months=months)
 
 
+@app.route('/financial_reports')
+@login_required
+def financial_reports():
+    """Consolidated planning, forecasting, variance, and financial reports."""
+    if not current_user.family_id:
+        flash('Please join a family before opening financial reports.', 'error')
+        return redirect(url_for('dashboard'))
+
+    current_day = datetime.utcnow().date()
+    selected_month = request.args.get('month', current_day.month, type=int)
+    selected_year = request.args.get('year', current_day.year, type=int)
+    if not (1 <= selected_month <= 12):
+        selected_month = current_day.month
+    if selected_year < 2020 or selected_year > 2050:
+        selected_year = current_day.year
+
+    month_start, month_end = month_bounds(selected_year, selected_month)
+    monthly_budget = float(current_user.family.monthly_budget or 0)
+
+    categories = Category.query.filter_by(family_id=current_user.family_id).order_by(Category.name.asc()).all()
+    expenses = Expense.query.filter(
+        Expense.family_id == current_user.family_id,
+        Expense.date >= month_start,
+        Expense.date <= month_end
+    ).order_by(Expense.date.desc()).all()
+    expected_expenses = ExpectedExpense.query.filter_by(
+        family_id=current_user.family_id,
+        month=selected_month,
+        year=selected_year
+    ).order_by(ExpectedExpense.due_day.asc(), ExpectedExpense.amount.desc()).all()
+
+    actual_by_category = {category.id: 0.0 for category in categories}
+    count_by_category = {category.id: 0 for category in categories}
+    spent_by_user = {}
+    for expense in expenses:
+        actual_by_category[expense.category_id] = actual_by_category.get(expense.category_id, 0.0) + float(expense.amount or 0)
+        count_by_category[expense.category_id] = count_by_category.get(expense.category_id, 0) + 1
+        spent_by_user[expense.user.username] = spent_by_user.get(expense.user.username, 0.0) + float(expense.amount or 0)
+
+    planned_by_category = {category.id: 0.0 for category in categories}
+    for item in expected_expenses:
+        planned_by_category[item.category_id] = planned_by_category.get(item.category_id, 0.0) + expected_budget_amount(item)
+
+    total_spent = sum(actual_by_category.values())
+    planned_total = sum(expected_budget_amount(item) for item in expected_expenses)
+    posted_total = sum(float(item.amount or 0) for item in expected_expenses if item.is_paid and not item.is_bucket)
+    unposted_total = sum(float(item.amount or 0) for item in expected_expenses if not item.is_paid and not item.is_bucket)
+    bucket_total = sum(expected_budget_amount(item) for item in expected_expenses if item.is_bucket)
+    budget_remaining = monthly_budget - total_spent
+    budget_used_percentage = (total_spent / monthly_budget * 100) if monthly_budget else 0
+
+    variance_rows = []
+    for category in categories:
+        planned = planned_by_category.get(category.id, 0.0) or float(category.monthly_limit or 0)
+        actual = actual_by_category.get(category.id, 0.0)
+        if not planned and not actual:
+            continue
+        variance = actual - planned
+        variance_rows.append({
+            'name': category.name,
+            'color': category.color,
+            'planned': planned,
+            'actual': actual,
+            'variance': variance,
+            'variance_percentage': (variance / planned * 100) if planned else 100,
+            'status': 'Over' if variance > 0 else 'Under' if variance < 0 else 'On plan'
+        })
+    variance_rows.sort(key=lambda row: abs(row['variance']), reverse=True)
+
+    expense_rows = []
+    for category in categories:
+        amount = actual_by_category.get(category.id, 0.0)
+        count = count_by_category.get(category.id, 0)
+        if amount <= 0 and count == 0:
+            continue
+        expense_rows.append({
+            'name': category.name,
+            'color': category.color,
+            'amount': amount,
+            'count': count,
+            'average': amount / count if count else 0,
+            'share': (amount / total_spent * 100) if total_spent else 0
+        })
+    expense_rows.sort(key=lambda row: row['amount'], reverse=True)
+
+    selected_days = calendar.monthrange(selected_year, selected_month)[1]
+    selected_month_start = date(selected_year, selected_month, 1)
+    current_month_start = date(current_day.year, current_day.month, 1)
+    if selected_month_start == current_month_start:
+        days_elapsed = max(current_day.day, 1)
+        days_remaining = max(selected_days - current_day.day, 0)
+    elif selected_month_start < current_month_start:
+        days_elapsed = selected_days
+        days_remaining = 0
+    else:
+        days_elapsed = 1
+        days_remaining = selected_days
+
+    daily_rate = total_spent / days_elapsed if days_elapsed else 0
+    forecast_total = daily_rate * selected_days
+    forecast_remaining = monthly_budget - forecast_total
+    safe_daily_spend = budget_remaining / days_remaining if days_remaining else max(budget_remaining, 0)
+    forecast_status = 'Healthy' if forecast_total <= monthly_budget else 'At risk'
+
+    cash_flow_rows = []
+    for offset in range(5, -1, -1):
+        month_index = (selected_year * 12 + selected_month - 1) - offset
+        row_year = month_index // 12
+        row_month = month_index % 12 + 1
+        row_start, row_end = month_bounds(row_year, row_month)
+        row_spent = db.session.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
+            Expense.family_id == current_user.family_id,
+            Expense.date >= row_start,
+            Expense.date <= row_end
+        ).scalar() or 0
+        row_planned = sum(
+            expected_budget_amount(item)
+            for item in ExpectedExpense.query.filter_by(
+                family_id=current_user.family_id,
+                month=row_month,
+                year=row_year
+            ).all()
+        )
+        cash_flow_rows.append({
+            'label': f'{calendar.month_abbr[row_month]} {row_year}',
+            'income': monthly_budget,
+            'planned': float(row_planned),
+            'outflow': float(row_spent),
+            'net': monthly_budget - float(row_spent)
+        })
+
+    top_spender = max(spent_by_user.items(), key=lambda item: item[1]) if spent_by_user else None
+    pnl_rows = [
+        {'label': 'Family budget / income', 'amount': monthly_budget, 'type': 'income'},
+        {'label': 'Actual expenses', 'amount': -total_spent, 'type': 'expense'},
+        {'label': 'Unposted planned bills', 'amount': -unposted_total, 'type': 'commitment'},
+    ]
+    pnl_net = monthly_budget - total_spent
+    pnl_projected_net = monthly_budget - forecast_total
+
+    missing_feature_cards = [
+        {
+            'title': 'Budget Planning',
+            'tier': 'Core',
+            'body': 'A month plan that combines expected bills, reserved buckets, category limits, and remaining budget.',
+            'metric': f'Rs. {planned_total:,.0f} planned'
+        },
+        {
+            'title': 'Forecasting',
+            'tier': 'Advanced',
+            'body': 'Projects month-end spend from the current burn rate and shows safe daily spend for the rest of the month.',
+            'metric': f'Rs. {forecast_total:,.0f} forecast'
+        },
+        {
+            'title': 'Variance Analysis',
+            'tier': 'Advanced',
+            'body': 'Compares real category spend against the active plan or category limit to reveal over/under areas.',
+            'metric': f'{len(variance_rows)} tracked lines'
+        },
+        {
+            'title': 'Budget Report',
+            'tier': 'Core',
+            'body': 'Turns budget, spending, remaining balance, planned bills, and protected buckets into one month summary.',
+            'metric': f'{budget_used_percentage:.1f}% used'
+        },
+        {
+            'title': 'Cash Flow Report',
+            'tier': 'Advanced',
+            'body': 'Shows budgeted inflow, planned commitments, actual outflow, and net cash flow across recent months.',
+            'metric': f'Rs. {sum(row["net"] for row in cash_flow_rows):,.0f} 6-mo net'
+        },
+        {
+            'title': 'Expense Report',
+            'tier': 'Core',
+            'body': 'Breaks expenses down by category, transaction count, average transaction size, and spend share.',
+            'metric': f'{len(expenses)} transactions'
+        },
+        {
+            'title': 'Profit & Loss Report',
+            'tier': 'Advanced',
+            'body': 'Household-style P&L that treats the family budget as income and spending as expenses.',
+            'metric': f'Rs. {pnl_net:,.0f} net'
+        }
+    ]
+
+    return render_template(
+        'financial_reports.html',
+        user=current_user,
+        family=current_user.family,
+        selected_month=selected_month,
+        selected_year=selected_year,
+        month_name=calendar.month_name[selected_month],
+        year_range=range(2024, datetime.utcnow().year + 3),
+        monthly_budget=monthly_budget,
+        total_spent=total_spent,
+        planned_total=planned_total,
+        posted_total=posted_total,
+        unposted_total=unposted_total,
+        bucket_total=bucket_total,
+        budget_remaining=budget_remaining,
+        budget_used_percentage=budget_used_percentage,
+        variance_rows=variance_rows,
+        expense_rows=expense_rows,
+        cash_flow_rows=cash_flow_rows,
+        forecast_total=forecast_total,
+        forecast_remaining=forecast_remaining,
+        forecast_status=forecast_status,
+        daily_rate=daily_rate,
+        safe_daily_spend=safe_daily_spend,
+        days_remaining=days_remaining,
+        pnl_rows=pnl_rows,
+        pnl_net=pnl_net,
+        pnl_projected_net=pnl_projected_net,
+        top_spender=top_spender,
+        missing_feature_cards=missing_feature_cards,
+        chart_labels=[row['name'] for row in expense_rows],
+        chart_values=[row['amount'] for row in expense_rows],
+        chart_colors=[row['color'] for row in expense_rows],
+        cash_flow_labels=[row['label'] for row in cash_flow_rows],
+        cash_flow_income=[row['income'] for row in cash_flow_rows],
+        cash_flow_outflow=[row['outflow'] for row in cash_flow_rows],
+        cash_flow_net=[row['net'] for row in cash_flow_rows]
+    )
+
+
 @app.route('/daily_diary')
 @login_required
 def daily_diary():

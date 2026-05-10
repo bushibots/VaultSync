@@ -1924,3 +1924,246 @@ body.dashboard-body .dashboard-page {
         padding-left: 0;
     }
 }
+
+/* ============================================
+   Reports & Planning Page
+   ============================================ */
+.reports-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.reports-filter {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.5rem;
+}
+
+.reports-feature-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(13rem, 1fr));
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+
+.reports-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.reports-two-col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.report-card {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 1.25rem;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.feature-gap-card {
+    min-height: 12rem;
+}
+
+.report-tier {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.7rem;
+    font-weight: 900;
+    padding: 0.25rem 0.55rem;
+}
+
+.report-label {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.report-value {
+    margin-top: 0.35rem;
+    font-size: clamp(1.4rem, 2.5vw, 2rem);
+    font-weight: 900;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+}
+
+.report-note {
+    margin-top: 0.35rem;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.report-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.report-metric-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.report-metric-list > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 0.75rem;
+}
+
+.report-metric-list span {
+    min-width: 0;
+    color: #64748b;
+    font-size: 0.85rem;
+    font-weight: 800;
+}
+
+.report-metric-list strong {
+    color: #0f172a;
+    font-size: 0.95rem;
+    font-weight: 900;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.reports-chart-wrap {
+    height: 20rem;
+    min-height: 16rem;
+}
+
+.report-table-wrap {
+    overflow-x: auto;
+}
+
+.report-table {
+    width: 100%;
+    min-width: 36rem;
+    border-collapse: collapse;
+    color: #475569;
+    font-size: 0.85rem;
+}
+
+.report-table th {
+    border-bottom: 2px solid #e2e8f0;
+    color: #0f172a;
+    font-size: 0.75rem;
+    font-weight: 900;
+    padding: 0.75rem;
+    text-align: left;
+    text-transform: uppercase;
+}
+
+.report-table td {
+    border-bottom: 1px solid #eef2f7;
+    padding: 0.75rem;
+    vertical-align: top;
+}
+
+.report-dot {
+    display: inline-block;
+    width: 0.65rem;
+    height: 0.65rem;
+    margin-right: 0.5rem;
+    border-radius: 999px;
+}
+
+body.dark-mode .report-card {
+    background: #111827;
+    border-color: #334155;
+}
+
+body.dark-mode .report-tier {
+    background: rgba(37, 99, 235, 0.18);
+    border-color: #1d4ed8;
+    color: #bfdbfe;
+}
+
+body.dark-mode .report-metric-list > div,
+body.dark-mode .report-card .bg-slate-50 {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+}
+
+body.dark-mode .report-table th,
+body.dark-mode .report-metric-list strong {
+    color: #e5e7eb;
+}
+
+body.dark-mode .report-table td {
+    border-color: #334155;
+}
+
+@media (max-width: 1024px) {
+    .reports-kpi-grid,
+    .reports-two-col {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767px) {
+    .reports-header {
+        flex-direction: column;
+    }
+
+    .reports-filter {
+        width: 100%;
+    }
+
+    .reports-filter select {
+        flex: 1;
+    }
+
+    .reports-feature-grid {
+        grid-template-columns: 1fr;
+        overflow-x: visible;
+    }
+
+    .reports-kpi-grid,
+    .reports-two-col {
+        grid-template-columns: 1fr;
+    }
+
+    .report-card {
+        padding: 1rem;
+    }
+
+    .reports-chart-wrap {
+        height: 17rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .report-metric-list > div {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .report-metric-list strong {
+        text-align: left;
+    }
+
+    .report-table {
+        min-width: 32rem;
+        font-size: 0.8rem;
+    }
+}
