@@ -6,6 +6,7 @@ import csv
 import json
 import math
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -1376,11 +1377,107 @@ def historical_month_windows(month_start, count=6):
     return windows
 
 
-def build_forecast_engine(family_id, month_start, today, month_end, monthly_budget, categories, expected_items, bucket_summaries):
+def normalize_forecast_note_text(value):
+    return re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
+
+
+def forecast_category_aliases(category_name):
+    normalized = normalize_forecast_note_text(category_name)
+    words = set(normalized.split())
+    aliases = set(words)
+
+    if {'rent', 'emi'} & words or 'rent emi' in normalized:
+        aliases.update({'rent', 'rents', 'emi', 'emis', 'loan', 'loans', 'installment', 'installments'})
+    if 'insurance' in words:
+        aliases.update({'insurance', 'insurances', 'policy', 'policies', 'premium', 'premiums'})
+
+    return {alias for alias in aliases if len(alias) >= 3}
+
+
+def extract_forecast_exception_tokens(normalized_notes):
+    tokens = set()
+    generic_words = {
+        'and', 'are', 'bill', 'bills', 'calculate', 'current', 'done', 'emi', 'emis',
+        'except', 'for', 'insurance', 'month', 'one', 'other', 'paid', 'payment',
+        'payments', 'policy', 'premium', 'rent', 'rents', 'than', 'this'
+    }
+
+    for match in re.finditer(r'\bexcept(?:\s+for)?\s+(.+?)(?:\bso\b|\bbut\b|\band\b|[.;,\n]|$)', normalized_notes):
+        phrase = match.group(1)
+        for token in phrase.split()[:6]:
+            if len(token) >= 3 and token not in generic_words:
+                tokens.add(token)
+
+    return sorted(tokens)
+
+
+def build_forecast_note_rules(admin_notes, categories):
+    normalized_notes = normalize_forecast_note_text(admin_notes)
+    note_words = set(normalized_notes.split())
+    done_words = {'cleared', 'completed', 'done', 'finished', 'paid', 'settled'}
+    current_only_phrases = (
+        'current one',
+        'current only',
+        'dont calculate',
+        'do not calculate',
+        'don t calculate',
+        'other than current',
+        'already paid',
+        'already done',
+    )
+    has_done_rule = bool(done_words & note_words) or any(phrase in normalized_notes for phrase in current_only_phrases)
+    exception_tokens = extract_forecast_exception_tokens(normalized_notes)
+    current_only_categories = []
+
+    if has_done_rule:
+        for category in categories:
+            aliases = forecast_category_aliases(category.name)
+            if aliases & note_words:
+                current_only_categories.append(category.name)
+
+    return {
+        'current_only_categories': sorted(set(current_only_categories)),
+        'exception_tokens': exception_tokens,
+        'admin_notes_understood': bool(current_only_categories or exception_tokens),
+    }
+
+
+def forecast_item_matches_exception(item, exception_tokens):
+    if not exception_tokens:
+        return False
+    category_name = item.category.name if item.category else ''
+    item_text = normalize_forecast_note_text(f'{item.name} {category_name}')
+    item_words = set(item_text.split())
+    return any(token in item_words for token in exception_tokens)
+
+
+def should_include_forecast_commitment(item, note_rules):
+    category_name = item.category.name if item.category else 'Uncategorized'
+    current_only_categories = set(note_rules.get('current_only_categories') or [])
+    if category_name not in current_only_categories:
+        return True
+    return forecast_item_matches_exception(item, note_rules.get('exception_tokens') or [])
+
+
+def serialize_forecast_expected_item(item, reason=None):
+    payload = {
+        'name': item.name,
+        'category': item.category.name if item.category else 'Uncategorized',
+        'amount': round(expected_budget_amount(item), 2),
+        'due_date': expected_expense_date(item).isoformat(),
+        'type': 'reserved_bucket' if item.is_bucket else 'planned_bill',
+    }
+    if reason:
+        payload['reason'] = reason
+    return payload
+
+
+def build_forecast_engine(family_id, month_start, today, month_end, monthly_budget, categories, expected_items, bucket_summaries, admin_notes=''):
     days_in_month = (month_end - month_start).days + 1
     elapsed_days = max((today - month_start).days + 1, 1)
     remaining_days = max((month_end - today).days, 0)
     lookback_start = add_months(month_start, -6)
+    note_rules = build_forecast_note_rules(admin_notes, categories)
 
     expenses = Expense.query.filter(
         Expense.family_id == family_id,
@@ -1401,6 +1498,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
     category_daily = {}
     current_by_category = {category.name: 0.0 for category in categories}
     historical_by_category_months = {category.name: [] for category in categories}
+    locked_categories = set(note_rules.get('current_only_categories') or [])
 
     for expense in current_expenses:
         amount = float(expense.amount or 0)
@@ -1410,13 +1508,20 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
 
     historical_by_day = {}
     historical_month_totals = []
+    historical_projectable_month_totals = []
     for window_start, window_end in historical_month_windows(month_start, 6):
         month_expenses = [
             expense for expense in historical_expenses
             if window_start <= expense.date <= window_end
         ]
         month_total = sum(float(expense.amount or 0) for expense in month_expenses)
+        month_projectable_total = sum(
+            float(expense.amount or 0)
+            for expense in month_expenses
+            if (expense.category.name if expense.category else 'Uncategorized') not in locked_categories
+        )
         historical_month_totals.append(month_total)
+        historical_projectable_month_totals.append(month_projectable_total)
         by_category = {}
         for expense in month_expenses:
             category_name = expense.category.name if expense.category else 'Uncategorized'
@@ -1425,6 +1530,9 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
             historical_by_category_months[category.name].append(by_category.get(category.name, 0.0))
 
     for expense in historical_expenses:
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        if category_name in locked_categories:
+            continue
         amount = float(expense.amount or 0)
         historical_by_day[expense.date] = historical_by_day.get(expense.date, 0.0) + amount
 
@@ -1432,14 +1540,23 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         weekday_totals[day.weekday()].append(total)
 
     current_spent = sum(daily_totals.values())
-    nonzero_daily_values = [total for total in daily_totals.values() if total > 0]
-    calendar_daily_avg = current_spent / elapsed_days if elapsed_days else 0.0
+    projectable_daily_totals = {}
+    for expense in current_expenses:
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        if category_name in locked_categories:
+            continue
+        projectable_daily_totals[expense.date] = projectable_daily_totals.get(expense.date, 0.0) + float(expense.amount or 0)
+
+    projectable_current_spent = sum(projectable_daily_totals.values())
+    locked_current_spent = max(current_spent - projectable_current_spent, 0.0)
+    nonzero_daily_values = [total for total in projectable_daily_totals.values() if total > 0]
+    calendar_daily_avg = projectable_current_spent / elapsed_days if elapsed_days else 0.0
     active_daily_avg = average(nonzero_daily_values)
     last_7_start = max(month_start, today - timedelta(days=6))
-    last_7_values = [daily_totals.get(day, 0.0) for day in inclusive_dates(last_7_start, today)]
+    last_7_values = [projectable_daily_totals.get(day, 0.0) for day in inclusive_dates(last_7_start, today)]
     last_7_avg = average(last_7_values)
-    historical_month_avg = average(historical_month_totals)
-    historical_month_median = percentile(historical_month_totals, 0.5)
+    historical_month_avg = average(historical_projectable_month_totals)
+    historical_month_median = percentile(historical_projectable_month_totals, 0.5)
     historical_daily_avg = average(list(historical_by_day.values()))
 
     remaining_weekday_projection = 0.0
@@ -1448,10 +1565,19 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         remaining_weekday_projection += weekday_average if weekday_average else calendar_daily_avg
 
     unpaid_expected = [item for item in expected_items if not item.is_paid]
+    forecast_unpaid_expected = [
+        item for item in unpaid_expected
+        if should_include_forecast_commitment(item, note_rules)
+    ]
+    ignored_unpaid_expected = [
+        item for item in unpaid_expected
+        if item not in forecast_unpaid_expected
+    ]
     unpaid_expected_total = sum(expected_budget_amount(item) for item in unpaid_expected)
+    forecast_unpaid_expected_total = sum(expected_budget_amount(item) for item in forecast_unpaid_expected)
     unpaid_future_total = sum(
         expected_budget_amount(item)
-        for item in unpaid_expected
+        for item in forecast_unpaid_expected
         if expected_expense_date(item) > today
     )
     bucket_remaining_total = sum(float(item.get('remaining') or 0) for item in bucket_summaries)
@@ -1459,7 +1585,8 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
     simple_pace_total = current_spent + (calendar_daily_avg * remaining_days)
     last_7_pace_total = current_spent + (last_7_avg * remaining_days)
     weekday_total = current_spent + remaining_weekday_projection
-    historical_blend_total = max(current_spent, (historical_month_avg * 0.55) + (historical_month_median * 0.25) + (simple_pace_total * 0.20))
+    historical_remaining_projection = ((historical_month_avg * 0.65) + (historical_month_median * 0.35)) * (remaining_days / days_in_month)
+    historical_blend_total = max(current_spent, current_spent + (historical_remaining_projection * 0.75) + ((simple_pace_total - current_spent) * 0.25))
     commitments_total = current_spent + unpaid_future_total
 
     candidate_totals = [
@@ -1494,15 +1621,20 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         category_limit = float(category.monthly_limit or 0)
         unpaid_category_future = sum(
             expected_budget_amount(item)
-            for item in unpaid_expected
+            for item in forecast_unpaid_expected
             if item.category and item.category.name == name and expected_expense_date(item) > today
         )
         category_commitment = current_amount + unpaid_category_future
-        category_model = max(
-            current_amount,
-            category_commitment,
-            (category_simple * 0.45) + (category_history * 0.30) + (ensemble_total * category_current_share * 0.25)
-        )
+        if name in note_rules['current_only_categories']:
+            category_model = category_commitment
+            forecast_rule = 'admin_current_only'
+        else:
+            category_model = max(
+                current_amount,
+                category_commitment,
+                (category_simple * 0.45) + (category_history * 0.30) + (ensemble_total * category_current_share * 0.25)
+            )
+            forecast_rule = 'pace_history_commitment_blend'
         if category_limit:
             category_model = max(category_model, min(category_limit, category_commitment))
         if category_model <= 0 and current_amount <= 0:
@@ -1515,6 +1647,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
             'category_limit': round(category_limit, 2),
             'future_commitments': round(unpaid_category_future, 2),
             'share_of_current_spend': round(category_current_share * 100, 1),
+            'forecast_rule': forecast_rule,
         })
 
     category_forecasts.sort(key=lambda row: row['predicted_month_end_spend'], reverse=True)
@@ -1547,6 +1680,8 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
             'last_7_day_average': round(last_7_avg, 2),
             'historical_daily_average': round(historical_daily_avg, 2),
         },
+        'projectable_spend_to_date': round(projectable_current_spent, 2),
+        'locked_current_spend': round(locked_current_spent, 2),
         'candidate_totals': {
             'simple_pace_total': round(simple_pace_total, 2),
             'last_7_pace_total': round(last_7_pace_total, 2),
@@ -1555,14 +1690,24 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
             'commitments_floor_total': round(commitments_total, 2),
         },
         'historical_month_totals': [round(total, 2) for total in historical_month_totals],
-        'unpaid_expected_total': round(unpaid_expected_total, 2),
+        'unpaid_expected_total': round(forecast_unpaid_expected_total, 2),
+        'raw_unpaid_expected_total': round(unpaid_expected_total, 2),
         'unpaid_future_total': round(unpaid_future_total, 2),
         'bucket_remaining_total': round(bucket_remaining_total, 2),
         'category_forecast_total': round(category_forecast_total, 2),
         'category_forecasts': category_forecasts,
+        'admin_note_rules': note_rules,
+        'ignored_unpaid_expected_items': [
+            serialize_forecast_expected_item(
+                item,
+                'Admin note says this category is already done for the month.'
+            )
+            for item in ignored_unpaid_expected
+        ],
         'method': [
             'weighted ensemble of current pace, last 7 days, weekday pattern, historical months, and known commitments',
-            'unpaid future planned bills and reserved buckets are treated as spending commitments',
+            'admin notes can lock completed fixed categories to current actuals plus named exceptions',
+            'unpaid future planned bills and reserved buckets are treated as spending commitments when not excluded by admin notes',
             'category forecasts blend current spend, historical average, category limits, and future commitments'
         ]
     }
@@ -1657,7 +1802,8 @@ def build_savings_forecast_context(family_id, admin_notes):
         float(family.monthly_budget or 0),
         categories,
         expected_items,
-        bucket_summaries
+        bucket_summaries,
+        admin_notes
     )
 
     current_spent = forecast_engine['current_spent']
@@ -1667,7 +1813,7 @@ def build_savings_forecast_context(family_id, admin_notes):
     # Paid items are already recorded in Expense table, so we exclude them to avoid double-counting
     unpaid_expected = [
         item for item in expected_items
-        if not item.is_paid  # Strictly filter: only send future obligations
+        if not item.is_paid and should_include_forecast_commitment(item, forecast_engine['admin_note_rules'])
     ]
     
     total_unpaid_expected = forecast_engine['unpaid_expected_total']
@@ -1720,6 +1866,7 @@ def build_savings_forecast_context(family_id, admin_notes):
             ],
             'current_month_expenses': [serialize_expense(expense) for expense in expenses],
             'unpaid_planned_items_and_reserves': unpaid_planned,
+            'ignored_unpaid_items_from_admin_notes': forecast_engine.get('ignored_unpaid_expected_items', []),
             'reserved_bucket_status': [
                 {
                     'name': item['bucket'].name,
@@ -1746,7 +1893,8 @@ def build_savings_forecast_context(family_id, admin_notes):
                 'Analyze the forecast engine candidates and explain why the ensemble result is plausible.',
                 'Do not invent totals. Copy predicted_total_spend, predicted_additional_spend, expected_savings, confidence_level, and confidence_score from backend_calculated_values.',
                 'Use actual expenses, unpaid planned items, bucket reserves, category limits, historical baselines, weekday patterns, and admin notes to inform your analysis.',
-                'Admin notes are important rules. Follow them when reasonable and mention how they affected your recommendations.',
+                'Admin notes are hard rules after the backend parses them. Do not re-add ignored_unpaid_items_from_admin_notes.',
+                'If forecast_engine.admin_note_rules has current_only_categories, keep those categories at current actuals plus named exception commitments only.',
                 'Do not invent category names. Use only the provided categories in category_forecasts.',
             ]
         }
@@ -1773,6 +1921,7 @@ def build_savings_forecast_prompt(context_payload):
         f'- Total actual spent to date: Rs {total_actual_spent}\n'
         f'- Total unpaid expected expenses: Rs {total_unpaid_expected}\n'
         f'\n'
+        f'Admin note rules in forecast_engine are already applied to the math. Never override them or re-add ignored unpaid items.\n'
         f'Return those exact numeric values. Analyze candidate totals, outliers, category drivers, risks, and recommended actions.\n'
         f'Return only JSON matching the schema. No markdown, no prose outside JSON.'
     )
