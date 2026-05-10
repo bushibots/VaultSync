@@ -489,6 +489,14 @@
                             <p>Weekday weighted: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.weekday_weighted_total) }}</strong></p>
                             <p>Commitments floor: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.commitments_floor_total) }}</strong></p>
                         </div>
+                        {% if latest_savings_payload.forecast_engine.admin_note_rules.current_only_categories %}
+                        <div class="mt-3 pt-3 border-t border-slate-200">
+                            <p>Admin note locked: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.current_only_categories|join(', ') }}</strong></p>
+                            {% if latest_savings_payload.forecast_engine.admin_note_rules.exception_tokens %}
+                            <p>Exceptions kept: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.exception_tokens|join(', ') }}</strong></p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>
