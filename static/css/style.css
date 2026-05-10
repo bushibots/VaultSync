@@ -1284,7 +1284,12 @@ select {
     }
 
     main {
-        padding: 0.75rem !important;
+        padding: 1rem !important;
+        padding-top: 1.5rem !important;
+    }
+
+    main > div {
+        padding: 0 !important;
     }
 
     .sidebar {
@@ -1298,7 +1303,79 @@ select {
     }
 
     button, a, input, select {
-        min-height: 40px;
+        min-height: 44px;
+    }
+
+    /* Fix grid layouts on small screens */
+    .grid {
+        gap: 0.75rem !important;
+    }
+
+    .grid.grid-cols-1 {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Stat cards */
+    .stat-card {
+        padding: 1rem !important;
+        border-radius: 12px;
+    }
+
+    .stat-card h3 {
+        font-size: 12px !important;
+    }
+
+    .stat-card p {
+        font-size: 18px !important;
+    }
+
+    /* Improve form spacing */
+    .form-input, input, select, textarea {
+        padding: 10px !important;
+        font-size: 16px !important;
+    }
+
+    /* Better space for section headers */
+    h2 {
+        font-size: 1.125rem !important;
+    }
+
+    /* Reduce excessive padding on containers */
+    .rounded-xl, .rounded-2xl {
+        border-radius: 12px !important;
+        padding: 1rem !important;
+    }
+
+    /* Header adjustments */
+    header {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+    }
+
+    header > div:first-child {
+        width: 100% !important;
+    }
+
+    header > div:last-child {
+        display: none !important;
+    }
+
+    /* Month/Year selector on mobile - stack vertically */
+    header .flex.items-center {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.5rem !important;
+    }
+
+    header form {
+        width: 100% !important;
+        gap: 0.5rem !important;
+    }
+
+    header select {
+        width: 100% !important;
+        padding: 8px !important;
+        font-size: 12px !important;
     }
 }
 
@@ -1313,7 +1390,62 @@ select {
     }
 
     main {
-        padding: 1rem !important;
+        padding: 1.25rem !important;
+        padding-top: 1.5rem !important;
+    }
+
+    main > div {
+        padding: 0 !important;
+    }
+
+    /* Better grid on tablets */
+    .grid.grid-cols-1 {
+        grid-template-columns: 1fr !important;
+    }
+
+    .grid.sm\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    /* Stat cards tablet view */
+    .stat-card {
+        padding: 1.25rem !important;
+        border-radius: 14px;
+    }
+
+    /* Form improvements */
+    .form-input, input, select {
+        padding: 10px !important;
+        font-size: 15px !important;
+    }
+
+    /* Header and selector stacking */
+    header {
+        flex-direction: column !important;
+        gap: 1rem !important;
+    }
+
+    header .flex.items-center {
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 0.75rem !important;
+        align-items: center !important;
+    }
+
+    header form {
+        gap: 0.5rem !important;
+    }
+
+    header select {
+        padding: 8px !important;
+        font-size: 13px !important;
+    }
+
+    /* Hide time display on smaller tablets */
+    header > div:last-child {
+        width: 100% !important;
+        text-align: left !important;
+        font-size: 12px !important;
     }
 }
 
@@ -1327,9 +1459,29 @@ select {
         padding: 1.5rem !important;
     }
 
+    main > div {
+        padding: 0 !important;
+    }
+
     .sidebar-nav a {
         padding: 0.6rem 0.85rem !important;
         font-size: 0.95rem;
+    }
+
+    /* Better grid spacing */
+    .grid {
+        gap: 1rem !important;
+    }
+
+    /* Stat cards */
+    .stat-card {
+        padding: 1.5rem !important;
+        border-radius: 14px;
+    }
+
+    /* Forms on tablets */
+    .form-input, input, select {
+        padding: 10px !important;
     }
 }
 
