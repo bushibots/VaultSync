@@ -89,19 +89,31 @@
                     <h1 class="text-2xl md:text-4xl font-bold text-slate-800 mt-2">Reports & Planning</h1>
                     <p class="text-slate-500 text-sm mt-2 max-w-4xl">This page focuses on features VaultSync did not already cover directly: planning, forecasting, variance, budget, cash flow, expense, and household P&L reports.</p>
                 </div>
-                <form action="{{ url_for('financial_reports') }}" method="GET" class="reports-filter">
-                    <select name="month" onchange="this.form.submit()" class="form-input border-2 border-gray-200 rounded-lg p-2 text-sm">
-                        {% set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
-                        {% for m in range(1, 13) %}
-                        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ months[m-1] }}</option>
-                        {% endfor %}
-                    </select>
-                    <select name="year" onchange="this.form.submit()" class="form-input border-2 border-gray-200 rounded-lg p-2 text-sm">
-                        {% for y in year_range %}
-                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
+                <div class="reports-actions">
+                    <form action="{{ url_for('financial_reports') }}" method="GET" class="reports-filter">
+                        <select name="month" onchange="this.form.submit()" class="form-input border-2 border-gray-200 rounded-lg p-2 text-sm">
+                            {% set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
+                            {% for m in range(1, 13) %}
+                            <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ months[m-1] }}</option>
+                            {% endfor %}
+                        </select>
+                        <select name="year" onchange="this.form.submit()" class="form-input border-2 border-gray-200 rounded-lg p-2 text-sm">
+                            {% for y in year_range %}
+                            <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    {% if is_family_manager %}
+                    <form action="{{ url_for('generate_ai_suggested_plan_now') }}" method="POST" data-loading>
+                        <input type="hidden" name="month" value="{{ selected_month }}">
+                        <input type="hidden" name="year" value="{{ selected_year }}">
+                        <button type="submit" class="reports-ai-button">
+                            <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
+                            Generate AI Plan
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
             </header>
 
             <section class="reports-feature-grid mb-6">
@@ -132,6 +144,11 @@
                     <p class="report-label">Forecast</p>
                     <p class="report-value {% if forecast_total > monthly_budget %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(forecast_total) }}</p>
                     <p class="report-note">{{ forecast_status }} pace</p>
+                </article>
+                <article class="report-card">
+                    <p class="report-label">AI Suggested Plan</p>
+                    <p class="report-value text-purple-600">Rs. {{ "{:,.0f}".format(ai_suggested_total) }}</p>
+                    <p class="report-note">{% if ai_suggested_plan %}Updated {{ ai_suggested_plan.created_at.strftime('%b %d, %I:%M %p') }}{% else %}Generate from report data{% endif %}</p>
                 </article>
                 <article class="report-card">
                     <p class="report-label">Net Position</p>
@@ -226,8 +243,10 @@
                                 <tr>
                                     <th>Category</th>
                                     <th>Plan</th>
+                                    <th>AI Plan</th>
                                     <th>Actual</th>
-                                    <th>Variance</th>
+                                    <th>Vs Plan</th>
+                                    <th>Vs AI</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -235,14 +254,23 @@
                                 <tr>
                                     <td><span class="report-dot" style="background-color: {{ row.color }}"></span>{{ row.name }}</td>
                                     <td>Rs. {{ "{:,.0f}".format(row.planned) }}</td>
+                                    <td class="font-bold text-purple-700">Rs. {{ "{:,.0f}".format(row.ai_suggested) }}</td>
                                     <td>Rs. {{ "{:,.0f}".format(row.actual) }}</td>
                                     <td class="{% if row.variance > 0 %}text-red-600{% else %}text-green-600{% endif %} font-bold">Rs. {{ "{:,.0f}".format(row.variance) }}</td>
+                                    <td class="{% if row.ai_variance > 0 %}text-red-600{% else %}text-green-600{% endif %} font-bold">Rs. {{ "{:,.0f}".format(row.ai_variance) }}</td>
                                 </tr>
                                 {% else %}
-                                <tr><td colspan="4" class="text-slate-400">No planned or actual category data for this month.</td></tr>
+                                <tr><td colspan="6" class="text-slate-400">No planned, AI suggested, or actual category data for this month.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
+                    </div>
+                    <div class="mt-4 rounded-lg border border-purple-100 bg-purple-50 p-3 text-sm text-purple-900">
+                        {% if ai_suggested_plan %}
+                        AI numbers come from <strong>{{ ai_suggested_plan.title }}</strong>. Review or apply it in <a href="{{ url_for('ai_budget', suggestion_id=ai_suggested_plan.id) }}" class="font-bold underline">AI Budget Planner</a>.
+                        {% else %}
+                        No AI suggested plan is saved for this month yet. Managers can generate one here; the daily scheduler also runs at 11:25 PM when Gemini is configured.
+                        {% endif %}
                     </div>
                 </article>
 

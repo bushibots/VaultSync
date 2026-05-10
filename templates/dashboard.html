@@ -610,8 +610,8 @@
                     </div>
                     <h2 class="text-lg md:text-xl font-bold text-slate-800">Recent Activity</h2>
                 </div>
-                <div class="overflow-x-auto">
-                    {% if expenses %}
+                {% if expenses %}
+                <div class="hidden sm:block overflow-x-auto">
                     <table class="dashboard-activity-table min-w-full text-left text-xs md:text-sm text-gray-600">
                         <thead>
                             <tr class="border-b-2 border-gray-200">
@@ -655,7 +655,6 @@
                                     {% if exp.description %}
                                     <div class="text-xs text-slate-500 font-normal mt-1">{{ exp.description|truncate(45, True) }}</div>
                                     {% endif %}
-                                    <span class="ml-2 inline-block px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">{{ exp.user.username|truncate(8, True) }}</span>
                                 </td>
                                 <td data-label="Category" class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
                                     <span class="category-badge px-2 md:px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
@@ -680,14 +679,51 @@
                             {% endfor %}
                         </tbody>
                     </table>
-                    {% else %}
+                </div>
+
+                <div class="dashboard-activity-mobile sm:hidden space-y-3">
+                    {% for exp in expenses %}
+                    <article class="activity-mobile-card">
+                        <div class="activity-mobile-top">
+                            <div class="min-w-0">
+                                <p class="activity-mobile-item">{{ exp.item_name }}</p>
+                                {% if exp.description %}
+                                <p class="activity-mobile-desc">{{ exp.description|truncate(80, True) }}</p>
+                                {% endif %}
+                            </div>
+                            <p class="activity-mobile-amount">&#8377;{{ "{:,.0f}".format(exp.amount) }}</p>
+                        </div>
+                        <div class="activity-mobile-meta">
+                            <span><i class="fas fa-calendar text-blue-400" aria-hidden="true"></i>{{ exp.date.strftime('%b %d') }}</span>
+                            <span><i class="fas fa-user-circle text-blue-500" aria-hidden="true"></i>{{ exp.user.username|truncate(12, True) }}</span>
+                        </div>
+                        <div class="activity-mobile-bottom">
+                            <span class="category-badge px-2 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
+                                <i class="fas fa-folder-open text-xs" aria-hidden="true"></i>
+                                {{ exp.category.name|truncate(18, True) }}
+                            </span>
+                            {% if exp.bucket %}
+                            <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Reserved bucket</span>
+                            {% endif %}
+                        </div>
+                        <div class="activity-mobile-actions">
+                            <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn">
+                                <i class="fas fa-edit text-xs" aria-hidden="true"></i>Edit
+                            </a>
+                            <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn" onclick="return confirm('Delete this expense?')">
+                                <i class="fas fa-trash-alt text-xs" aria-hidden="true"></i>Delete
+                            </a>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
                     <div class="text-center py-12">
                         <div class="text-5xl md:text-6xl mb-4"><i class="fas fa-receipt text-gray-300" aria-hidden="true"></i></div>
                         <p class="text-gray-500 text-base md:text-lg font-semibold">No expenses logged yet</p>
                         <p class="text-gray-400 text-xs md:text-sm mt-1">Start tracking your family expenses above!</p>
                     </div>
-                    {% endif %}
-                </div>
+                {% endif %}
             </div>
 
             <!-- Budget Tools & Analysis Section -->

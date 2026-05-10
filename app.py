@@ -180,6 +180,7 @@ AUTO_COLOR_PALETTE = [
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
 AI_ORGANIZER_BATCH_SIZE = 25
 _ai_organizer_scheduler_started = False
+_ai_plan_scheduler_started = False
 
 
 def get_next_auto_color(family_id):
@@ -633,6 +634,241 @@ def build_ai_budget_export(period_type, start, end, target_start, target_end):
             'guardrails': ['Review optional purchases before payment.']
         }
     }
+
+
+def budget_suggestion_response_schema(category_names):
+    return {
+        'type': 'object',
+        'properties': {
+            'vaultsync_budget_suggestion_version': {'type': 'string'},
+            'title': {'type': 'string'},
+            'target_start_date': {'type': 'string'},
+            'target_end_date': {'type': 'string'},
+            'recommended_monthly_budget': {'type': 'number'},
+            'risk_level': {'type': 'string', 'enum': ['low', 'medium', 'high']},
+            'strategy_notes': {'type': 'array', 'items': {'type': 'string'}},
+            'planned_items': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'date': {'type': 'string'},
+                        'name': {'type': 'string'},
+                        'category': {'type': 'string', 'enum': category_names},
+                        'amount': {'type': 'number'},
+                        'reason': {'type': 'string'},
+                        'priority': {'type': 'string', 'enum': ['essential', 'recommended', 'optional']}
+                    },
+                    'required': ['date', 'name', 'category', 'amount', 'reason', 'priority']
+                }
+            },
+            'savings_goals': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {'type': 'string'},
+                        'target_amount': {'type': 'number'},
+                        'reason': {'type': 'string'}
+                    },
+                    'required': ['name', 'target_amount', 'reason']
+                }
+            },
+            'guardrails': {'type': 'array', 'items': {'type': 'string'}}
+        },
+        'required': [
+            'vaultsync_budget_suggestion_version',
+            'title',
+            'target_start_date',
+            'target_end_date',
+            'recommended_monthly_budget',
+            'risk_level',
+            'strategy_notes',
+            'planned_items',
+            'savings_goals',
+            'guardrails'
+        ]
+    }
+
+
+def build_family_ai_plan_context(family_id, target_start, target_end):
+    family = db.session.get(Family, family_id)
+    if not family:
+        raise ValueError('Family not found.')
+
+    today = datetime.now().date()
+    source_end = min(max(today, target_start), target_end)
+    source_start = target_start
+    expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= source_start,
+        Expense.date <= source_end
+    ).order_by(Expense.date.asc(), Expense.id.asc()).all()
+    categories = Category.query.filter_by(
+        family_id=family_id
+    ).order_by(Category.name.asc()).all()
+    current_plan = ExpectedExpense.query.filter_by(
+        family_id=family_id,
+        month=target_start.month,
+        year=target_start.year
+    ).order_by(ExpectedExpense.due_day.asc(), ExpectedExpense.amount.desc()).all()
+
+    category_actuals = {}
+    for expense in expenses:
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        category_actuals[category_name] = category_actuals.get(category_name, 0.0) + float(expense.amount or 0)
+
+    plan_rows = []
+    for item in current_plan:
+        plan_rows.append({
+            'name': item.name,
+            'category': item.category.name if item.category else 'Uncategorized',
+            'amount': round(expected_budget_amount(item), 2),
+            'due_day': item.due_day,
+            'is_paid': bool(item.is_paid),
+            'is_bucket': bool(item.is_bucket),
+        })
+
+    return {
+        'family': family,
+        'categories': categories,
+        'payload': {
+            'currency': 'INR',
+            'generated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+            'target_start_date': target_start.isoformat(),
+            'target_end_date': target_end.isoformat(),
+            'monthly_budget': round(float(family.monthly_budget or 0), 2),
+            'category_names': [category.name for category in categories],
+            'category_limits': {
+                category.name: round(float(category.monthly_limit or 0), 2)
+                for category in categories
+            },
+            'actual_expenses_to_date': [serialize_expense(expense) for expense in expenses],
+            'actual_by_category_to_date': {
+                key: round(value, 2)
+                for key, value in sorted(category_actuals.items())
+            },
+            'current_plan': plan_rows,
+            'instructions_for_ai': [
+                'Create an AI suggested category plan for the target month.',
+                'Return planned_items as category-level budget numbers, not individual grocery receipts.',
+                'Use only category_names provided. Do not invent new categories.',
+                'If a current planned bill or reserved bucket is clearly fixed, include enough suggested amount to cover it.',
+                'Keep the total practical for the monthly budget, but explain risk if actual spending already exceeds a category.',
+                'Return only valid JSON matching the schema.'
+            ]
+        }
+    }
+
+
+def build_ai_plan_prompt(context_payload):
+    return (
+        'You are VaultSync AI Suggested Plan.\n'
+        'Analyze the report data and assign suggested budget numbers by category.\n'
+        'Your output powers an Actual vs Plan vs AI Suggested Plan report.\n\n'
+        f'{json.dumps(context_payload, ensure_ascii=False)}\n\n'
+        'Important rules:\n'
+        '- planned_items should usually contain one row per relevant category.\n'
+        '- planned_items.date must be inside the target month.\n'
+        '- category must exactly match one provided category name.\n'
+        '- amount must be numeric and non-negative.\n'
+        '- Use concise reasons that explain why each number was assigned.\n'
+    )
+
+
+def create_ai_suggested_plan(family_id, user_id, target_month=None, target_year=None, source='manual', replace_today=False):
+    today = datetime.now().date()
+    target_month = target_month or today.month
+    target_year = target_year or today.year
+    target_start, target_end = month_bounds(target_year, target_month)
+
+    if replace_today:
+        start_of_day = datetime.combine(today, datetime.min.time())
+        end_of_day = start_of_day + timedelta(days=1)
+        existing_today = BudgetSuggestion.query.filter(
+            BudgetSuggestion.family_id == family_id,
+            BudgetSuggestion.target_start_date == target_start,
+            BudgetSuggestion.target_end_date == target_end,
+            BudgetSuggestion.title.like('AI Suggested Plan:%'),
+            BudgetSuggestion.created_at >= start_of_day,
+            BudgetSuggestion.created_at < end_of_day
+        ).all()
+        for suggestion in existing_today:
+            db.session.delete(suggestion)
+        if existing_today:
+            db.session.flush()
+
+    context = build_family_ai_plan_context(family_id, target_start, target_end)
+    categories = context['categories']
+    if not categories:
+        raise ValueError('Create categories before generating an AI suggested plan.')
+
+    category_names = [category.name for category in categories]
+    payload = call_gemini_json(
+        build_ai_plan_prompt(context['payload']),
+        budget_suggestion_response_schema(category_names)
+    )
+    payload, parsed_start, parsed_end, total = validate_budget_suggestion_payload(payload)
+    if parsed_start != target_start or parsed_end != target_end:
+        payload['target_start_date'] = target_start.isoformat()
+        payload['target_end_date'] = target_end.isoformat()
+
+    strategy_notes = payload.get('strategy_notes') if isinstance(payload.get('strategy_notes'), list) else []
+    guardrails = payload.get('guardrails') if isinstance(payload.get('guardrails'), list) else []
+    notes = '\n'.join(str(note) for note in strategy_notes + guardrails)
+    source_label = 'Auto' if source == 'auto' else 'Manual'
+
+    suggestion = BudgetSuggestion(
+        family_id=family_id,
+        created_by_user_id=user_id,
+        source_start_date=target_start,
+        source_end_date=min(today, target_end),
+        target_start_date=target_start,
+        target_end_date=target_end,
+        title=f'AI Suggested Plan: {calendar.month_name[target_month]} {target_year} ({source_label})',
+        suggested_monthly_budget=float(payload.get('recommended_monthly_budget') or 0),
+        total_planned=total,
+        risk_level=str(payload.get('risk_level') or 'medium')[:20],
+        notes=notes,
+        raw_json=json.dumps(payload, indent=2),
+        created_at=datetime.utcnow()
+    )
+    db.session.add(suggestion)
+    db.session.commit()
+    return suggestion
+
+
+def latest_ai_suggested_plan(family_id, target_start, target_end):
+    return BudgetSuggestion.query.filter(
+        BudgetSuggestion.family_id == family_id,
+        BudgetSuggestion.target_start_date <= target_end,
+        BudgetSuggestion.target_end_date >= target_start,
+        BudgetSuggestion.title.like('AI Suggested Plan:%')
+    ).order_by(BudgetSuggestion.created_at.desc(), BudgetSuggestion.id.desc()).first()
+
+
+def suggestion_category_totals(suggestion, target_start, target_end):
+    if not suggestion:
+        return {}
+    try:
+        payload = suggestion_payload(suggestion)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+    totals = {}
+    for item in payload.get('planned_items') or []:
+        item_date = parse_date_arg(item.get('date'))
+        if item_date and not (target_start <= item_date <= target_end):
+            continue
+        category_name = str(item.get('category') or '').strip()
+        if not category_name:
+            continue
+        try:
+            amount = float(item.get('amount') or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        totals[category_name] = totals.get(category_name, 0.0) + max(amount, 0.0)
+    return totals
 
 
 def validate_budget_suggestion_payload(payload):
@@ -1618,6 +1854,76 @@ def start_daily_report_scheduler():
     thread.start()
 
 
+def default_family_ai_user_id(family):
+    if family.created_by_user_id:
+        return family.created_by_user_id
+    manager = User.query.filter_by(family_id=family.id, user_type='family_manager').first()
+    if manager:
+        return manager.id
+    member = User.query.filter_by(family_id=family.id).first()
+    return member.id if member else None
+
+
+def run_daily_ai_suggested_plans():
+    """Generate AI suggested plans for all active families at 11:25 PM."""
+    with app.app_context():
+        today = datetime.now().date()
+        families = Family.query.filter_by(is_archived=False).all()
+        for family in families:
+            user_id = default_family_ai_user_id(family)
+            if not user_id:
+                continue
+            try:
+                existing_today = BudgetSuggestion.query.filter(
+                    BudgetSuggestion.family_id == family.id,
+                    BudgetSuggestion.target_start_date == date(today.year, today.month, 1),
+                    BudgetSuggestion.title.like('AI Suggested Plan:%'),
+                    func.strftime('%Y-%m-%d', BudgetSuggestion.created_at) == today.isoformat()
+                ).first()
+                if not existing_today:
+                    create_ai_suggested_plan(
+                        family.id,
+                        user_id,
+                        target_month=today.month,
+                        target_year=today.year,
+                        source='auto',
+                        replace_today=False
+                    )
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.warning('Scheduled AI suggested plan failed for family %s: %s', family.id, exc)
+
+
+def seconds_until_daily_ai_plan():
+    """Calculate seconds until 11:25 PM."""
+    now = datetime.now()
+    target = now.replace(hour=23, minute=25, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return max(60, int((target - now).total_seconds()))
+
+
+def ai_plan_scheduler_loop():
+    while True:
+        time.sleep(seconds_until_daily_ai_plan())
+        run_daily_ai_suggested_plans()
+        time.sleep(60)
+
+
+def start_ai_plan_scheduler():
+    global _ai_plan_scheduler_started
+    if _ai_plan_scheduler_started:
+        return
+    if os.environ.get('DISABLE_AI_PLAN_SCHEDULER') == '1':
+        return
+    if not os.environ.get('GEMINI_API_KEY', '').strip():
+        return
+
+    _ai_plan_scheduler_started = True
+    thread = threading.Thread(target=ai_plan_scheduler_loop, daemon=True)
+    thread.start()
+
+
 def run_daily_ai_organization():
     with app.app_context():
         target_date = datetime.now().date()
@@ -1675,6 +1981,7 @@ def ensure_ai_organizer_scheduler_running():
         db.session.commit()
     start_ai_organizer_scheduler()
     start_daily_report_scheduler()
+    start_ai_plan_scheduler()
 
 # --- AUTH ROUTES ---
 @app.route('/register', methods=['GET', 'POST'])
@@ -2049,6 +2356,9 @@ def financial_reports():
     for item in expected_expenses:
         planned_by_category[item.category_id] = planned_by_category.get(item.category_id, 0.0) + expected_budget_amount(item)
 
+    ai_suggested_plan = latest_ai_suggested_plan(current_user.family_id, month_start, month_end)
+    ai_suggested_by_category = suggestion_category_totals(ai_suggested_plan, month_start, month_end)
+
     total_spent = sum(actual_by_category.values())
     planned_total = sum(expected_budget_amount(item) for item in expected_expenses)
     posted_total = sum(float(item.amount or 0) for item in expected_expenses if item.is_paid and not item.is_bucket)
@@ -2061,19 +2371,24 @@ def financial_reports():
     for category in categories:
         planned = planned_by_category.get(category.id, 0.0) or float(category.monthly_limit or 0)
         actual = actual_by_category.get(category.id, 0.0)
-        if not planned and not actual:
+        ai_suggested = ai_suggested_by_category.get(category.name, 0.0)
+        if not planned and not actual and not ai_suggested:
             continue
         variance = actual - planned
+        ai_variance = actual - ai_suggested
         variance_rows.append({
             'name': category.name,
             'color': category.color,
             'planned': planned,
+            'ai_suggested': ai_suggested,
             'actual': actual,
             'variance': variance,
+            'ai_variance': ai_variance,
             'variance_percentage': (variance / planned * 100) if planned else 100,
+            'ai_variance_percentage': (ai_variance / ai_suggested * 100) if ai_suggested else 100,
             'status': 'Over' if variance > 0 else 'Under' if variance < 0 else 'On plan'
         })
-    variance_rows.sort(key=lambda row: abs(row['variance']), reverse=True)
+    variance_rows.sort(key=lambda row: max(abs(row['variance']), abs(row['ai_variance'])), reverse=True)
 
     expense_rows = []
     for category in categories:
@@ -2208,6 +2523,8 @@ def financial_reports():
         budget_remaining=budget_remaining,
         budget_used_percentage=budget_used_percentage,
         variance_rows=variance_rows,
+        ai_suggested_plan=ai_suggested_plan,
+        ai_suggested_total=sum(ai_suggested_by_category.values()),
         expense_rows=expense_rows,
         cash_flow_rows=cash_flow_rows,
         forecast_total=forecast_total,
@@ -2229,6 +2546,47 @@ def financial_reports():
         cash_flow_outflow=[row['outflow'] for row in cash_flow_rows],
         cash_flow_net=[row['net'] for row in cash_flow_rows]
     )
+
+
+@app.route('/financial_reports/ai_suggested_plan', methods=['POST'])
+@login_required
+def generate_ai_suggested_plan_now():
+    if not is_family_manager(current_user):
+        flash('Unauthorized: family manager only', 'error')
+        return redirect(url_for('financial_reports'))
+    if not current_user.family_id:
+        flash('Please join a family before generating an AI plan.', 'error')
+        return redirect(url_for('dashboard'))
+
+    current_day = datetime.utcnow().date()
+    selected_month = request.form.get('month', current_day.month, type=int)
+    selected_year = request.form.get('year', current_day.year, type=int)
+    if not (1 <= selected_month <= 12):
+        selected_month = current_day.month
+    if selected_year < 2020 or selected_year > 2050:
+        selected_year = current_day.year
+
+    try:
+        suggestion = create_ai_suggested_plan(
+            current_user.family_id,
+            current_user.id,
+            target_month=selected_month,
+            target_year=selected_year,
+            source='manual',
+            replace_today=True
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        flash(f'AI suggested plan could not run: {exc}', 'error')
+        return redirect(url_for('financial_reports', month=selected_month, year=selected_year))
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('AI suggested plan failed')
+        flash(f'AI suggested plan failed unexpectedly: {exc}', 'error')
+        return redirect(url_for('financial_reports', month=selected_month, year=selected_year))
+
+    flash(f'AI suggested plan saved: Rs. {suggestion.total_planned:,.0f} across the selected month.', 'success')
+    return redirect(url_for('financial_reports', month=selected_month, year=selected_year))
 
 
 @app.route('/daily_diary')
@@ -3628,6 +3986,7 @@ def delete_family():
     ExpectedExpense.query.filter_by(family_id=family_id).delete()
     BudgetSuggestion.query.filter_by(family_id=family_id).delete()
     AISavingsForecast.query.filter_by(family_id=family_id).delete()
+    BudgetReport.query.filter_by(family_id=family_id).delete()
 
     # Remove all members from family
     User.query.filter_by(family_id=family_id).update({User.family_id: None})
@@ -3904,6 +4263,7 @@ if __name__ == '__main__':
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('FLASK_DEBUG', '1') != '1':
         start_ai_organizer_scheduler()
         start_daily_report_scheduler()
+        start_ai_plan_scheduler()
 
     app.run(
         host=os.environ.get('FLASK_RUN_HOST', '127.0.0.1'),
