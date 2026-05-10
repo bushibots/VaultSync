@@ -1394,6 +1394,84 @@ def forecast_category_aliases(category_name):
     return {alias for alias in aliases if len(alias) >= 3}
 
 
+def is_automatic_current_only_forecast_category(category):
+    normalized = normalize_forecast_note_text(category.name)
+    words = set(normalized.split())
+    fixed_bill_words = {
+        'emi', 'emis', 'insurance', 'insurances', 'loan', 'loans',
+        'mortgage', 'rent', 'rents'
+    }
+    fixed_bill_phrases = (
+        'rent emi',
+        'loan repayment',
+        'loan payoff',
+        'insurance premium',
+        'car emi',
+        'home loan',
+    )
+    return bool(words & fixed_bill_words) or any(phrase in normalized for phrase in fixed_bill_phrases)
+
+
+def forecast_expense_text(expense):
+    category_name = expense.category.name if expense.category else ''
+    return normalize_forecast_note_text(f'{expense.item_name} {expense.description or ""} {category_name}')
+
+
+def forecast_text_has_any(text, terms):
+    words = set(text.split())
+    return bool(words & set(terms)) or any(' ' in term and term in text for term in terms)
+
+
+def classify_forecast_expense(expense, locked_categories, category_month_medians=None):
+    category_name = expense.category.name if expense.category else 'Uncategorized'
+    amount = float(expense.amount or 0)
+    text = forecast_expense_text(expense)
+    words = set(text.split())
+
+    if category_name in locked_categories:
+        return 'fixed_bill'
+
+    one_time_terms = {
+        'admission', 'advance', 'appliance', 'birthday', 'ceremony', 'deposit',
+        'eid', 'emergency', 'event', 'festival', 'festivals', 'fine', 'flight',
+        'function', 'functions', 'furniture', 'gift', 'hospital', 'laptop',
+        'maintenance', 'party', 'penalty', 'purchase', 'registration', 'repair',
+        'surgery', 'tax', 'ticket', 'trip', 'vacation', 'wedding'
+    }
+    regular_terms = {
+        'bill', 'bills', 'daily', 'diesel', 'electricity', 'fuel', 'gas',
+        'groceries', 'grocery', 'medicine', 'milk', 'monthly', 'petrol',
+        'pharmacy', 'regular', 'subscription', 'utility', 'vegetable',
+        'vegetables', 'weekly'
+    }
+
+    if words & one_time_terms or forecast_text_has_any(text, one_time_terms):
+        return 'one_time_keyword'
+
+    if words & regular_terms or forecast_text_has_any(text, regular_terms):
+        return 'regular'
+
+    category_month_medians = category_month_medians or {}
+    category_median = float(category_month_medians.get(category_name) or 0)
+    if category_median > 0 and amount >= max(5000, category_median * 0.65):
+        return 'one_time_outlier'
+    if amount >= 15000:
+        return 'one_time_large'
+
+    return 'regular'
+
+
+def serialize_forecast_expense_classification(expense, classification):
+    return {
+        'id': expense.id,
+        'date': expense.date.isoformat(),
+        'name': expense.item_name,
+        'category': expense.category.name if expense.category else 'Uncategorized',
+        'amount': round(float(expense.amount or 0), 2),
+        'classification': classification,
+    }
+
+
 def extract_forecast_exception_tokens(normalized_notes):
     tokens = set()
     generic_words = {
@@ -1427,18 +1505,27 @@ def build_forecast_note_rules(admin_notes, categories):
     )
     has_done_rule = bool(done_words & note_words) or any(phrase in normalized_notes for phrase in current_only_phrases)
     exception_tokens = extract_forecast_exception_tokens(normalized_notes)
-    current_only_categories = []
+    admin_current_only_categories = []
 
     if has_done_rule:
         for category in categories:
             aliases = forecast_category_aliases(category.name)
             if aliases & note_words:
-                current_only_categories.append(category.name)
+                admin_current_only_categories.append(category.name)
+
+    automatic_current_only_categories = [
+        category.name for category in categories
+        if is_automatic_current_only_forecast_category(category)
+    ]
+    current_only_categories = sorted(set(admin_current_only_categories + automatic_current_only_categories))
 
     return {
-        'current_only_categories': sorted(set(current_only_categories)),
+        'current_only_categories': current_only_categories,
+        'admin_current_only_categories': sorted(set(admin_current_only_categories)),
+        'automatic_current_only_categories': sorted(set(automatic_current_only_categories)),
         'exception_tokens': exception_tokens,
-        'admin_notes_understood': bool(current_only_categories or exception_tokens),
+        'admin_notes_understood': bool(admin_current_only_categories or exception_tokens),
+        'automatic_rules_applied': bool(automatic_current_only_categories),
     }
 
 
@@ -1453,8 +1540,8 @@ def forecast_item_matches_exception(item, exception_tokens):
 
 def should_include_forecast_commitment(item, note_rules):
     category_name = item.category.name if item.category else 'Uncategorized'
-    current_only_categories = set(note_rules.get('current_only_categories') or [])
-    if category_name not in current_only_categories:
+    admin_current_only_categories = set(note_rules.get('admin_current_only_categories') or [])
+    if category_name not in admin_current_only_categories:
         return True
     return forecast_item_matches_exception(item, note_rules.get('exception_tokens') or [])
 
@@ -1518,7 +1605,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         month_projectable_total = sum(
             float(expense.amount or 0)
             for expense in month_expenses
-            if (expense.category.name if expense.category else 'Uncategorized') not in locked_categories
+            if classify_forecast_expense(expense, locked_categories) == 'regular'
         )
         historical_month_totals.append(month_total)
         historical_projectable_month_totals.append(month_projectable_total)
@@ -1530,8 +1617,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
             historical_by_category_months[category.name].append(by_category.get(category.name, 0.0))
 
     for expense in historical_expenses:
-        category_name = expense.category.name if expense.category else 'Uncategorized'
-        if category_name in locked_categories:
+        if classify_forecast_expense(expense, locked_categories) != 'regular':
             continue
         amount = float(expense.amount or 0)
         historical_by_day[expense.date] = historical_by_day.get(expense.date, 0.0) + amount
@@ -1540,15 +1626,30 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         weekday_totals[day.weekday()].append(total)
 
     current_spent = sum(daily_totals.values())
+    category_month_medians = {
+        category.name: percentile(historical_by_category_months.get(category.name, []), 0.5)
+        for category in categories
+    }
     projectable_daily_totals = {}
+    regular_current_by_category = {category.name: 0.0 for category in categories}
+    one_time_current_by_category = {category.name: 0.0 for category in categories}
+    current_expense_classifications = []
     for expense in current_expenses:
         category_name = expense.category.name if expense.category else 'Uncategorized'
-        if category_name in locked_categories:
-            continue
-        projectable_daily_totals[expense.date] = projectable_daily_totals.get(expense.date, 0.0) + float(expense.amount or 0)
+        amount = float(expense.amount or 0)
+        classification = classify_forecast_expense(expense, locked_categories, category_month_medians)
+        current_expense_classifications.append(
+            serialize_forecast_expense_classification(expense, classification)
+        )
+        if classification == 'regular':
+            projectable_daily_totals[expense.date] = projectable_daily_totals.get(expense.date, 0.0) + amount
+            regular_current_by_category[category_name] = regular_current_by_category.get(category_name, 0.0) + amount
+        elif classification != 'fixed_bill':
+            one_time_current_by_category[category_name] = one_time_current_by_category.get(category_name, 0.0) + amount
 
     projectable_current_spent = sum(projectable_daily_totals.values())
     locked_current_spent = max(current_spent - projectable_current_spent, 0.0)
+    one_time_current_spend = sum(one_time_current_by_category.values())
     nonzero_daily_values = [total for total in projectable_daily_totals.values() if total > 0]
     calendar_daily_avg = projectable_current_spent / elapsed_days if elapsed_days else 0.0
     active_daily_avg = average(nonzero_daily_values)
@@ -1616,7 +1717,12 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         name = category.name
         current_amount = current_by_category.get(name, 0.0)
         category_current_share = current_amount / current_spent if current_spent else 0.0
-        category_simple = current_amount + (current_amount / elapsed_days * remaining_days if elapsed_days else 0)
+        category_regular_current = regular_current_by_category.get(name, 0.0)
+        category_one_time_current = one_time_current_by_category.get(name, 0.0)
+        category_simple = current_amount + (
+            category_regular_current / elapsed_days * remaining_days
+            if elapsed_days else 0
+        )
         category_history = average(historical_by_category_months.get(name, []))
         category_limit = float(category.monthly_limit or 0)
         unpaid_category_future = sum(
@@ -1627,7 +1733,11 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         category_commitment = current_amount + unpaid_category_future
         if name in note_rules['current_only_categories']:
             category_model = category_commitment
-            forecast_rule = 'admin_current_only'
+            forecast_rule = (
+                'admin_current_only'
+                if name in note_rules.get('admin_current_only_categories', [])
+                else 'auto_fixed_bill_current_plus_planned'
+            )
         else:
             category_model = max(
                 current_amount,
@@ -1647,6 +1757,8 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
             'category_limit': round(category_limit, 2),
             'future_commitments': round(unpaid_category_future, 2),
             'share_of_current_spend': round(category_current_share * 100, 1),
+            'regular_current_spend': round(category_regular_current, 2),
+            'one_time_current_spend': round(category_one_time_current, 2),
             'forecast_rule': forecast_rule,
         })
 
@@ -1682,6 +1794,8 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         },
         'projectable_spend_to_date': round(projectable_current_spent, 2),
         'locked_current_spend': round(locked_current_spent, 2),
+        'one_time_current_spend': round(one_time_current_spend, 2),
+        'regular_current_spend': round(projectable_current_spent, 2),
         'candidate_totals': {
             'simple_pace_total': round(simple_pace_total, 2),
             'last_7_pace_total': round(last_7_pace_total, 2),
@@ -1697,6 +1811,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         'category_forecast_total': round(category_forecast_total, 2),
         'category_forecasts': category_forecasts,
         'admin_note_rules': note_rules,
+        'expense_classifications': current_expense_classifications,
         'ignored_unpaid_expected_items': [
             serialize_forecast_expected_item(
                 item,
@@ -1707,6 +1822,8 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         'method': [
             'weighted ensemble of current pace, last 7 days, weekday pattern, historical months, and known commitments',
             'admin notes can lock completed fixed categories to current actuals plus named exceptions',
+            'rent, EMI, loans, and insurance are automatically treated as current actuals plus listed unpaid planned items',
+            'one-time expenses are included in current spend but excluded from future daily pace',
             'unpaid future planned bills and reserved buckets are treated as spending commitments when not excluded by admin notes',
             'category forecasts blend current spend, historical average, category limits, and future commitments'
         ]
@@ -1895,6 +2012,8 @@ def build_savings_forecast_context(family_id, admin_notes):
                 'Use actual expenses, unpaid planned items, bucket reserves, category limits, historical baselines, weekday patterns, and admin notes to inform your analysis.',
                 'Admin notes are hard rules after the backend parses them. Do not re-add ignored_unpaid_items_from_admin_notes.',
                 'If forecast_engine.admin_note_rules has current_only_categories, keep those categories at current actuals plus named exception commitments only.',
+                'For automatic fixed-bill categories such as rent, EMI, loans, and insurance, only listed unpaid planned items are future commitments. Do not infer extra payoffs from historical/current spend.',
+                'Use forecast_engine.expense_classifications to explain one-time versus regular spending. One-time expenses are already excluded from future pace math.',
                 'Do not invent category names. Use only the provided categories in category_forecasts.',
             ]
         }
@@ -1921,7 +2040,9 @@ def build_savings_forecast_prompt(context_payload):
         f'- Total actual spent to date: Rs {total_actual_spent}\n'
         f'- Total unpaid expected expenses: Rs {total_unpaid_expected}\n'
         f'\n'
-        f'Admin note rules in forecast_engine are already applied to the math. Never override them or re-add ignored unpaid items.\n'
+        f'Admin note and automatic fixed-bill rules in forecast_engine are already applied to the math. Never override them or re-add ignored unpaid items.\n'
+        f'Only count future loan, EMI, rent, or insurance payments when they are present in unpaid_planned_items_and_reserves.\n'
+        f'Use expense_classifications to distinguish one-time expenses from regular expenses; do not project one-time expenses again.\n'
         f'Return those exact numeric values. Analyze candidate totals, outliers, category drivers, risks, and recommended actions.\n'
         f'Return only JSON matching the schema. No markdown, no prose outside JSON.'
     )

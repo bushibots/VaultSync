@@ -488,10 +488,18 @@
                             <p>7-day pace: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.last_7_pace_total) }}</strong></p>
                             <p>Weekday weighted: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.weekday_weighted_total) }}</strong></p>
                             <p>Commitments floor: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.candidate_totals.commitments_floor_total) }}</strong></p>
+                            <p>Regular pace base: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.regular_current_spend) }}</strong></p>
+                            <p>One-time current: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.one_time_current_spend) }}</strong></p>
+                            <p>Non-pace current: <strong>&#8377;{{ "{:,.0f}".format(latest_savings_payload.forecast_engine.locked_current_spend) }}</strong></p>
                         </div>
                         {% if latest_savings_payload.forecast_engine.admin_note_rules.current_only_categories %}
                         <div class="mt-3 pt-3 border-t border-slate-200">
-                            <p>Admin note locked: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.current_only_categories|join(', ') }}</strong></p>
+                            {% if latest_savings_payload.forecast_engine.admin_note_rules.admin_current_only_categories %}
+                            <p>Admin note locked: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.admin_current_only_categories|join(', ') }}</strong></p>
+                            {% endif %}
+                            {% if latest_savings_payload.forecast_engine.admin_note_rules.automatic_current_only_categories %}
+                            <p>Auto fixed-bill lock: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.automatic_current_only_categories|join(', ') }}</strong></p>
+                            {% endif %}
                             {% if latest_savings_payload.forecast_engine.admin_note_rules.exception_tokens %}
                             <p>Exceptions kept: <strong>{{ latest_savings_payload.forecast_engine.admin_note_rules.exception_tokens|join(', ') }}</strong></p>
                             {% endif %}
