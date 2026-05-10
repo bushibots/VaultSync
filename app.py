@@ -1476,7 +1476,9 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         + historical_blend_total * 0.20
         + commitments_total * 0.12
     )
-    lower_guard = max(current_spent, commitments_total * 0.92)
+    # Known commitments are facts, not estimates. Never let the ensemble forecast
+    # fall below money already spent plus unpaid future planned items.
+    lower_guard = max(current_spent, commitments_total)
     upper_guard = percentile(candidate_totals, 0.9) * 1.18 if candidate_totals else weighted_total
     ensemble_total = min(max(weighted_total, lower_guard), max(upper_guard, lower_guard))
     predicted_additional = max(ensemble_total - current_spent, 0.0)
@@ -1516,6 +1518,12 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         })
 
     category_forecasts.sort(key=lambda row: row['predicted_month_end_spend'], reverse=True)
+    category_forecast_total = sum(row['predicted_month_end_spend'] for row in category_forecasts)
+    if category_forecast_total > ensemble_total:
+        ensemble_total = category_forecast_total
+        predicted_additional = max(ensemble_total - current_spent, 0.0)
+        expected_savings = monthly_budget - ensemble_total
+
     confidence_score = 0.78
     if elapsed_days < 7:
         confidence_score -= 0.18
@@ -1550,6 +1558,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
         'unpaid_expected_total': round(unpaid_expected_total, 2),
         'unpaid_future_total': round(unpaid_future_total, 2),
         'bucket_remaining_total': round(bucket_remaining_total, 2),
+        'category_forecast_total': round(category_forecast_total, 2),
         'category_forecasts': category_forecasts,
         'method': [
             'weighted ensemble of current pace, last 7 days, weekday pattern, historical months, and known commitments',
@@ -1840,6 +1849,17 @@ def normalize_savings_forecast_payload(payload, context):
             'note': 'Backend forecast engine baseline.',
         })
     normalized_category_forecasts.sort(key=lambda row: row['predicted_month_end_spend'], reverse=True)
+    category_total = sum(row['predicted_month_end_spend'] for row in normalized_category_forecasts)
+    if category_total > predicted_total:
+        predicted_total = category_total
+        predicted_additional = max(predicted_total - current_spent, 0.0)
+        expected_savings = monthly_budget - predicted_total
+        payload['predicted_additional_spend'] = round(predicted_additional, 2)
+        payload['predicted_total_spend'] = round(predicted_total, 2)
+        payload['expected_savings'] = round(expected_savings, 2)
+        forecast_engine['predicted_total_spend'] = round(predicted_total, 2)
+        forecast_engine['predicted_additional_spend'] = round(predicted_additional, 2)
+        forecast_engine['expected_savings'] = round(expected_savings, 2)
     payload['category_forecasts'] = normalized_category_forecasts
     payload['forecast_engine'] = forecast_engine
     return payload
