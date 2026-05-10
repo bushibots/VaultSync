@@ -89,8 +89,8 @@
     </aside>
 
     <!-- Main Content -->
-    <main id="main-content" class="flex-1 overflow-y-auto" role="main">
-        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-3 sm:p-4 md:p-8">
+    <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
+        <div class="dashboard-page min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-3 sm:p-4 md:p-8">
 
             <!-- Welcome Screen for Users Without Family -->
             {% if not user.family_id %}
@@ -189,8 +189,8 @@
 </header>
 
             <!-- Top Stat Cards -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-blue-100">
+            <div class="dashboard-stat-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
+                <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-blue-100">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-slate-600 text-xs sm:text-sm font-semibold">Total Family Income</h3>
                         <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
@@ -198,7 +198,7 @@
                     <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">This month</p>
                 </div>
-                <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-red-100">
+                <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-red-100">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-slate-600 text-xs sm:text-sm font-semibold">Total Spent</h3>
                         <i class="fas fa-credit-card text-red-400 text-lg" aria-hidden="true"></i>
@@ -209,7 +209,7 @@
                         {% if income and total_spent > 0 %}{{ "{:.1f}".format((total_spent/income)*100) }}% of income{% else %}No expenses{% endif %}
                     </p>
                 </div>
-                <div class="stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
+                <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-slate-600 text-xs sm:text-sm font-semibold">Available General Balance</h3>
                         <i class="fas fa-piggy-bank text-green-400 text-lg" aria-hidden="true"></i>
@@ -226,11 +226,11 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-6 md:mb-8">
+            <div class="dashboard-workspace grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-6 md:mb-8">
                 
-                <div class="flex flex-col gap-4 sm:gap-6">
+                <div class="dashboard-flow dashboard-manage-column flex flex-col gap-4 sm:gap-6">
                     <!-- Expense Entry Form -->
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-6">
                             <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-plus text-blue-600" aria-hidden="true"></i>
@@ -279,7 +279,7 @@
                     </div>
 
                     <!-- Create Custom Category Form -->
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-4">
                             <div class="bg-slate-800 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-palette text-white" aria-hidden="true"></i>
@@ -320,7 +320,7 @@
                     </div>
 
                     <!-- Categories Management -->
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-4">
                             <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-layer-group text-orange-600" aria-hidden="true"></i>
@@ -329,7 +329,7 @@
                         </div>
                         <div class="space-y-2 max-h-64 overflow-y-auto">
                             {% for cat in categories %}
-                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                            <div class="category-list-row flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
                                 <div class="flex items-center gap-3 flex-1 min-w-0">
                                     <span class="inline-block w-4 h-4 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}" aria-hidden="true"></span>
                                     <span class="font-medium text-slate-800 truncate text-sm md:text-base">{{ cat.name }}</span>
@@ -354,7 +354,7 @@
                     </div>
 
                     <!-- Monthly Budget Plan -->
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-start mb-4">
                             <div class="bg-teal-100 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-calendar-check text-teal-600" aria-hidden="true"></i>
@@ -395,7 +395,7 @@
                         </div>
 
                         {% if is_family_manager %}
-                        <form action="{{ url_for('add_expected') }}" method="POST" class="space-y-2.5 mb-4">
+                        <form action="{{ url_for('add_expected') }}" method="POST" class="dashboard-compact-form space-y-2.5 mb-4">
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <input type="text" name="name" placeholder="Expected item e.g., Electricity" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm" list="budget-plan-suggestions" required>
                                 <input type="number" name="amount" placeholder="Amount" step="0.01" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm" required>
@@ -452,8 +452,8 @@
                         <div class="space-y-2 max-h-72 overflow-y-auto">
                             {% if expected_expenses %}
                                 {% for ee in expected_expenses %}
-                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
-                                    <div class="flex items-center gap-3">
+                                <div class="expected-item flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                                    <div class="expected-main flex items-center gap-3">
                                         {% if ee.is_bucket %}
                                             <i class="fas fa-bucket text-2xl text-slate-500" aria-hidden="true"></i>
                                         {% elif ee.is_paid %}
@@ -472,7 +472,7 @@
                                             {% endif %}
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-3">
+                                    <div class="expected-actions flex items-center gap-3">
                                         <span class="font-semibold text-sm {% if ee.is_bucket %}text-slate-600{% else %}text-red-500{% endif %}">&#8377;{{ "{:,.0f}".format((ee.allocated_amount or ee.amount) if ee.is_bucket else ee.amount) }}</span>
                                         {% if is_family_manager %}
                                         <a href="{{ url_for('edit_expected', id=ee.id) }}" class="text-sm text-indigo-500 hover:underline">Edit</a>
@@ -493,9 +493,9 @@
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-4 sm:gap-6">
+                <div class="dashboard-flow dashboard-insight-column flex flex-col gap-4 sm:gap-6">
                 <!-- Reserved Buckets -->
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                     <div class="flex items-start justify-between gap-3 mb-5">
                         <div class="flex items-center">
                             <div class="bg-slate-100 rounded-full p-3 mr-3 flex-shrink-0">
@@ -514,8 +514,8 @@
                     {% if budget_buckets %}
                     <div class="space-y-4">
                         {% for item in budget_buckets %}
-                        <div class="rounded-lg border {% if item.is_overflow %}border-red-200 bg-red-50{% else %}border-slate-200 bg-slate-50{% endif %} p-4">
-                            <div class="flex items-center justify-between gap-3 mb-2">
+                        <div class="bucket-row rounded-lg border {% if item.is_overflow %}border-red-200 bg-red-50{% else %}border-slate-200 bg-slate-50{% endif %} p-4">
+                            <div class="bucket-row-header flex items-center justify-between gap-3 mb-2">
                                 <div class="min-w-0">
                                     <p class="font-bold text-slate-800 truncate">{{ item.bucket.name }}</p>
                                     <p class="text-xs text-slate-500">{{ item.bucket.category.name }} reserved allowance</p>
@@ -527,7 +527,7 @@
                             <div class="h-7 bg-gray-200 rounded-lg overflow-hidden border border-gray-300">
                                 <div class="h-full {% if item.is_overflow %}bg-red-600{% else %}bg-teal-500{% endif %} transition-all duration-300" style="width: {{ item.fill_percentage }}%"></div>
                             </div>
-                            <div class="flex items-center justify-between text-xs mt-2 {% if item.is_overflow %}text-red-700 font-bold{% else %}text-slate-500{% endif %}">
+                            <div class="bucket-row-footer flex items-center justify-between text-xs mt-2 {% if item.is_overflow %}text-red-700 font-bold{% else %}text-slate-500{% endif %}">
                                 {% if item.is_overflow %}
                                 <span>&#8377;{{ "{:,.0f}".format(item.overflow) }} overflow from general pool</span>
                                 {% else %}
@@ -544,7 +544,7 @@
                 </div>
 
                 <!-- Interactive Chart -->
-                <div class="spending-chart-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
+                <div class="dashboard-card spending-chart-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                         <div class="flex items-center min-w-0">
                             <div class="chart-icon-wrap rounded-full p-3 mr-3 flex-shrink-0">
@@ -600,7 +600,7 @@
             </div>
 
             <!-- Recent Activity Table -->
-            <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-8">
+            <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-8">
                 <div class="flex items-center mb-6">
                     <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
                         <i class="fas fa-history text-purple-600"></i>
@@ -609,7 +609,7 @@
                 </div>
                 <div class="overflow-x-auto">
                     {% if expenses %}
-                    <table class="min-w-full text-left text-xs md:text-sm text-gray-600">
+                    <table class="dashboard-activity-table min-w-full text-left text-xs md:text-sm text-gray-600">
                         <thead>
                             <tr class="border-b-2 border-gray-200">
                                 <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
@@ -635,26 +635,26 @@
                         <tbody>
                             {% for exp in expenses %}
                             <tr class="table-row border-b border-gray-100 hover:shadow-sm duration-200">
-                                <td class="px-3 md:px-6 py-3 md:py-4 text-slate-700">
+                                <td data-label="Date" class="px-3 md:px-6 py-3 md:py-4 text-slate-700">
                                     <span class="inline-flex items-center gap-1 md:gap-2">
                                         <i class="fas fa-calendar text-blue-400 text-xs hidden sm:inline"></i>
                                         <span class="text-xs md:text-sm">{{ exp.date.strftime('%b %d') }}</span>
                                     </span>
                                 </td>
-                                <td class="px-3 md:px-6 py-3 md:py-4 font-semibold text-slate-800 text-xs md:text-sm">
+                                <td data-label="Spender" class="px-3 md:px-6 py-3 md:py-4 font-semibold text-slate-800 text-xs md:text-sm">
                                     <span class="inline-flex items-center gap-1 md:gap-2 bg-blue-50 px-2 md:px-3 py-1 rounded-full">
                                         <i class="fas fa-user-circle text-blue-500 text-xs hidden sm:inline"></i>
                                         {{ exp.user.username|truncate(8, True) }}
                                     </span>
                                 </td>
-                                <td class="px-3 md:px-6 py-3 md:py-4 font-bold text-blue-600 text-xs md:text-sm truncate">
+                                <td data-label="Item" class="px-3 md:px-6 py-3 md:py-4 font-bold text-blue-600 text-xs md:text-sm truncate">
                                     {{ exp.item_name|truncate(15, True) }}
                                     {% if exp.description %}
                                     <div class="text-xs text-slate-500 font-normal mt-1">{{ exp.description|truncate(45, True) }}</div>
                                     {% endif %}
                                     <span class="ml-2 inline-block px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">{{ exp.user.username|truncate(8, True) }}</span>
                                 </td>
-                                <td class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
+                                <td data-label="Category" class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
                                     <span class="category-badge px-2 md:px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
                                         <i class="fas fa-folder-open text-xs hidden sm:inline"></i>
                                         <span class="hidden md:inline">{{ exp.category.name|truncate(12, True) }}</span>
@@ -664,8 +664,8 @@
                                     <span class="ml-1 px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Uses reserved bucket</span>
                                     {% endif %}
                                 </td>
-                                <td class="px-3 md:px-6 py-3 md:py-4 text-red-500 font-bold text-xs md:text-sm">&#8377;{{ "{:,.0f}".format(exp.amount)|truncate(10, True) }}</td>
-                                <td class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
+                                <td data-label="Amount" class="px-3 md:px-6 py-3 md:py-4 text-red-500 font-bold text-xs md:text-sm">&#8377;{{ "{:,.0f}".format(exp.amount)|truncate(10, True) }}</td>
+                                <td data-label="Action" class="activity-actions px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
                                     <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn text-blue-500 hover:text-blue-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-50 duration-200">
                                         <i class="fas fa-edit text-xs"></i><span class="hidden sm:inline">Edit</span>
                                     </a>
@@ -688,8 +688,8 @@
             </div>
 
             <!-- Budget Tools & Analysis Section -->
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+            <div class="dashboard-tools-grid grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-fire text-orange-600" aria-hidden="true"></i>
@@ -709,7 +709,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-coins text-green-600" aria-hidden="true"></i>
@@ -729,7 +729,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-cyan-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-calendar-day text-cyan-700" aria-hidden="true"></i>
@@ -741,7 +741,7 @@
                     <p class="text-xs text-slate-500 mt-4">Projected month total: <span class="{% if projected_month_total > income %}text-red-600{% else %}text-green-600{% endif %} font-bold">&#8377;{{ "{:,.0f}".format(projected_month_total) }}</span></p>
                 </div>
 
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-lightbulb text-purple-600" aria-hidden="true"></i>

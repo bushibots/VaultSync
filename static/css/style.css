@@ -1614,3 +1614,313 @@ main,
         padding-right: max(1rem, env(safe-area-inset-right));
     }
 }
+
+/* ============================================
+   Dashboard Responsive Layout
+   ============================================ */
+body.dashboard-body,
+body.dashboard-body * {
+    box-sizing: border-box;
+}
+
+body.dashboard-body {
+    min-width: 0;
+}
+
+body.dashboard-body .dashboard-main {
+    min-width: 0;
+    padding: 0 !important;
+}
+
+body.dashboard-body .dashboard-page {
+    width: 100%;
+    min-width: 0;
+    padding: clamp(1rem, 2vw, 2rem) !important;
+}
+
+.dashboard-stat-grid,
+.dashboard-workspace,
+.dashboard-tools-grid,
+.dashboard-flow,
+.dashboard-card {
+    min-width: 0;
+}
+
+.dashboard-card {
+    overflow: hidden;
+}
+
+.dashboard-card :where(h1, h2, h3, p, span, strong, small, label, th, td) {
+    overflow-wrap: anywhere;
+}
+
+.dashboard-card :where(input, select, textarea, button) {
+    max-width: 100%;
+}
+
+.dashboard-flow {
+    align-content: start;
+}
+
+.category-list-row,
+.expected-item,
+.bucket-row-header,
+.bucket-row-footer {
+    min-width: 0;
+}
+
+.expected-main,
+.expected-main > div {
+    min-width: 0;
+}
+
+.expected-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.bucket-row-header > p {
+    flex: 0 0 auto;
+    text-align: right;
+}
+
+@media (min-width: 1280px) {
+    body.dashboard-body .dashboard-page {
+        padding: 2rem !important;
+    }
+}
+
+@media (max-width: 1024px) {
+    body.dashboard-body .dashboard-page {
+        padding: 1.25rem !important;
+    }
+
+    .dashboard-workspace {
+        gap: 1.25rem !important;
+    }
+}
+
+@media (max-width: 767px) {
+    body.dashboard-body {
+        display: block !important;
+        height: auto !important;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    body.dashboard-body .dashboard-main {
+        height: auto !important;
+        margin-top: 60px !important;
+        overflow: visible !important;
+    }
+
+    body.dashboard-body .dashboard-page {
+        min-height: auto !important;
+        padding: 1rem !important;
+    }
+
+    .dashboard-card {
+        padding: 1rem !important;
+        border-radius: 14px !important;
+    }
+
+    .dashboard-stat-grid,
+    .dashboard-workspace,
+    .dashboard-tools-grid {
+        gap: 1rem !important;
+    }
+
+    .dashboard-card > .flex.items-center,
+    .dashboard-card > .flex.items-start,
+    .dashboard-card > .flex.flex-col {
+        gap: 0.75rem;
+    }
+
+    .category-list-row,
+    .expected-item,
+    .bucket-row-header,
+    .bucket-row-footer {
+        gap: 0.75rem;
+    }
+
+    .expected-item {
+        align-items: stretch !important;
+        flex-direction: column;
+    }
+
+    .expected-main {
+        width: 100%;
+        align-items: flex-start;
+    }
+
+    .expected-actions {
+        width: 100%;
+        justify-content: flex-start;
+        gap: 0.5rem !important;
+        padding-left: 2rem;
+    }
+
+    .expected-actions a,
+    .expected-actions button,
+    .activity-actions a {
+        min-height: 36px;
+        padding: 0.35rem 0.55rem;
+    }
+
+    .bucket-row-header,
+    .bucket-row-footer {
+        align-items: flex-start !important;
+        flex-wrap: wrap;
+    }
+
+    .bucket-row-header > p {
+        text-align: left;
+    }
+
+    .chart-legend-list {
+        max-height: none;
+        padding-right: 0;
+    }
+}
+
+@media (max-width: 640px) {
+    .dashboard-card {
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
+    }
+
+    .dashboard-card .text-2xl,
+    .dashboard-card .md\:text-3xl {
+        font-size: 1.35rem !important;
+        line-height: 1.2 !important;
+    }
+
+    .spending-chart-card > .flex:first-child {
+        align-items: stretch !important;
+    }
+
+    .chart-stage {
+        width: min(100%, 260px);
+    }
+
+    .chart-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .chart-stat-grid strong {
+        white-space: normal;
+    }
+
+    .chart-legend-row {
+        grid-template-columns: 10px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .legend-value {
+        grid-column: 2;
+        white-space: normal;
+    }
+
+    .dashboard-activity-table {
+        min-width: 0 !important;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .dashboard-activity-table thead {
+        display: none;
+    }
+
+    .dashboard-activity-table tbody,
+    .dashboard-activity-table tr,
+    .dashboard-activity-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .dashboard-activity-table tr {
+        margin-bottom: 0.75rem;
+        padding: 0.35rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #f8fafc;
+    }
+
+    .dashboard-activity-table td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        border: 0;
+        padding: 0.5rem !important;
+        text-align: right;
+        white-space: normal;
+    }
+
+    .dashboard-activity-table td::before {
+        content: attr(data-label);
+        flex: 0 0 5.75rem;
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-align: left;
+        text-transform: uppercase;
+    }
+
+    .dashboard-activity-table td[data-label="Item"] {
+        display: block;
+        text-align: left;
+    }
+
+    .dashboard-activity-table td[data-label="Item"]::before {
+        display: block;
+        margin-bottom: 0.25rem;
+    }
+
+    .dashboard-activity-table .truncate {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+    }
+
+    .activity-actions {
+        justify-content: flex-start !important;
+        text-align: left !important;
+    }
+
+    .activity-actions a {
+        margin-right: 0.35rem;
+    }
+
+    body.dark-mode .dashboard-activity-table tr {
+        background: #0f172a;
+        border-color: #334155;
+    }
+}
+
+@media (max-width: 420px) {
+    body.dashboard-body .dashboard-page {
+        padding: 0.75rem !important;
+    }
+
+    .dashboard-card {
+        padding: 0.85rem !important;
+    }
+
+    .dashboard-compact-form .grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .chart-stage {
+        width: min(100%, 230px);
+    }
+
+    .chart-stat-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .expected-actions {
+        padding-left: 0;
+    }
+}
