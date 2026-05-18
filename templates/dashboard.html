@@ -199,7 +199,9 @@
                         <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
                     </div>
                     <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">This month</p>
+                    <p class="text-xs text-slate-400 mt-2">
+                        This month{% if finance.has_override %} · custom{% endif %} · Budget &#8377;{{ "{:,.0f}".format(monthly_budget) }}
+                    </p>
                 </div>
                 <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-red-100">
                     <div class="flex items-center justify-between mb-2">
@@ -209,7 +211,7 @@
                     <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
                     <p class="text-xs text-slate-400 mt-2">
                         <i class="fas fa-arrow-up text-red-400 mr-1" aria-hidden="true"></i>
-                        {% if income and total_spent > 0 %}{{ "{:.1f}".format((total_spent/income)*100) }}% of income{% else %}No expenses{% endif %}
+                        {% if monthly_budget and total_spent > 0 %}{{ "{:.1f}".format((total_spent/monthly_budget)*100) }}% of budget{% else %}No expenses{% endif %}
                     </p>
                 </div>
                 <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
@@ -228,6 +230,31 @@
                     </p>
                 </div>
             </div>
+
+            {% if is_family_manager %}
+            <section class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-6 border border-blue-100 mb-6 md:mb-8">
+                <form method="POST" action="{{ url_for('update_monthly_finance_setting') }}" class="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.2fr_auto] gap-3 items-end">
+                    <input type="hidden" name="month" value="{{ selected_month }}">
+                    <input type="hidden" name="year" value="{{ selected_year }}">
+                    <input type="hidden" name="next" value="{{ url_for('dashboard', month=selected_month, year=selected_year) }}">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-2">Income for {{ month_name }}</label>
+                        <input type="number" name="monthly_income" value="{{ '%.0f'|format(income) }}" min="0" step="500" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-2">Spending Budget</label>
+                        <input type="number" name="monthly_budget" value="{{ '%.0f'|format(monthly_budget) }}" min="0" step="500" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-2">Note</label>
+                        <input type="text" name="notes" value="{{ finance.notes }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm" placeholder="e.g., two salaries received this month">
+                    </div>
+                    <button type="submit" class="bg-slate-900 text-white font-bold py-3 px-5 rounded-lg hover:bg-slate-700 duration-200 flex items-center justify-center gap-2">
+                        <i class="fas fa-save" aria-hidden="true"></i>Save Month
+                    </button>
+                </form>
+            </section>
+            {% endif %}
 
             <div class="dashboard-workspace grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-6 md:mb-8">
                 
@@ -611,7 +638,41 @@
                     <h2 class="text-lg md:text-xl font-bold text-slate-800">Recent Activity</h2>
                 </div>
                 {% if expenses %}
-                <div class="hidden sm:block overflow-x-auto">
+                <div class="activity-desktop-list hidden sm:grid gap-3">
+                    {% for exp in expenses %}
+                    <article class="activity-desktop-row">
+                        <div class="activity-date-pill">
+                            <span>{{ exp.date.strftime('%d') }}</span>
+                            <small>{{ exp.date.strftime('%b') }}</small>
+                        </div>
+                        <div class="activity-main">
+                            <div class="activity-title-line">
+                                <h3>{{ exp.item_name }}</h3>
+                                <span class="category-badge px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
+                                    <i class="fas fa-folder-open text-xs" aria-hidden="true"></i>{{ exp.category.name }}
+                                </span>
+                                {% if exp.bucket %}
+                                <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Reserved bucket</span>
+                                {% endif %}
+                            </div>
+                            <p class="activity-subline">
+                                <i class="fas fa-user-circle text-blue-500" aria-hidden="true"></i>{{ exp.user.username }}
+                                {% if exp.description %}<span>{{ exp.description }}</span>{% endif %}
+                            </p>
+                        </div>
+                        <div class="activity-amount">&#8377;{{ "{:,.0f}".format(exp.amount) }}</div>
+                        <div class="activity-row-actions">
+                            <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn" title="Edit expense">
+                                <i class="fas fa-edit" aria-hidden="true"></i>
+                            </a>
+                            <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn" title="Delete expense" onclick="return confirm('Delete this expense?')">
+                                <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                            </a>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                <div class="hidden overflow-x-auto">
                     <table class="dashboard-activity-table min-w-full text-left text-xs md:text-sm text-gray-600">
                         <thead>
                             <tr class="border-b-2 border-gray-200">
@@ -818,7 +879,7 @@
                             const daysElapsed = currentDate.getDate();
                             const dailyRate = daysElapsed > 0 ? total / daysElapsed : 0;
                             const projectedTotal = dailyRate * daysInMonth;
-                            const budget = {{ family.monthly_budget }};
+                            const budget = {{ monthly_budget }};
                             const burnPercentage = budget > 0 ? (dailyRate / (budget / daysInMonth)) * 100 : 0;
                             
                             document.write(`
@@ -857,7 +918,7 @@
                     <div class="space-y-4">
                         <div>
                             <p class="text-sm text-slate-600 mb-1">Total Budget</p>
-                            <p class="text-2xl font-bold text-blue-600">₹{{ "{:,.0f}".format(family.monthly_budget) }}</p>
+                            <p class="text-2xl font-bold text-blue-600">₹{{ "{:,.0f}".format(monthly_budget) }}</p>
                         </div>
                         <div>
                             <p class="text-sm text-slate-600 mb-1">Spent</p>
@@ -893,9 +954,9 @@
                         <div class="p-3 bg-green-50 rounded-lg border border-green-100">
                             <p class="text-xs text-green-700 font-semibold">✅ Budget Status</p>
                             <p class="text-sm font-bold mt-1">
-                                {% if total_spent < family.monthly_budget * 0.5 %}
+                                {% if total_spent < monthly_budget * 0.5 %}
                                     <span class="text-green-900">On Track ✓</span>
-                                {% elif total_spent < family.monthly_budget %}
+                                {% elif total_spent < monthly_budget %}
                                     <span class="text-yellow-900">Approaching Limit ⚠</span>
                                 {% else %}
                                     <span class="text-red-900">Over Budget ⛔</span>

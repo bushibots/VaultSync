@@ -12,6 +12,7 @@ class Family(db.Model):
     name = db.Column(db.String(100), nullable=False, index=True)
     invite_code = db.Column(db.String(20), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(12))
     created_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    monthly_income = db.Column(db.Float, nullable=True)
     monthly_budget = db.Column(db.Float, default=170000)
     ai_notes = db.Column(db.Text, default='')
     is_archived = db.Column(db.Boolean, default=False)
@@ -21,6 +22,8 @@ class Family(db.Model):
     expenses = db.relationship('Expense', backref='family', lazy=True)
     expected_expenses = db.relationship('ExpectedExpense', backref='family', lazy=True)
     budget_suggestions = db.relationship('BudgetSuggestion', backref='family', lazy=True)
+    finance_settings = db.relationship('MonthlyFinanceSetting', backref='family', lazy=True)
+    budget_applications = db.relationship('BudgetPlanApplication', backref='family', lazy=True)
     savings_forecasts = db.relationship('AISavingsForecast', backref='family', lazy=True)
     budget_reports = db.relationship('BudgetReport', backref='family_relation', lazy=True)
 
@@ -100,6 +103,37 @@ class BudgetSuggestion(db.Model):
     notes = db.Column(db.Text, default='')
     raw_json = db.Column(db.Text, nullable=False)
     is_applied = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    applications = db.relationship('BudgetPlanApplication', backref='suggestion', lazy=True)
+
+
+class MonthlyFinanceSetting(db.Model):
+    """Month-specific income and budget overrides for unusual salary/budget months."""
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False, index=True)
+    month = db.Column(db.Integer, nullable=False)
+    year = db.Column(db.Integer, nullable=False)
+    monthly_income = db.Column(db.Float, nullable=True)
+    monthly_budget = db.Column(db.Float, nullable=True)
+    notes = db.Column(db.Text, default='')
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    updated_by = db.relationship('User')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BudgetPlanApplication(db.Model):
+    """Snapshot of an applied AI budget plan so it can be rolled back later."""
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False, index=True)
+    suggestion_id = db.Column(db.Integer, db.ForeignKey('budget_suggestion.id'), nullable=False, index=True)
+    applied_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    applied_by = db.relationship('User')
+    target_month = db.Column(db.Integer, nullable=False)
+    target_year = db.Column(db.Integer, nullable=False)
+    created_expected_expense_ids = db.Column(db.Text, default='[]')
+    created_category_ids = db.Column(db.Text, default='[]')
+    snapshot_json = db.Column(db.Text, nullable=False)
+    reverted_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

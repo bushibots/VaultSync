@@ -321,7 +321,7 @@
                 <form action="{{ url_for('apply_ai_budget', id=selected_suggestion.id) }}" method="POST" class="mt-6 flex flex-col md:flex-row md:items-center gap-3">
                     <label class="flex items-center gap-2 text-sm text-slate-600">
                         <input type="checkbox" name="update_monthly_budget" value="yes" class="rounded border-gray-300">
-                        Update family monthly budget to AI recommendation
+                        Update this target month's spending budget to AI recommendation
                     </label>
                     <button type="submit" class="md:ml-auto bg-slate-900 text-white font-bold py-3 px-5 rounded-lg hover:bg-slate-700 duration-200" onclick="return confirm('Apply this AI budget suggestion to Expected Monthly Expenditure?')">
                         Apply Suggested Plan
@@ -336,6 +336,40 @@
                 </div>
                 {% endif %}
             </section>
+
+            {% if applications %}
+            <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-6">
+                <div class="flex items-center justify-between gap-4 mb-4">
+                    <div>
+                        <h2 class="text-lg md:text-xl font-bold text-slate-800">Applied Plan History</h2>
+                        <p class="text-xs text-slate-500 mt-1">Rollback removes items created by an AI plan and restores the month budget setting when it was changed.</p>
+                    </div>
+                    <i class="fas fa-rotate-left text-slate-400 text-xl" aria-hidden="true"></i>
+                </div>
+                <div class="space-y-3">
+                    {% for app in applications %}
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-lg border border-gray-200 bg-slate-50 p-4">
+                        <div class="min-w-0">
+                            <p class="font-bold text-slate-800 truncate">#{{ app.id }} · {{ app.suggestion.title }}</p>
+                            <p class="text-xs text-slate-500 mt-1">
+                                Applied {{ app.created_at.strftime('%b %d, %I:%M %p') }} for {{ app.target_month }}/{{ app.target_year }}
+                                {% if app.reverted_at %} · reverted {{ app.reverted_at.strftime('%b %d, %I:%M %p') }}{% endif %}
+                            </p>
+                        </div>
+                        {% if app.reverted_at %}
+                        <span class="inline-flex items-center justify-center rounded-full bg-gray-200 px-3 py-1 text-xs font-bold text-gray-600">Reverted</span>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('revert_ai_budget_application', application_id=app.id) }}">
+                            <button type="submit" class="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 duration-200" onclick="return confirm('Revert this applied AI plan? This removes planned items created by that apply action.')">
+                                Revert Apply
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
         </div>
     </main>
 
