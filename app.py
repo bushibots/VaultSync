@@ -16,7 +16,19 @@ import urllib.request
 from io import StringIO
 from datetime import date, datetime, timedelta
 from sqlalchemy import func, inspect, text
-from models import db, User, Category, Expense, ExpectedExpense, Family, BudgetSuggestion, AISavingsForecast, BudgetReport
+from models import (
+    db,
+    User,
+    Category,
+    Expense,
+    ExpectedExpense,
+    Family,
+    BudgetSuggestion,
+    MonthlyFinanceSetting,
+    BudgetPlanApplication,
+    AISavingsForecast,
+    BudgetReport,
+)
 
 
 def load_local_env(path='.env'):
@@ -183,6 +195,7 @@ GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
 AI_ORGANIZER_BATCH_SIZE = 25
 _ai_organizer_scheduler_started = False
 _ai_plan_scheduler_started = False
+_runtime_schema_checked = False
 _gemini_key_index = 0
 _gemini_key_lock = threading.Lock()
 
@@ -250,6 +263,59 @@ def repair_schema():
         if 'ai_notes' not in family_columns:
             connection.execute(text('ALTER TABLE family ADD COLUMN ai_notes TEXT'))
             added.append('family.ai_notes')
+        if 'monthly_income' not in family_columns:
+            connection.execute(text('ALTER TABLE family ADD COLUMN monthly_income FLOAT'))
+            connection.execute(text('UPDATE family SET monthly_income = monthly_budget WHERE monthly_income IS NULL'))
+            added.append('family.monthly_income')
+        if not inspector.has_table('monthly_finance_setting'):
+            connection.execute(text("""
+                CREATE TABLE monthly_finance_setting (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    family_id INTEGER NOT NULL,
+                    month INTEGER NOT NULL,
+                    year INTEGER NOT NULL,
+                    monthly_income FLOAT,
+                    monthly_budget FLOAT,
+                    notes TEXT,
+                    updated_by_user_id INTEGER,
+                    updated_at DATETIME,
+                    FOREIGN KEY(family_id) REFERENCES family (id),
+                    FOREIGN KEY(updated_by_user_id) REFERENCES user (id)
+                )
+            """))
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS ix_monthly_finance_setting_family_id '
+                'ON monthly_finance_setting (family_id)'
+            ))
+            added.append('monthly_finance_setting')
+        if not inspector.has_table('budget_plan_application'):
+            connection.execute(text("""
+                CREATE TABLE budget_plan_application (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    family_id INTEGER NOT NULL,
+                    suggestion_id INTEGER NOT NULL,
+                    applied_by_user_id INTEGER NOT NULL,
+                    target_month INTEGER NOT NULL,
+                    target_year INTEGER NOT NULL,
+                    created_expected_expense_ids TEXT,
+                    created_category_ids TEXT,
+                    snapshot_json TEXT NOT NULL,
+                    reverted_at DATETIME,
+                    created_at DATETIME,
+                    FOREIGN KEY(family_id) REFERENCES family (id),
+                    FOREIGN KEY(suggestion_id) REFERENCES budget_suggestion (id),
+                    FOREIGN KEY(applied_by_user_id) REFERENCES user (id)
+                )
+            """))
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS ix_budget_plan_application_family_id '
+                'ON budget_plan_application (family_id)'
+            ))
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS ix_budget_plan_application_suggestion_id '
+                'ON budget_plan_application (suggestion_id)'
+            ))
+            added.append('budget_plan_application')
         if not inspector.has_table('ai_savings_forecast'):
             connection.execute(text("""
                 CREATE TABLE ai_savings_forecast (
@@ -448,6 +514,42 @@ def month_bounds(year, month):
     return first, last
 
 
+def default_monthly_income(family):
+    return float(getattr(family, 'monthly_income', None) or family.monthly_budget or 0)
+
+
+def monthly_finance_for(family, month, year):
+    """Return the income and spending budget for one month, honoring month overrides."""
+    setting = MonthlyFinanceSetting.query.filter_by(
+        family_id=family.id,
+        month=month,
+        year=year
+    ).first()
+    default_income = default_monthly_income(family)
+    default_budget = float(family.monthly_budget or 0)
+    return {
+        'setting': setting,
+        'monthly_income': float(setting.monthly_income) if setting and setting.monthly_income is not None else default_income,
+        'monthly_budget': float(setting.monthly_budget) if setting and setting.monthly_budget is not None else default_budget,
+        'has_override': bool(setting),
+        'notes': setting.notes if setting else '',
+    }
+
+
+def finance_setting_snapshot(setting):
+    if not setting:
+        return {'existed': False}
+    return {
+        'existed': True,
+        'id': setting.id,
+        'month': setting.month,
+        'year': setting.year,
+        'monthly_income': setting.monthly_income,
+        'monthly_budget': setting.monthly_budget,
+        'notes': setting.notes or '',
+    }
+
+
 def parse_ai_budget_window(form):
     period_type = form.get('period_type', 'date_range')
     today = datetime.now().date()
@@ -547,6 +649,8 @@ def build_ai_budget_export(period_type, start, end, target_start, target_end):
     categories = Category.query.filter_by(
         family_id=current_user.family_id
     ).order_by(Category.name.asc()).all()
+    target_finance = monthly_finance_for(current_user.family, target_start.month, target_start.year)
+    source_finance = monthly_finance_for(current_user.family, start.month, start.year)
 
     current_target_plan = [
         item for item in ExpectedExpense.query.filter_by(
@@ -567,7 +671,12 @@ def build_ai_budget_export(period_type, start, end, target_start, target_end):
             'target_end_date': target_end.isoformat(),
         },
         'family_context': {
-            'monthly_budget': float(current_user.family.monthly_budget or 0),
+            'default_monthly_income': default_monthly_income(current_user.family),
+            'default_monthly_budget': float(current_user.family.monthly_budget or 0),
+            'source_month_income': source_finance['monthly_income'],
+            'source_month_budget': source_finance['monthly_budget'],
+            'target_month_income': target_finance['monthly_income'],
+            'target_month_budget': target_finance['monthly_budget'],
             'category_names': [cat.name for cat in categories],
             'recommended_category_names': [name for name, _, _ in PRESET_CATEGORIES],
         },
@@ -581,7 +690,8 @@ def build_ai_budget_export(period_type, start, end, target_start, target_end):
             'Use existing category_names whenever possible. If a new category is necessary, explain why.',
             'Return only valid JSON matching required_response_schema. No markdown, no prose outside JSON.',
             'Each planned_item date must be inside the target window and amount must be numeric.',
-            'recommended_monthly_budget should be the ideal family monthly budget for the next cycle.',
+            'recommended_monthly_budget should be the ideal spending budget/limit, not salary income.',
+            'If target_month_income is unusually high or low, explain how much should be saved instead of spent.',
         ],
         'required_response_schema': {
             'vaultsync_budget_suggestion_version': '1.0',
@@ -615,7 +725,7 @@ def build_ai_budget_export(period_type, start, end, target_start, target_end):
             'title': 'Balanced next-period budget',
             'target_start_date': target_start.isoformat(),
             'target_end_date': target_end.isoformat(),
-            'recommended_monthly_budget': float(current_user.family.monthly_budget or 0),
+            'recommended_monthly_budget': target_finance['monthly_budget'],
             'risk_level': 'medium',
             'strategy_notes': ['Keep fixed bills early and reduce avoidable snacks/transport spikes.'],
             'planned_items': [
@@ -716,6 +826,7 @@ def build_family_ai_plan_context(family_id, target_start, target_end):
         month=target_start.month,
         year=target_start.year
     ).order_by(ExpectedExpense.due_day.asc(), ExpectedExpense.amount.desc()).all()
+    target_finance = monthly_finance_for(family, target_start.month, target_start.year)
 
     category_actuals = {}
     for expense in expenses:
@@ -741,7 +852,8 @@ def build_family_ai_plan_context(family_id, target_start, target_end):
             'generated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
             'target_start_date': target_start.isoformat(),
             'target_end_date': target_end.isoformat(),
-            'monthly_budget': round(float(family.monthly_budget or 0), 2),
+            'monthly_income': round(target_finance['monthly_income'], 2),
+            'monthly_budget': round(target_finance['monthly_budget'], 2),
             'category_names': [category.name for category in categories],
             'category_limits': {
                 category.name: round(float(category.monthly_limit or 0), 2)
@@ -758,7 +870,8 @@ def build_family_ai_plan_context(family_id, target_start, target_end):
                 'Return planned_items as category-level budget numbers, not individual grocery receipts.',
                 'Use only category_names provided. Do not invent new categories.',
                 'If a current planned bill or reserved bucket is clearly fixed, include enough suggested amount to cover it.',
-                'Keep the total practical for the monthly budget, but explain risk if actual spending already exceeds a category.',
+                'Keep the total practical for the monthly budget/spending limit, not the monthly income.',
+                'If income is higher than budget this month, preserve the difference as savings unless a fixed bill requires it.',
                 'Return only valid JSON matching the schema.'
             ]
         }
@@ -981,7 +1094,12 @@ def compare_suggestion_to_current(suggestion):
             'delta': round(suggested_amount - current_amount, 2),
         })
 
-    monthly_budget = float(current_user.family.monthly_budget or 0)
+    finance = monthly_finance_for(
+        current_user.family,
+        suggestion.target_start_date.month,
+        suggestion.target_start_date.year
+    )
+    monthly_budget = finance['monthly_budget']
     suggested_monthly_budget = float(payload.get('recommended_monthly_budget') or 0)
 
     return {
@@ -991,6 +1109,7 @@ def compare_suggestion_to_current(suggestion):
         'suggested_total': round(suggested_total, 2),
         'plan_delta': round(suggested_total - current_total, 2),
         'current_monthly_budget': round(monthly_budget, 2),
+        'current_monthly_income': round(finance['monthly_income'], 2),
         'suggested_monthly_budget': round(suggested_monthly_budget, 2),
         'budget_delta': round(suggested_monthly_budget - monthly_budget, 2),
         'category_rows': category_rows,
@@ -2254,7 +2373,9 @@ def build_daily_report_context(family_id, report_date=None):
     top_category = max(category_spending.items(), key=lambda x: x[1]) if category_spending else ('None', 0)
     
     # Budget remaining
-    monthly_budget = float(family.monthly_budget or 0)
+    finance = monthly_finance_for(family, report_date.month, report_date.year)
+    monthly_income = finance['monthly_income']
+    monthly_budget = finance['monthly_budget']
     budget_remaining = max(monthly_budget - month_total, 0)
     budget_used_pct = (month_total / monthly_budget * 100) if monthly_budget else 0
     
@@ -2282,6 +2403,7 @@ def build_daily_report_context(family_id, report_date=None):
         'today_total': today_total,
         'week_total': week_total,
         'month_total': month_total,
+        'monthly_income': monthly_income,
         'monthly_budget': monthly_budget,
         'budget_remaining': budget_remaining,
         'budget_used_percentage': budget_used_pct,
@@ -2303,6 +2425,7 @@ def build_daily_report_prompt(context):
         'Generate a helpful daily budget report with insights and actionable suggestions.\n'
         'Focus on spending patterns, warnings, and positive recommendations.\n\n'
         f'Family Monthly Budget: Rs {context["monthly_budget"]:,.0f}\n'
+        f'Family Monthly Income: Rs {context["monthly_income"]:,.0f}\n'
         f'Budget Used: {context["budget_used_percentage"]:.1f}%\n'
         f'Budget Remaining: Rs {context["budget_remaining"]:,.0f}\n\n'
         f'Today\'s Spending: Rs {context["today_total"]:,.0f}\n'
@@ -2312,7 +2435,8 @@ def build_daily_report_prompt(context):
         f'Spending Trend: {context["week_trend"]}\n\n'
         f'Top Category: {context["top_category"]} (Rs {context["top_category_amount"]:,.0f})\n'
         f'Category Breakdown: {json.dumps(context["category_breakdown"], ensure_ascii=False)}\n\n'
-        'Provide a brief summary (2-3 sentences), 3-4 actionable suggestions, and any warnings.\n'
+        'Provide a detailed summary (3-5 sentences), 4-5 actionable suggestions, clear next-step instructions, and any warnings.\n'
+        'Suggestions should say what to do next, how much to cap or move, and which category to watch.\n'
         'Return JSON matching the required schema. No markdown, no prose outside JSON.'
     )
 
@@ -2367,9 +2491,16 @@ def create_daily_budget_report(family_id, report_date=None):
         # Create a basic report without AI
         payload = {
             'summary': f"Spending this month: Rs {context['month_total']:,.0f} of Rs {context['monthly_budget']:,.0f}",
-            'suggestions': ['Review your category spending', 'Keep tracking your expenses daily'],
+            'suggestions': [
+                f"Keep daily spending near Rs {context['monthly_budget'] / max((context['month_end'] - context['month_start']).days + 1, 1):,.0f} unless a planned bill is due.",
+                f"Review {context['top_category']} first because it is the largest category this month.",
+                "Log every cash spend the same day so tomorrow's report can calculate a reliable safe daily limit.",
+            ],
             'warnings': [],
-            'insights': [f"Your top spending category is {context['top_category']}"]
+            'insights': [
+                f"Your top spending category is {context['top_category']}.",
+                f"Your current daily average is Rs {context['daily_average']:,.0f}.",
+            ]
         }
     
     # Normalize the AI response
@@ -2410,6 +2541,45 @@ def create_daily_budget_report(family_id, report_date=None):
     db.session.add(report)
     db.session.commit()
     return report
+
+
+def build_report_action_plan(report, suggestions=None, warnings=None, category_breakdown=None):
+    suggestions = suggestions or []
+    warnings = warnings or []
+    category_breakdown = category_breakdown or {}
+    days_in_month = calendar.monthrange(report.report_date.year, report.report_date.month)[1]
+    days_elapsed = max(report.report_date.day, 1)
+    days_remaining = max(days_in_month - report.report_date.day, 0)
+    daily_target = (report.monthly_budget / days_in_month) if report.monthly_budget else 0
+    safe_daily_spend = (report.budget_remaining / days_remaining) if days_remaining else max(report.budget_remaining, 0)
+    expected_spend_by_today = daily_target * days_elapsed
+    pace_delta = report.total_spent_this_month - expected_spend_by_today
+    top_category = max(category_breakdown.items(), key=lambda item: float(item[1] or 0)) if category_breakdown else None
+
+    actions = []
+    if warnings:
+        actions.append(f"Handle this first: {warnings[0]}")
+    if report.budget_used_percentage >= 100:
+        actions.append("Pause optional spending until a manager increases this month's budget or moves money from savings intentionally.")
+    elif report.budget_used_percentage >= 80:
+        actions.append(f"Keep tomorrow's unplanned spend under Rs {safe_daily_spend:,.0f} and delay optional purchases.")
+    else:
+        actions.append(f"Use Rs {safe_daily_spend:,.0f} as the safe daily spend target for the remaining days.")
+    if top_category:
+        actions.append(f"Check {top_category[0]} before the next purchase; it is currently Rs {float(top_category[1] or 0):,.0f}.")
+    if suggestions:
+        actions.append(suggestions[0])
+    actions.append("After logging tomorrow's expenses, regenerate the report to confirm whether the pace improved.")
+
+    return {
+        'days_remaining': days_remaining,
+        'daily_target': daily_target,
+        'safe_daily_spend': safe_daily_spend,
+        'expected_spend_by_today': expected_spend_by_today,
+        'pace_delta': pace_delta,
+        'top_category': top_category[0] if top_category else report.top_spending_category,
+        'actions': actions[:5],
+    }
 
 
 def run_daily_budget_reports():
@@ -2581,8 +2751,27 @@ if os.environ.get('RUN_AI_ORGANIZER_SCHEDULER') == '1':
     start_ai_organizer_scheduler()
 
 
+def ensure_runtime_schema():
+    """Lightweight safety net for local SQLite runs that skip Alembic upgrades."""
+    global _runtime_schema_checked
+    if _runtime_schema_checked:
+        return
+
+    db.create_all()
+    inspector = inspect(db.engine)
+    if inspector.has_table('family'):
+        family_columns = {column['name'] for column in inspector.get_columns('family')}
+        if 'monthly_income' not in family_columns:
+            with db.engine.begin() as connection:
+                connection.execute(text('ALTER TABLE family ADD COLUMN monthly_income FLOAT'))
+                connection.execute(text('UPDATE family SET monthly_income = monthly_budget WHERE monthly_income IS NULL'))
+
+    _runtime_schema_checked = True
+
+
 @app.before_request
 def ensure_ai_organizer_scheduler_running():
+    ensure_runtime_schema()
     if (
         current_user.is_authenticated
         and current_user.family
@@ -2654,7 +2843,7 @@ def register():
                 return redirect(url_for('register'))
 
             # Create family
-            family = Family(name=family_name, monthly_budget=initial_budget)
+            family = Family(name=family_name, monthly_income=initial_budget, monthly_budget=initial_budget)
             db.session.add(family)
             db.session.flush()
             ensure_preset_categories(family.id)
@@ -2786,7 +2975,9 @@ def dashboard():
 
     # Math is now isolated to the selected month.
     total_spent = sum(exp.amount for exp in all_expenses)
-    monthly_income = current_user.family.monthly_budget if current_user.family else 0
+    finance = monthly_finance_for(current_user.family, selected_month, selected_year)
+    monthly_income = finance['monthly_income']
+    monthly_budget = finance['monthly_budget']
 
     # Compute per-category totals using a grouped query to ensure accuracy
     totals = db.session.query(
@@ -2835,7 +3026,7 @@ def dashboard():
     expected_total = sum(expected_budget_amount(exp) for exp in expected_expenses)
     expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid and not exp.is_bucket)
     expected_unpaid_total = sum(exp.amount for exp in expected_expenses if not exp.is_paid and not exp.is_bucket)
-    planned_after_budget = monthly_income - expected_total
+    planned_after_budget = monthly_budget - expected_total
     standard_expected_total = expected_paid_total + expected_unpaid_total
     plan_paid_percentage = (expected_paid_total / standard_expected_total * 100) if standard_expected_total else 0
     top_category_id = max(totals_map, key=totals_map.get) if totals_map else None
@@ -2852,10 +3043,10 @@ def dashboard():
         days_remaining = selected_days_in_month
     daily_rate = total_spent / days_elapsed if days_elapsed else 0
     projected_month_total = daily_rate * selected_days_in_month
-    budget_percentage = (total_spent / monthly_income * 100) if monthly_income else 0
-    budget_remaining = monthly_income - total_spent
+    budget_percentage = (total_spent / monthly_budget * 100) if monthly_budget else 0
+    budget_remaining = monthly_budget - total_spent
     safe_daily_spend = budget_remaining / days_remaining if days_remaining else max(budget_remaining, 0)
-    daily_budget_target = monthly_income / selected_days_in_month if monthly_income else 0
+    daily_budget_target = monthly_budget / selected_days_in_month if monthly_budget else 0
     burn_percentage = (daily_rate / daily_budget_target * 100) if daily_budget_target else 0
 
     return render_template('dashboard.html',
@@ -2866,6 +3057,8 @@ def dashboard():
                             expected_expenses=expected_expenses,
                             total_spent=total_spent,
                             income=monthly_income,
+                            monthly_budget=monthly_budget,
+                            finance=finance,
                             projected=projected_savings,
                             chart_labels=chart_labels,
                             chart_data=chart_data,
@@ -2942,7 +3135,9 @@ def financial_reports():
         selected_year = current_day.year
 
     month_start, month_end = month_bounds(selected_year, selected_month)
-    monthly_budget = float(current_user.family.monthly_budget or 0)
+    finance = monthly_finance_for(current_user.family, selected_month, selected_year)
+    monthly_income = finance['monthly_income']
+    monthly_budget = finance['monthly_budget']
 
     categories = Category.query.filter_by(family_id=current_user.family_id).order_by(Category.name.asc()).all()
     expenses = Expense.query.filter(
@@ -3058,20 +3253,21 @@ def financial_reports():
         )
         cash_flow_rows.append({
             'label': f'{calendar.month_abbr[row_month]} {row_year}',
-            'income': monthly_budget,
+            'income': monthly_finance_for(current_user.family, row_month, row_year)['monthly_income'],
             'planned': float(row_planned),
             'outflow': float(row_spent),
-            'net': monthly_budget - float(row_spent)
+            'net': monthly_finance_for(current_user.family, row_month, row_year)['monthly_income'] - float(row_spent)
         })
 
     top_spender = max(spent_by_user.items(), key=lambda item: item[1]) if spent_by_user else None
     pnl_rows = [
-        {'label': 'Family budget / income', 'amount': monthly_budget, 'type': 'income'},
+        {'label': 'Monthly income', 'amount': monthly_income, 'type': 'income'},
+        {'label': 'Spending budget', 'amount': monthly_budget, 'type': 'budget'},
         {'label': 'Actual expenses', 'amount': -total_spent, 'type': 'expense'},
         {'label': 'Unposted planned bills', 'amount': -unposted_total, 'type': 'commitment'},
     ]
-    pnl_net = monthly_budget - total_spent
-    pnl_projected_net = monthly_budget - forecast_total
+    pnl_net = monthly_income - total_spent
+    pnl_projected_net = monthly_income - forecast_total
 
     missing_feature_cards = [
         {
@@ -3127,6 +3323,8 @@ def financial_reports():
         month_name=calendar.month_name[selected_month],
         year_range=range(2024, datetime.utcnow().year + 3),
         monthly_budget=monthly_budget,
+        monthly_income=monthly_income,
+        finance=finance,
         total_spent=total_spent,
         planned_total=planned_total,
         posted_total=posted_total,
@@ -3231,6 +3429,12 @@ def daily_diary():
     ).order_by(Category.name.asc()).all()
 
     daily_total = sum(exp.amount for exp in expenses)
+    quick_dates = [
+        {'label': 'Yesterday', 'date': today - timedelta(days=1)},
+        {'label': 'Today', 'date': today},
+        {'label': 'Tomorrow', 'date': today + timedelta(days=1)},
+        {'label': 'Selected', 'date': selected_date},
+    ]
 
     return render_template(
         'daily_diary.html',
@@ -3241,7 +3445,8 @@ def daily_diary():
         selected_date=selected_date,
         today=today,
         previous_date=selected_date - timedelta(days=1),
-        next_date=selected_date + timedelta(days=1)
+        next_date=selected_date + timedelta(days=1),
+        quick_dates=quick_dates
     )
 
 # --- NEW ROUTE: PERSONAL SPENDING TAB ---
@@ -3349,11 +3554,12 @@ def add_expense():
                 'warning'
             )
 
-    if family.monthly_budget and protected_total > family.monthly_budget:
-        percentage = (protected_total / family.monthly_budget) * 100
+    expense_month_budget = monthly_finance_for(family, expense_date.month, expense_date.year)['monthly_budget']
+    if expense_month_budget and protected_total > expense_month_budget:
+        percentage = (protected_total / expense_month_budget) * 100
         flash(f'Budget Alert: Your family has committed {percentage:.1f}% of the monthly budget.', 'warning')
-    elif family.monthly_budget and protected_total > (family.monthly_budget * 0.8):
-        percentage = (protected_total / family.monthly_budget) * 100
+    elif expense_month_budget and protected_total > (expense_month_budget * 0.8):
+        percentage = (protected_total / expense_month_budget) * 100
         flash(f"You are at {percentage:.1f}% of your monthly budget after reserved buckets.", 'info')
 
     # Send them back to wherever they submitted the form from
@@ -3925,6 +4131,9 @@ def ai_budget():
     suggestions = BudgetSuggestion.query.filter_by(
         family_id=current_user.family_id
     ).order_by(BudgetSuggestion.created_at.desc()).limit(10).all()
+    applications = BudgetPlanApplication.query.filter_by(
+        family_id=current_user.family_id
+    ).order_by(BudgetPlanApplication.created_at.desc()).limit(8).all()
 
     selected_suggestion = None
     comparison = None
@@ -3946,6 +4155,7 @@ def ai_budget():
         suggestions=suggestions,
         selected_suggestion=selected_suggestion,
         comparison=comparison,
+        applications=applications,
         today=today,
         current_month=today.month,
         current_year=today.year,
@@ -4046,6 +4256,23 @@ def apply_ai_budget(id):
     created_categories = 0
     created_items = 0
     skipped_items = 0
+    created_category_ids = []
+    created_expected_expense_ids = []
+    target_finance_setting = MonthlyFinanceSetting.query.filter_by(
+        family_id=current_user.family_id,
+        month=suggestion.target_start_date.month,
+        year=suggestion.target_start_date.year
+    ).first()
+    snapshot = {
+        'suggestion_id': suggestion.id,
+        'suggestion_title': suggestion.title,
+        'target_month': suggestion.target_start_date.month,
+        'target_year': suggestion.target_start_date.year,
+        'family_monthly_income': current_user.family.monthly_income,
+        'family_monthly_budget': current_user.family.monthly_budget,
+        'target_finance_setting': finance_setting_snapshot(target_finance_setting),
+        'changed_target_budget': request.form.get('update_monthly_budget') == 'yes' and bool(suggestion.suggested_monthly_budget),
+    }
     for item in payload.get('planned_items', []):
         item_date = parse_date_arg(item.get('date'))
         if not item_date:
@@ -4066,6 +4293,7 @@ def apply_ai_budget(id):
             db.session.flush()
             category_map[category_name.lower()] = category
             created_categories += 1
+            created_category_ids.append(category.id)
 
         name = str(item.get('name')).strip()
         amount = float(item.get('amount'))
@@ -4080,7 +4308,7 @@ def apply_ai_budget(id):
             skipped_items += 1
             continue
 
-        db.session.add(ExpectedExpense(
+        expected_item = ExpectedExpense(
             name=name,
             amount=amount,
             due_day=item_date.day,
@@ -4088,17 +4316,48 @@ def apply_ai_budget(id):
             month=item_date.month,
             year=item_date.year,
             family_id=current_user.family_id
-        ))
+        )
+        db.session.add(expected_item)
+        db.session.flush()
+        created_expected_expense_ids.append(expected_item.id)
         created_items += 1
 
     if request.form.get('update_monthly_budget') == 'yes' and suggestion.suggested_monthly_budget:
-        current_user.family.monthly_budget = suggestion.suggested_monthly_budget
+        if not target_finance_setting:
+            target_finance_setting = MonthlyFinanceSetting(
+                family_id=current_user.family_id,
+                month=suggestion.target_start_date.month,
+                year=suggestion.target_start_date.year
+            )
+            db.session.add(target_finance_setting)
+        target_finance = monthly_finance_for(
+            current_user.family,
+            suggestion.target_start_date.month,
+            suggestion.target_start_date.year
+        )
+        target_finance_setting.monthly_income = target_finance['monthly_income']
+        target_finance_setting.monthly_budget = suggestion.suggested_monthly_budget
+        target_finance_setting.updated_by_user_id = current_user.id
+        target_finance_setting.updated_at = datetime.utcnow()
 
     suggestion.is_applied = True
+    application = BudgetPlanApplication(
+        family_id=current_user.family_id,
+        suggestion_id=suggestion.id,
+        applied_by_user_id=current_user.id,
+        target_month=suggestion.target_start_date.month,
+        target_year=suggestion.target_start_date.year,
+        created_expected_expense_ids=json.dumps(created_expected_expense_ids),
+        created_category_ids=json.dumps(created_category_ids),
+        snapshot_json=json.dumps(snapshot, default=str),
+        created_at=datetime.utcnow()
+    )
+    db.session.add(application)
     db.session.commit()
     flash(
         f'Applied {created_items} suggested planned items. '
-        f'{skipped_items} duplicates skipped. {created_categories} new categories added.',
+        f'{skipped_items} duplicates skipped. {created_categories} new categories added. '
+        f'Rollback #{application.id} is available in AI Budget Planner.',
         'success'
     )
     return redirect(url_for(
@@ -4106,6 +4365,107 @@ def apply_ai_budget(id):
         month=suggestion.target_start_date.month,
         year=suggestion.target_start_date.year
     ))
+
+
+@app.route('/ai_budget/revert/<int:application_id>', methods=['POST'])
+@login_required
+def revert_ai_budget_application(application_id):
+    if not is_family_manager(current_user):
+        flash('Unauthorized: family manager only', 'error')
+        return redirect(url_for('ai_budget'))
+
+    application = BudgetPlanApplication.query.filter_by(
+        id=application_id,
+        family_id=current_user.family_id
+    ).first_or_404()
+    if application.reverted_at:
+        flash('That AI plan application has already been reverted.', 'info')
+        return redirect(url_for('ai_budget', suggestion_id=application.suggestion_id))
+
+    try:
+        snapshot = json.loads(application.snapshot_json or '{}')
+        expected_ids = json.loads(application.created_expected_expense_ids or '[]')
+        category_ids = json.loads(application.created_category_ids or '[]')
+    except (TypeError, json.JSONDecodeError):
+        snapshot = {}
+        expected_ids = []
+        category_ids = []
+
+    deleted_items = 0
+    skipped_items = 0
+    for expected_id in expected_ids:
+        expected_item = ExpectedExpense.query.filter_by(
+            id=expected_id,
+            family_id=current_user.family_id
+        ).first()
+        if not expected_item:
+            continue
+        if expected_item.is_paid or expected_item.linked_expense_id:
+            skipped_items += 1
+            continue
+        db.session.delete(expected_item)
+        deleted_items += 1
+
+    restored_budget = False
+    if snapshot.get('changed_target_budget'):
+        setting_snapshot = snapshot.get('target_finance_setting') or {}
+        setting = MonthlyFinanceSetting.query.filter_by(
+            family_id=current_user.family_id,
+            month=application.target_month,
+            year=application.target_year
+        ).first()
+        if setting_snapshot.get('existed'):
+            if not setting:
+                setting = MonthlyFinanceSetting(
+                    family_id=current_user.family_id,
+                    month=application.target_month,
+                    year=application.target_year
+                )
+                db.session.add(setting)
+            setting.monthly_income = setting_snapshot.get('monthly_income')
+            setting.monthly_budget = setting_snapshot.get('monthly_budget')
+            setting.notes = setting_snapshot.get('notes') or ''
+            setting.updated_by_user_id = current_user.id
+            setting.updated_at = datetime.utcnow()
+        elif setting:
+            db.session.delete(setting)
+        restored_budget = True
+
+    deleted_categories = 0
+    for category_id in category_ids:
+        category = Category.query.filter_by(
+            id=category_id,
+            family_id=current_user.family_id
+        ).first()
+        if not category:
+            continue
+        has_expenses = Expense.query.filter_by(category_id=category.id, family_id=current_user.family_id).first()
+        has_expected = ExpectedExpense.query.filter_by(category_id=category.id, family_id=current_user.family_id).first()
+        if has_expenses or has_expected:
+            continue
+        db.session.delete(category)
+        deleted_categories += 1
+
+    application.reverted_at = datetime.utcnow()
+    active_applications = BudgetPlanApplication.query.filter(
+        BudgetPlanApplication.suggestion_id == application.suggestion_id,
+        BudgetPlanApplication.family_id == current_user.family_id,
+        BudgetPlanApplication.reverted_at.is_(None),
+        BudgetPlanApplication.id != application.id
+    ).first()
+    if not active_applications and application.suggestion:
+        application.suggestion.is_applied = False
+
+    db.session.commit()
+    message = f'Reverted AI plan application #{application.id}: removed {deleted_items} planned item(s)'
+    if deleted_categories:
+        message += f', removed {deleted_categories} new categor{"y" if deleted_categories == 1 else "ies"}'
+    if restored_budget:
+        message += ', restored the month budget setting'
+    if skipped_items:
+        message += f'. {skipped_items} paid/linked item(s) were kept for safety'
+    flash(message + '.', 'success' if not skipped_items else 'warning')
+    return redirect(url_for('ai_budget', suggestion_id=application.suggestion_id))
 
 @app.route('/export_ai_data')
 @login_required
@@ -4170,7 +4530,10 @@ def admin_panel():
         Expense.family_id == current_user.family_id
     ).scalar() or 0.0
 
-    remaining_budget = family.monthly_budget - monthly_spending if family.monthly_budget else 0
+    current_finance = monthly_finance_for(family, current_date.month, current_date.year)
+    current_monthly_income = current_finance['monthly_income']
+    current_monthly_budget = current_finance['monthly_budget']
+    remaining_budget = current_monthly_budget - monthly_spending if current_monthly_budget else 0
 
     member_spending_rows = db.session.query(
         User.id,
@@ -4245,6 +4608,9 @@ def admin_panel():
                           categories=categories,
                           category_spending=category_spending,
                           monthly_spending=monthly_spending,
+                          current_monthly_income=current_monthly_income,
+                          current_monthly_budget=current_monthly_budget,
+                          current_finance=current_finance,
                           remaining_budget=remaining_budget,
                           planned_total=float(planned_total),
                           planned_paid_total=float(planned_paid_total),
@@ -4261,32 +4627,91 @@ def admin_panel():
                           today=current_date.date(),
                           current_month_start=current_month_start,
                           current_month_end=current_month_end,
-                          budget_percentage=(monthly_spending / family.monthly_budget * 100) if family.monthly_budget else 0,
+                          budget_percentage=(monthly_spending / current_monthly_budget * 100) if current_monthly_budget else 0,
                           year_range=range(2024, datetime.utcnow().year + 3))
 
 
 @app.route('/admin_panel/budget', methods=['POST'])
 @login_required
 def update_budget():
-    """Update family monthly budget"""
+    """Update default family monthly income and budget."""
     if not is_family_manager(current_user):
         flash('Unauthorized', 'error')
         return redirect(url_for('dashboard'))
 
     budget = request.form.get('monthly_budget')
+    income = request.form.get('monthly_income')
     try:
         budget = float(budget)
+        income = float(income or budget)
         if budget < 1000:
             flash('Budget must be at least 1000.', 'error')
             return redirect(url_for('admin_panel'))
+        if income < 0:
+            flash('Income cannot be negative.', 'error')
+            return redirect(url_for('admin_panel'))
 
+        current_user.family.monthly_income = income
         current_user.family.monthly_budget = budget
         db.session.commit()
-        flash('Family budget updated successfully!', 'success')
+        flash('Default family income and budget updated successfully!', 'success')
     except (ValueError, TypeError):
-        flash('Please enter a valid budget amount.', 'error')
+        flash('Please enter valid income and budget amounts.', 'error')
 
-    return redirect(url_for('admin_panel'))
+    return redirect(url_for('admin_panel', tab='budget'))
+
+
+@app.route('/finance_settings/monthly', methods=['POST'])
+@login_required
+def update_monthly_finance_setting():
+    if not is_family_manager(current_user):
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    today = datetime.utcnow().date()
+    selected_month = request.form.get('month', today.month, type=int)
+    selected_year = request.form.get('year', today.year, type=int)
+    if not (1 <= selected_month <= 12) or selected_year < 2020 or selected_year > 2050:
+        flash('Please choose a valid month and year.', 'error')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    try:
+        monthly_income = float(request.form.get('monthly_income') or 0)
+        monthly_budget = float(request.form.get('monthly_budget') or 0)
+    except (TypeError, ValueError):
+        flash('Please enter valid income and budget numbers.', 'error')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    if monthly_income < 0 or monthly_budget < 0:
+        flash('Income and budget cannot be negative.', 'error')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    setting = MonthlyFinanceSetting.query.filter_by(
+        family_id=current_user.family_id,
+        month=selected_month,
+        year=selected_year
+    ).first()
+    if not setting:
+        setting = MonthlyFinanceSetting(
+            family_id=current_user.family_id,
+            month=selected_month,
+            year=selected_year
+        )
+        db.session.add(setting)
+
+    setting.monthly_income = monthly_income
+    setting.monthly_budget = monthly_budget
+    setting.notes = request.form.get('notes', '').strip()
+    setting.updated_by_user_id = current_user.id
+    setting.updated_at = datetime.utcnow()
+    db.session.commit()
+
+    flash(f'{calendar.month_name[selected_month]} {selected_year} income and budget saved.', 'success')
+    return redirect(request.form.get('next') or request.referrer or url_for(
+        'dashboard',
+        month=selected_month,
+        year=selected_year
+    ))
 
 
 @app.route('/admin_panel/ai_organize', methods=['POST'])
@@ -4597,6 +5022,8 @@ def delete_family():
     Expense.query.filter_by(family_id=family_id).delete()
     Category.query.filter_by(family_id=family_id).delete()
     ExpectedExpense.query.filter_by(family_id=family_id).delete()
+    MonthlyFinanceSetting.query.filter_by(family_id=family_id).delete()
+    BudgetPlanApplication.query.filter_by(family_id=family_id).delete()
     BudgetSuggestion.query.filter_by(family_id=family_id).delete()
     AISavingsForecast.query.filter_by(family_id=family_id).delete()
     BudgetReport.query.filter_by(family_id=family_id).delete()
@@ -4766,11 +5193,28 @@ def daily_reports():
     latest_report = BudgetReport.query.filter_by(
         family_id=current_user.family_id
     ).order_by(BudgetReport.report_date.desc()).first()
+    latest_action_plan = None
+    if latest_report:
+        try:
+            latest_suggestions = json.loads(latest_report.suggestions) if latest_report.suggestions else []
+            latest_warnings = json.loads(latest_report.warnings) if latest_report.warnings else []
+            latest_categories = json.loads(latest_report.category_breakdown) if latest_report.category_breakdown else {}
+        except (json.JSONDecodeError, TypeError):
+            latest_suggestions = []
+            latest_warnings = []
+            latest_categories = {}
+        latest_action_plan = build_report_action_plan(
+            latest_report,
+            latest_suggestions,
+            latest_warnings,
+            latest_categories
+        )
 
     return render_template('reports.html',
                           user=current_user,
                           reports=reports,
                           latest_report=latest_report,
+                          latest_action_plan=latest_action_plan,
                           unread_count=len(unread_reports))
 
 
@@ -4804,6 +5248,7 @@ def view_report(report_id):
         key=lambda item: float(item[1] or 0),
         reverse=True
     )
+    action_plan = build_report_action_plan(report, suggestions, warnings, category_breakdown)
 
     return render_template('report_detail.html',
                           user=current_user,
@@ -4812,7 +5257,8 @@ def view_report(report_id):
                           warnings=warnings,
                           insights=insights,
                           category_breakdown=category_breakdown,
-                          category_breakdown_items=category_breakdown_items)
+                          category_breakdown_items=category_breakdown_items,
+                          action_plan=action_plan)
 
 
 @app.route('/reports/<int:report_id>/mark_read', methods=['POST'])

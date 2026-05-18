@@ -133,7 +133,7 @@
                 <article class="report-card">
                     <p class="report-label">Budget</p>
                     <p class="report-value text-blue-600">Rs. {{ "{:,.0f}".format(monthly_budget) }}</p>
-                    <p class="report-note">{{ month_name }} {{ selected_year }}</p>
+                    <p class="report-note">Income Rs. {{ "{:,.0f}".format(monthly_income) }}{% if finance.has_override %} · custom month{% endif %}</p>
                 </article>
                 <article class="report-card">
                     <p class="report-label">Actual Spent</p>
@@ -153,7 +153,7 @@
                 <article class="report-card">
                     <p class="report-label">Net Position</p>
                     <p class="report-value {% if pnl_net < 0 %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(pnl_net) }}</p>
-                    <p class="report-note">Actual income less expenses</p>
+                    <p class="report-note">Monthly income less expenses</p>
                 </article>
             </section>
 

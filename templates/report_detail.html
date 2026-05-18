@@ -78,6 +78,29 @@
         </section>
         {% endif %}
 
+        <!-- Next Actions -->
+        {% if action_plan %}
+        <section class="bg-blue-50 dark:bg-blue-900 rounded-lg shadow p-6 mb-8 border border-blue-100 dark:border-blue-700">
+            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-5">
+                <div>
+                    <h2 class="text-2xl font-bold text-blue-900 dark:text-blue-100"><i class="fas fa-list-check mr-2"></i>What to do next</h2>
+                    <p class="text-sm text-blue-800 dark:text-blue-200 mt-1">Safe daily spend: <strong>Rs {{ "{:,.0f}".format(action_plan.safe_daily_spend) }}</strong> · Daily target: <strong>Rs {{ "{:,.0f}".format(action_plan.daily_target) }}</strong></p>
+                </div>
+                <div class="text-sm text-blue-800 dark:text-blue-200">
+                    <p>Days remaining: <strong>{{ action_plan.days_remaining }}</strong></p>
+                    <p>Pace: <strong class="{% if action_plan.pace_delta > 0 %}text-red-700 dark:text-red-200{% else %}text-green-700 dark:text-green-200{% endif %}">Rs {{ "{:,.0f}".format(action_plan.pace_delta) }}</strong></p>
+                </div>
+            </div>
+            <ol class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {% for action in action_plan.actions %}
+                <li class="bg-white dark:bg-gray-800 rounded-lg p-4 text-blue-950 dark:text-blue-100 border border-blue-100 dark:border-blue-800">
+                    <span class="font-bold text-blue-600 dark:text-blue-300 mr-2">{{ loop.index }}.</span>{{ action }}
+                </li>
+                {% endfor %}
+            </ol>
+        </section>
+        {% endif %}
+
         <!-- Suggestions, Warnings, and Insights -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <!-- Suggestions -->
@@ -129,12 +152,12 @@
         <!-- Category Breakdown -->
         {% if category_breakdown %}
         <section class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
-            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-chart-pie mr-2 text-indigo-600"></i>Spending by Category</h2>
+            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-chart-bar mr-2 text-indigo-600"></i>Spending by Category</h2>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Chart -->
-                <div class="flex justify-center items-center">
-                    <canvas id="categoryChart" style="max-width: 300px;"></canvas>
+                <div class="min-h-[320px]">
+                    <canvas id="categoryChart"></canvas>
                 </div>
 
                 <!-- Category List -->
@@ -198,25 +221,46 @@
         ];
         
         new Chart(ctx, {
-            type: 'doughnut',
+            type: 'bar',
             data: {
                 labels: labels,
                 datasets: [{
+                    label: 'Spend',
                     data: data,
                     backgroundColor: colors.slice(0, labels.length),
-                    borderColor: '#fff',
-                    borderWidth: 2
+                    borderColor: colors.slice(0, labels.length),
+                    borderWidth: 1,
+                    borderRadius: 8
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
                 plugins: {
                     legend: {
-                        position: 'bottom',
-                        labels: {
-                            color: '#6b7280',
-                            font: { size: 12 }
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Rs ${Number(context.raw || 0).toLocaleString('en-IN')}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return `Rs ${Number(value || 0).toLocaleString('en-IN')}`;
+                            }
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            font: { weight: 'bold' }
                         }
                     }
                 }

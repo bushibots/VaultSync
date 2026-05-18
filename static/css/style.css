@@ -496,6 +496,137 @@ body.dark-mode .legend-track {
     background: #273449;
 }
 
+.activity-desktop-row {
+    display: grid;
+    grid-template-columns: 4.25rem minmax(0, 1fr) minmax(7rem, auto) 5.5rem;
+    gap: 1rem;
+    align-items: center;
+    min-height: 5.5rem;
+    padding: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.activity-date-pill {
+    display: grid;
+    place-items: center;
+    min-height: 3.6rem;
+    border-radius: 12px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 900;
+}
+
+.activity-date-pill span {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.activity-date-pill small {
+    margin-top: 0.2rem;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.activity-main {
+    min-width: 0;
+}
+
+.activity-title-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.activity-title-line h3 {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.98rem;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-subline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+    margin-top: 0.4rem;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.activity-subline span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-amount {
+    color: #ef4444;
+    font-size: 1.05rem;
+    font-weight: 900;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.activity-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.activity-row-actions a {
+    width: 2.4rem;
+    min-height: 2.4rem;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+}
+
+.activity-row-actions .edit-btn {
+    color: #2563eb;
+}
+
+.activity-row-actions .delete-btn {
+    color: #dc2626;
+}
+
+body.dark-mode .activity-desktop-row {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+body.dark-mode .activity-date-pill,
+body.dark-mode .activity-row-actions a {
+    background: #111827;
+    border-color: #334155;
+}
+
+body.dark-mode .activity-title-line h3 {
+    color: #e5e7eb;
+}
+
+@media (max-width: 900px) {
+    .activity-desktop-row {
+        grid-template-columns: 3.75rem minmax(0, 1fr) auto;
+    }
+
+    .activity-row-actions {
+        grid-column: 2 / -1;
+        justify-content: flex-start;
+    }
+}
+
 @media (max-width: 1023px) {
     .spending-chart-layout {
         grid-template-columns: 1fr;

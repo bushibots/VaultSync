@@ -100,6 +100,10 @@
                         <a href="{{ url_for('daily_diary', date=previous_date.strftime('%Y-%m-%d')) }}" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-slate-700 font-semibold px-4 py-2.5 rounded-lg shadow-sm hover:border-blue-300 hover:text-blue-600 transition">
                             <i class="fas fa-chevron-left text-xs" aria-hidden="true"></i>Previous Day
                         </a>
+                        <form method="GET" action="{{ url_for('daily_diary') }}" class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+                            <i class="fas fa-calendar-days text-blue-500" aria-hidden="true"></i>
+                            <input type="date" name="date" value="{{ selected_date.strftime('%Y-%m-%d') }}" class="bg-transparent text-sm font-semibold text-slate-700 focus:outline-none" onchange="this.form.submit()">
+                        </form>
                         <a href="{{ url_for('daily_diary') }}" class="inline-flex items-center gap-2 bg-blue-600 text-white font-bold px-4 py-2.5 rounded-lg shadow hover:bg-blue-700 transition">
                             Today
                         </a>
@@ -107,6 +111,14 @@
                             Next Day<i class="fas fa-chevron-right text-xs" aria-hidden="true"></i>
                         </a>
                     </div>
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2">
+                    {% for day in quick_dates %}
+                    <a href="{{ url_for('daily_diary', date=day.date.strftime('%Y-%m-%d')) }}" class="inline-flex min-h-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition {% if day.date == selected_date %}bg-blue-600 text-white border-blue-600{% else %}bg-white text-slate-600 border-gray-200 hover:border-blue-300 hover:text-blue-600{% endif %}">
+                        <span>{{ day.label }}</span>
+                        <span>{{ day.date.strftime('%d %b') }}</span>
+                    </a>
+                    {% endfor %}
                 </div>
             </header>
 

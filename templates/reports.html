@@ -64,6 +64,17 @@
                 <p class="text-gray-700 dark:text-gray-300">{{ latest_report.summary }}</p>
             </div>
 
+            {% if latest_action_plan %}
+            <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-100 dark:border-blue-700 rounded">
+                <h3 class="font-bold text-lg mb-3 text-blue-900 dark:text-blue-100"><i class="fas fa-list-check mr-2"></i>What to do next</h3>
+                <ol class="space-y-2 text-sm text-blue-900 dark:text-blue-100">
+                    {% for action in latest_action_plan.actions %}
+                    <li class="flex gap-2"><span class="font-bold">{{ loop.index }}.</span><span>{{ action }}</span></li>
+                    {% endfor %}
+                </ol>
+            </div>
+            {% endif %}
+
             {% set suggestions = latest_report.suggestions | fromjson %}
             {% set warnings = latest_report.warnings | fromjson %}
             
