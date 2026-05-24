@@ -243,9 +243,11 @@ const MobileMenu = {
             document.body.classList.add('menu-open');
             menuToggle.classList.add('active');
             menuToggle.setAttribute('aria-expanded', 'true');
+            menuToggle.querySelector('i')?.classList.replace('fa-bars', 'fa-times');
             if (overlay) {
                 overlay.classList.remove('fading');
                 overlay.classList.add('active');
+                overlay.setAttribute('aria-hidden', 'false');
             }
         };
 
@@ -262,15 +264,12 @@ const MobileMenu = {
             document.body.classList.remove('menu-open');
             menuToggle.classList.remove('active');
             menuToggle.setAttribute('aria-expanded', 'false');
+            menuToggle.querySelector('i')?.classList.replace('fa-times', 'fa-bars');
             
             if (overlay) {
-                overlay.classList.add('fading');
-                setTimeout(() => {
-                    if (!self.isOpen) {
-                        overlay.classList.remove('active');
-                        overlay.classList.remove('fading');
-                    }
-                }, 300);
+                overlay.classList.remove('active');
+                overlay.classList.remove('fading');
+                overlay.setAttribute('aria-hidden', 'true');
             }
         };
 
@@ -305,6 +304,45 @@ const MobileMenu = {
             if (event.key === 'Escape' && self.isOpen) {
                 closeMenuPanel();
             }
+        });
+    }
+};
+
+// ============================================
+// Mobile Top Navigation
+// ============================================
+
+const MobileTopNav = {
+    init() {
+        const shell = document.querySelector('.dashboard-mobile-shell');
+        const toggle = document.querySelector('[data-mobile-nav-toggle]');
+        const nav = document.getElementById('dashboard-mobile-nav');
+
+        if (!shell || !toggle || !nav) return;
+
+        const setOpen = (isOpen) => {
+            shell.classList.toggle('mobile-nav-expanded', isOpen);
+            document.body.classList.toggle('mobile-nav-open', isOpen);
+            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        };
+
+        toggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(!shell.classList.contains('mobile-nav-expanded'));
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!shell.classList.contains('mobile-nav-expanded')) return;
+            if (!shell.contains(event.target)) setOpen(false);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') setOpen(false);
+        });
+
+        nav.querySelectorAll('a').forEach((link) => {
+            link.addEventListener('click', () => setOpen(false));
         });
     }
 };
@@ -457,8 +495,10 @@ const Preferences = {
     },
 
     init() {
-        this.themeButton = document.getElementById('dark-mode-toggle');
-        this.languageSelect = document.getElementById('language-select');
+        this.themeButtons = Array.from(document.querySelectorAll('[data-theme-toggle]'));
+        this.languageSelects = Array.from(document.querySelectorAll('[data-language-select]'));
+        this.themeButton = this.themeButtons[0] || document.getElementById('dark-mode-toggle');
+        this.languageSelect = this.languageSelects[0] || document.getElementById('language-select');
 
         document.querySelectorAll('[data-i18n]').forEach((el) => {
             if (!el.dataset.en) el.dataset.en = el.textContent;
@@ -467,38 +507,40 @@ const Preferences = {
         this.applyTheme(localStorage.getItem('vaultsync-theme') || 'light');
         this.applyLanguage(localStorage.getItem('vaultsync-language') || 'en');
 
-        if (this.themeButton) {
-            this.themeButton.addEventListener('click', () => {
+        this.themeButtons.forEach((button) => {
+            button.addEventListener('click', () => {
                 const next = document.body.classList.contains('dark-mode') ? 'light' : 'dark';
                 localStorage.setItem('vaultsync-theme', next);
                 this.applyTheme(next);
             });
-        }
+        });
 
-        if (this.languageSelect) {
-            this.languageSelect.addEventListener('change', () => {
-                localStorage.setItem('vaultsync-language', this.languageSelect.value);
-                this.applyLanguage(this.languageSelect.value);
+        this.languageSelects.forEach((select) => {
+            select.addEventListener('change', () => {
+                localStorage.setItem('vaultsync-language', select.value);
+                this.applyLanguage(select.value);
             });
-        }
+        });
     },
 
     applyTheme(theme) {
         const isDark = theme === 'dark';
         document.body.classList.toggle('dark-mode', isDark);
 
-        if (this.themeButton) {
-            const label = this.themeButton.querySelector('[data-i18n]');
-            const icon = this.themeButton.querySelector('i');
+        this.themeButtons.forEach((button) => {
+            const label = button.querySelector('[data-i18n]');
+            const icon = button.querySelector('i');
             if (label) label.dataset.i18n = isDark ? 'light_mode' : 'dark_mode';
             if (icon) icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
-        }
+        });
 
         this.applyLanguage(localStorage.getItem('vaultsync-language') || 'en');
     },
 
     applyLanguage(language) {
-        if (this.languageSelect) this.languageSelect.value = language;
+        this.languageSelects.forEach((select) => {
+            select.value = language;
+        });
 
         document.documentElement.lang = language === 'hi' ? 'hi' : 'en';
         const dictionary = this.translations[language] || {};
@@ -517,6 +559,7 @@ const Preferences = {
 
 document.addEventListener('DOMContentLoaded', () => {
     MobileMenu.init();
+    MobileTopNav.init();
     FormLoader.init();
     PasswordToggle.init();
     CurrentTime.init();

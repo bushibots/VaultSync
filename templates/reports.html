@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -7,11 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+<body class="dashboard-body bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    {% set active_page = 'reports' %}
+    {% include '_mobile_nav.html' %}
+
     <!-- Header -->
-    <header class="bg-white dark:bg-gray-800 shadow">
+    <header class="hidden md:block bg-white dark:bg-gray-800 shadow">
         <div class="max-w-6xl mx-auto px-4 py-6 flex justify-between items-center">
             <h1 class="text-3xl font-bold text-blue-600 dark:text-blue-400">Daily Budget Reports</h1>
             <nav class="flex gap-4">
@@ -25,7 +28,7 @@
         </div>
     </header>
 
-    <main class="max-w-6xl mx-auto px-4 py-8">
+    <main id="main-content" class="dashboard-main max-w-6xl mx-auto px-4 py-8">
         <!-- Unread Count Banner -->
         {% if unread_count > 0 %}
         <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg">
@@ -203,6 +206,7 @@
         <p>Daily budget reports are generated automatically at 11:58 PM with AI-powered analysis and personalized suggestions.</p>
     </footer>
 
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
     <script>
         // Mark reports as read when viewed
         document.querySelectorAll('a[href*="view_report"]').forEach(link => {
@@ -213,3 +217,4 @@
     </script>
 </body>
 </html>
+
