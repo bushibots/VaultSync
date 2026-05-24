@@ -690,6 +690,116 @@ body.dark-mode .legend-track {
     background: #273449;
 }
 
+.dashboard-mini-grid,
+.dashboard-section-grid {
+    align-items: stretch;
+}
+
+.dashboard-mini-card {
+    min-width: 0;
+    height: 100%;
+}
+
+.dashboard-section-grid > .dashboard-card {
+    height: 100%;
+}
+
+.activity-entry-card {
+    background: #f8fafc;
+    border-color: #e5e7eb;
+}
+
+.activity-entry-card:hover {
+    background: #f1f5f9;
+}
+
+.activity-entry-card a {
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+body.dark-mode .dashboard-mini-card,
+body.dark-mode .activity-entry-card {
+    background: #0f172a;
+    border-color: #334155;
+}
+
+body.dark-mode .activity-entry-card:hover {
+    background: #162033;
+}
+
+.expected-status-form {
+    flex: 0 0 auto;
+}
+
+.expected-status-btn,
+.expected-status-icon {
+    width: 2rem;
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.expected-status-btn:hover {
+    color: #0f766e;
+    background: #ccfbf1;
+    border-color: #99f6e4;
+    transform: translateY(-1px);
+}
+
+.expected-status-btn.is-paid,
+.expected-status-icon.is-paid {
+    color: #16a34a;
+    background: #dcfce7;
+    border-color: #bbf7d0;
+}
+
+.expected-action-btn {
+    width: 2rem;
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    font-size: 0.8rem;
+}
+
+.expected-action-btn.edit-btn {
+    color: #2563eb;
+}
+
+.expected-action-btn.delete-btn {
+    color: #dc2626;
+}
+
+body.dark-mode .expected-status-btn,
+body.dark-mode .expected-status-icon,
+body.dark-mode .expected-action-btn {
+    background: #111827;
+    border-color: #334155;
+}
+
+body.dark-mode .expected-status-btn.is-paid,
+body.dark-mode .expected-status-icon.is-paid {
+    color: #86efac;
+    background: rgba(22, 163, 74, 0.18);
+    border-color: rgba(134, 239, 172, 0.35);
+}
+
 .activity-desktop-row {
     display: grid;
     grid-template-columns: 4.25rem minmax(0, 1fr) minmax(7rem, auto) 5.5rem;
@@ -1676,7 +1786,8 @@ select {
     }
 
     /* Reduce excessive padding on containers */
-    .rounded-xl, .rounded-2xl {
+    .dashboard-card.rounded-xl,
+    .dashboard-card.rounded-2xl {
         border-radius: 12px !important;
         padding: 1rem !important;
     }
@@ -2067,8 +2178,27 @@ body.dashboard-body .dashboard-page {
 
     .dashboard-stat-grid,
     .dashboard-workspace,
-    .dashboard-tools-grid {
+    .dashboard-tools-grid,
+    .dashboard-section-grid,
+    .dashboard-mini-grid {
         gap: 1rem !important;
+    }
+
+    .dashboard-stat-grid > .dashboard-card,
+    .dashboard-mini-card {
+        width: 100%;
+        min-height: 8rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .dashboard-section-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .dashboard-section-grid > .dashboard-card {
+        height: auto;
     }
 
     .dashboard-card > .flex.items-center,
@@ -2121,6 +2251,15 @@ body.dashboard-body .dashboard-page {
     .chart-legend-list {
         max-height: none;
         padding-right: 0;
+    }
+
+    .activity-entry-card {
+        padding: 0.9rem !important;
+        border-radius: 14px !important;
+    }
+
+    .activity-entry-card > div:last-child {
+        width: 100%;
     }
 }
 

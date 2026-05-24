@@ -3621,7 +3621,7 @@ def add_expected():
     return back_or('dashboard')
 
 
-@app.route('/toggle_expected/<int:id>')
+@app.route('/toggle_expected/<int:id>', methods=['GET', 'POST'])
 @login_required
 def toggle_expected(id):
     if not is_family_manager(current_user):
