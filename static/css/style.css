@@ -700,6 +700,23 @@ body.dark-mode .legend-track {
     height: 100%;
 }
 
+.dashboard-stat-grid > .dashboard-card,
+.dashboard-mini-card,
+.budget-plan-metric-card {
+    text-align: center;
+}
+
+.dashboard-stat-grid > .dashboard-card > .flex,
+.dashboard-mini-card > .flex {
+    justify-content: center;
+    text-align: center;
+}
+
+.dashboard-stat-grid > .dashboard-card > .flex i,
+.dashboard-mini-card > .flex i {
+    flex: 0 0 auto;
+}
+
 .dashboard-section-grid > .dashboard-card {
     height: 100%;
 }
@@ -2187,10 +2204,50 @@ body.dashboard-body .dashboard-page {
     .dashboard-stat-grid > .dashboard-card,
     .dashboard-mini-card {
         width: 100%;
-        min-height: 8rem;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dashboard-stat-grid > .dashboard-card {
+        max-width: 28rem;
+        margin-inline: auto;
+        padding-block: 0.9rem !important;
+    }
+
+    .dashboard-mini-grid {
+        justify-items: center;
+    }
+
+    .dashboard-mini-card {
+        max-width: 22rem;
+        padding: 0.85rem !important;
+    }
+
+    .dashboard-mini-card > .flex {
+        width: 100%;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .dashboard-mini-card p.text-2xl {
+        font-size: 1.15rem !important;
+        line-height: 1.15 !important;
+    }
+
+    .dashboard-mini-card i.text-2xl {
+        font-size: 1rem !important;
+    }
+
+    .budget-plan-metric-card {
+        padding: 0.75rem !important;
+    }
+
+    .budget-plan-metric-card p.text-lg {
+        font-size: 1rem !important;
+        line-height: 1.2 !important;
     }
 
     .dashboard-section-grid {
@@ -2226,9 +2283,9 @@ body.dashboard-body .dashboard-page {
 
     .expected-actions {
         width: 100%;
-        justify-content: flex-start;
+        justify-content: center;
         gap: 0.5rem !important;
-        padding-left: 2rem;
+        padding-left: 0;
     }
 
     .expected-actions a,
