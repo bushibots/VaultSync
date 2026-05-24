@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,25 +6,12 @@
     <title>VaultSync | Daily Diary</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
 </head>
 <body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
     <a href="#main-content" class="skip-link">Skip to main content</a>
 
-    <div class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 p-4 flex items-center justify-between md:hidden">
-        <h1 class="text-lg font-bold text-blue-600">Daily Diary</h1>
-        <button id="menu-toggle" class="text-gray-600 hover:text-gray-900 p-2" aria-label="Open menu" aria-expanded="false">
-            <i class="fas fa-bars text-2xl" aria-hidden="true"></i>
-        </button>
-    </div>
-
-    <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
-
-    <aside id="sidebar" class="sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
-        <button id="close-menu" class="absolute top-4 right-4 text-white md:hidden hover:bg-slate-700 p-2 rounded-lg" aria-label="Close menu">
-            <i class="fas fa-times text-xl" aria-hidden="true"></i>
-        </button>
-
+    <aside id="sidebar" class="sidebar dashboard-desktop-sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
         <div class="mb-8 mt-8 md:mt-0">
             <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
                 <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
@@ -63,11 +50,11 @@
 
         <div class="mt-auto space-y-4">
             <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
-                <button type="button" id="dark-mode-toggle" class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
+                <button type="button" id="dark-mode-toggle" data-theme-toggle class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
                     <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
                 </button>
                 <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
-                <select id="language-select" class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
+                <select id="language-select" data-language-select class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
                     <option value="en">English</option>
                     <option value="hi">Hindi</option>
                 </select>
@@ -86,7 +73,10 @@
         </div>
     </aside>
 
-    <main id="main-content" class="flex-1 overflow-y-auto" role="main">
+    {% set active_page = 'diary' %}
+    {% include '_mobile_nav.html' %}
+
+    <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
         <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
             <header class="mb-6 md:mb-8 animate-slide-in">
                 <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
@@ -246,6 +236,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
 </body>
 </html>
+

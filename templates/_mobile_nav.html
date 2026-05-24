@@ -1,0 +1,53 @@
+﻿<header class="dashboard-mobile-shell md:hidden">
+    <div class="dashboard-mobile-top">
+        <div class="dashboard-mobile-brand">
+            <span>VaultSync</span>
+            <strong>{{ user.username }}</strong>
+        </div>
+        <div class="dashboard-mobile-actions">
+            <button type="button" class="dashboard-mobile-menu-btn" data-mobile-nav-toggle aria-expanded="false" aria-controls="dashboard-mobile-nav">
+                <span>Menu</span>
+                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </button>
+            <button type="button" data-theme-toggle class="dashboard-mobile-icon-btn" aria-label="Toggle dark mode">
+                <i class="fas fa-moon" aria-hidden="true"></i>
+            </button>
+            <select data-language-select class="dashboard-mobile-language" aria-label="Language">
+                <option value="en">EN</option>
+                <option value="hi">HI</option>
+            </select>
+            <a href="{{ url_for('logout') }}" class="dashboard-mobile-icon-btn dashboard-mobile-logout" aria-label="Logout">
+                <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+            </a>
+        </div>
+    </div>
+    <nav id="dashboard-mobile-nav" class="dashboard-mobile-nav" aria-label="Mobile navigation">
+        <a href="{{ url_for('dashboard') }}" class="{% if active_page == 'dashboard' %}active{% endif %}">
+            <i class="fas fa-home" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
+        </a>
+        <a href="{{ url_for('daily_diary') }}" class="{% if active_page == 'diary' %}active{% endif %}">
+            <i class="fas fa-book-open" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
+        </a>
+        <a href="{{ url_for('ai_budget') }}" class="{% if active_page == 'ai_budget' %}active{% endif %}">
+            <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget</span>
+        </a>
+        <a href="{{ url_for('archive') }}" class="{% if active_page == 'archive' %}active{% endif %}">
+            <i class="fas fa-archive" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
+        </a>
+        <a href="{{ url_for('daily_reports') }}" class="{% if active_page == 'reports' %}active{% endif %}">
+            <i class="fas fa-file-lines" aria-hidden="true"></i><span>Reports</span>
+        </a>
+        <a href="{{ url_for('financial_reports') }}" class="{% if active_page == 'planning' %}active{% endif %}">
+            <i class="fas fa-chart-line" aria-hidden="true"></i><span>Planning</span>
+        </a>
+        <a href="{{ url_for('features') }}" class="{% if active_page == 'features' %}active{% endif %}">
+            <i class="fas fa-circle-question" aria-hidden="true"></i><span data-i18n="nav_features">Guide</span>
+        </a>
+        {% if is_family_manager %}
+        <a href="{{ url_for('admin_panel') }}" class="{% if active_page == 'admin' %}active{% endif %}">
+            <i class="fas fa-cog" aria-hidden="true"></i><span>Admin</span>
+        </a>
+        {% endif %}
+    </nav>
+</header>
+
