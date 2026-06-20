@@ -40,7 +40,9 @@ body.menu-open {
 
 /* Dashboard gradient background */
 .dashboard-body {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    background: radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 20%),
+                radial-gradient(circle at bottom right, rgba(99,102,241,0.12), transparent 18%),
+                linear-gradient(135deg, #eff5fc 0%, #dbeafe 100%);
 }
 
 body.dark-mode,
@@ -722,12 +724,40 @@ body.dark-mode .legend-track {
 }
 
 .activity-entry-card {
-    background: #f8fafc;
-    border-color: #e5e7eb;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(248, 250, 252, 0.92);
+    border-color: rgba(229, 231, 235, 0.85);
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 1rem;
 }
 
 .activity-entry-card:hover {
-    background: #f1f5f9;
+    background: rgba(241, 245, 249, 0.96);
+}
+
+.activity-entry-card > .flex {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.activity-entry-card > div:last-child {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding-top: 0.15rem;
+}
+
+.activity-entry-card > div:last-child p {
+    margin: 0;
+    text-align: right;
+    white-space: nowrap;
 }
 
 .activity-entry-card a {
@@ -2098,7 +2128,30 @@ body.dashboard-body .dashboard-main {
 body.dashboard-body .dashboard-page {
     width: 100%;
     min-width: 0;
+    position: relative;
     padding: clamp(1rem, 2vw, 2rem) !important;
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(255,255,255,0.65);
+    box-shadow: 0 28px 80px rgba(15,23,42,0.08);
+    backdrop-filter: blur(14px);
+    border-radius: 28px;
+}
+
+body.dashboard-body .dashboard-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at top left, rgba(56,189,248,0.16), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(99,102,241,0.12), transparent 18%);
+    opacity: 0.8;
+    border-radius: inherit;
+}
+
+body.dashboard-body .dashboard-page > * {
+    position: relative;
+    z-index: 1;
 }
 
 .dashboard-stat-grid,
@@ -2111,6 +2164,28 @@ body.dashboard-body .dashboard-page {
 
 .dashboard-card {
     overflow: hidden;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(148,163,184,0.18);
+    box-shadow: 0 18px 38px rgba(15,23,42,0.06);
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background-color 0.22s ease;
+    backdrop-filter: blur(10px);
+}
+
+.dashboard-card.bg-white,
+.dashboard-card.bg-slate-50,
+.dashboard-card.bg-blue-50,
+.dashboard-card.bg-teal-50,
+.dashboard-card.bg-green-50,
+.dashboard-card.bg-orange-50,
+.dashboard-card.bg-red-50,
+.dashboard-card.bg-purple-50 {
+    background: rgba(255,255,255,0.88);
+}
+
+.dashboard-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 24px 48px rgba(15,23,42,0.1);
+    border-color: rgba(148,163,184,0.24);
 }
 
 .dashboard-card :where(h1, h2, h3, p, span, strong, small, label, th, td) {
@@ -2313,6 +2388,7 @@ body.dashboard-body .dashboard-page {
     .activity-entry-card {
         padding: 0.9rem !important;
         border-radius: 14px !important;
+        flex-direction: column;
     }
 
     .activity-entry-card > div:last-child {

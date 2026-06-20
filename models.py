@@ -26,6 +26,7 @@ class Family(db.Model):
     budget_applications = db.relationship('BudgetPlanApplication', backref='family', lazy=True)
     savings_forecasts = db.relationship('AISavingsForecast', backref='family', lazy=True)
     budget_reports = db.relationship('BudgetReport', backref='family_relation', lazy=True)
+    chatbot_messages = db.relationship('ChatbotMessage', backref='family', lazy=True)
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -37,6 +38,7 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expenses = db.relationship('Expense', backref='user', lazy=True)
+    chatbot_messages = db.relationship('ChatbotMessage', backref='user', lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -218,3 +220,14 @@ class AuditLog(db.Model):
     action = db.Column(db.String(100), nullable=False)
     details = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ChatbotMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    role = db.Column(db.String(20), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    actions_json = db.Column(db.Text, default='[]')
+    results_json = db.Column(db.Text, default='[]')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)

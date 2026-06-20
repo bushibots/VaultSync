@@ -28,6 +28,7 @@ from models import (
     BudgetPlanApplication,
     AISavingsForecast,
     BudgetReport,
+    ChatbotMessage,
 )
 
 
@@ -1312,6 +1313,40 @@ def parse_chatbot_date(value, default_date=None):
     return datetime.strptime(str(value), '%Y-%m-%d').date()
 
 
+def recent_chatbot_messages(user, limit=12):
+    messages = ChatbotMessage.query.filter_by(
+        family_id=user.family_id,
+        user_id=user.id
+    ).order_by(ChatbotMessage.created_at.desc(), ChatbotMessage.id.desc()).limit(limit).all()
+    return list(reversed(messages))
+
+
+def serialize_chatbot_message(message):
+    return {
+        'id': message.id,
+        'role': message.role,
+        'content': message.content,
+        'actions': fromjson_filter(message.actions_json),
+        'results': fromjson_filter(message.results_json),
+        'created_at': message.created_at.isoformat() if message.created_at else None,
+    }
+
+
+def save_chatbot_message(role, content, actions=None, results=None):
+    if not current_user.is_authenticated or not current_user.family_id:
+        return None
+    message = ChatbotMessage(
+        family_id=current_user.family_id,
+        user_id=current_user.id,
+        role=role,
+        content=str(content or '')[:6000],
+        actions_json=json.dumps(actions or []),
+        results_json=json.dumps(results or []),
+    )
+    db.session.add(message)
+    return message
+
+
 def chatbot_context_payload(user):
     today = datetime.utcnow().date()
     month_start = today.replace(day=1)
@@ -1373,6 +1408,10 @@ def chatbot_context_payload(user):
             }
             for item in planned_items
         ],
+        'recent_chat_history': [
+            serialize_chatbot_message(message)
+            for message in recent_chatbot_messages(user, limit=12)
+        ],
     }
 
 
@@ -1382,6 +1421,7 @@ def build_chatbot_prompt(message, context_payload):
         'Answer questions and, when the user asks to change site data, return structured actions.\n'
         'Never perform or suggest security/account/admin changes: passwords, login, email, roles, users, members, invites, permissions, family archive/delete.\n'
         'Do not invent IDs. Use IDs only from context. If an edit/delete target is ambiguous, ask a short clarifying question and return no actions.\n'
+        'Use recent_chat_history to understand follow-up requests, but current site data in context is the source of truth for IDs and amounts.\n'
         'For new expenses, use YYYY-MM-DD dates and existing category names. If category is missing, choose the closest existing category and say so.\n'
         'Family managers can manage planned expenses and reports. Normal members can manage only their own expenses plus categories.\n\n'
         f'Context JSON:\n{json.dumps(context_payload, ensure_ascii=False)}\n\n'
@@ -4474,6 +4514,12 @@ def chatbot_message():
         try:
             for action_payload in actions[:8]:
                 results.append(execute_chatbot_action(action_payload))
+            save_chatbot_message(
+                'assistant',
+                'Ran approved actions. ' + ' '.join(results),
+                actions=actions[:8],
+                results=results,
+            )
             db.session.commit()
         except Exception as exc:
             db.session.rollback()
@@ -4494,13 +4540,18 @@ def chatbot_message():
 
     lowered_message = message.lower()
     if any(term in lowered_message for term in CHATBOT_FORBIDDEN_TERMS):
+        reply = 'I cannot change security, account, member, invite, role, or family deletion settings. A family manager must handle those directly from the Admin Panel.'
+        save_chatbot_message('user', message)
+        save_chatbot_message('assistant', reply)
+        db.session.commit()
         return jsonify({
-            'reply': 'I cannot change security, account, member, invite, role, or family deletion settings. A family manager must handle those directly from the Admin Panel.',
+            'reply': reply,
             'actions': [],
             'results': [],
         })
 
     context_payload = chatbot_context_payload(current_user)
+    save_chatbot_message('user', message)
     try:
         ai_payload = call_gemini_json(
             build_chatbot_prompt(message, context_payload),
@@ -4517,11 +4568,29 @@ def chatbot_message():
     proposed_actions = ai_payload.get('actions') or []
     if not isinstance(proposed_actions, list):
         proposed_actions = []
+    proposed_actions = proposed_actions[:8]
+
+    reply = str(ai_payload.get('reply') or 'I can help with that.')
+    save_chatbot_message('assistant', reply, actions=proposed_actions)
+    db.session.commit()
 
     return jsonify({
-        'reply': str(ai_payload.get('reply') or 'I can help with that.'),
-        'actions': proposed_actions[:8],
+        'reply': reply,
+        'actions': proposed_actions,
         'results': [],
+    })
+
+
+@app.route('/chatbot/history', methods=['GET'])
+@login_required
+def chatbot_history():
+    if not current_user.family_id:
+        return jsonify({'messages': []})
+    return jsonify({
+        'messages': [
+            serialize_chatbot_message(message)
+            for message in recent_chatbot_messages(current_user, limit=20)
+        ]
     })
 
 
