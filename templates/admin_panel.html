@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=assistant-20260620">
     <style>
         .tab-content {
             display: none;
@@ -970,5 +971,6 @@
             });
         }
     </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=assistant-20260620"></script>
 </body>
 </html>

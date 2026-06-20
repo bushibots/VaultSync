@@ -554,6 +554,172 @@ const Preferences = {
 };
 
 // ============================================
+// VaultSync Assistant
+// ============================================
+
+const VaultSyncAssistant = {
+    panel: null,
+    messages: null,
+    form: null,
+    input: null,
+    pendingActions: [],
+
+    init() {
+        if (this.panel || !document.body || document.body.dataset.assistantDisabled === 'true') return;
+
+        const root = document.createElement('div');
+        root.className = 'vs-assistant';
+        root.innerHTML = `
+            <button type="button" class="vs-assistant-toggle" aria-label="Open VaultSync Assistant">
+                <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
+            </button>
+            <section class="vs-assistant-panel" aria-label="VaultSync Assistant" aria-hidden="true">
+                <header class="vs-assistant-header">
+                    <div>
+                        <p>VaultSync Assistant</p>
+                        <span>Ask, review, then run</span>
+                    </div>
+                    <button type="button" class="vs-assistant-close" aria-label="Close assistant">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
+                </header>
+                <div class="vs-assistant-messages" role="log" aria-live="polite"></div>
+                <form class="vs-assistant-form">
+                    <textarea rows="2" placeholder="Add groceries 250 today, make a Food category, or summarize this month"></textarea>
+                    <button type="submit" aria-label="Send message">
+                        <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                    </button>
+                </form>
+            </section>
+        `;
+
+        document.body.appendChild(root);
+        this.panel = root.querySelector('.vs-assistant-panel');
+        this.messages = root.querySelector('.vs-assistant-messages');
+        this.form = root.querySelector('.vs-assistant-form');
+        this.input = root.querySelector('textarea');
+
+        root.querySelector('.vs-assistant-toggle').addEventListener('click', () => this.open());
+        root.querySelector('.vs-assistant-close').addEventListener('click', () => this.close());
+        this.form.addEventListener('submit', (event) => this.submit(event));
+
+        this.addMessage('assistant', 'I can answer questions and help change expenses, categories, planned items, and reports. I will not touch security, account, invite, member, role, or family deletion settings.');
+    },
+
+    open() {
+        this.panel.classList.add('is-open');
+        this.panel.setAttribute('aria-hidden', 'false');
+        this.input.focus();
+    },
+
+    close() {
+        this.panel.classList.remove('is-open');
+        this.panel.setAttribute('aria-hidden', 'true');
+    },
+
+    addMessage(role, text) {
+        const item = document.createElement('div');
+        item.className = `vs-assistant-message ${role}`;
+        item.textContent = text;
+        this.messages.appendChild(item);
+        this.messages.scrollTop = this.messages.scrollHeight;
+    },
+
+    actionSummary(action) {
+        const label = String(action.action || '').replace(/_/g, ' ');
+        const target = action.item_name || action.name || action.category || (action.id ? `#${action.id}` : '');
+        const amount = action.amount ? ` Rs. ${Number(action.amount).toLocaleString('en-IN')}` : '';
+        const date = action.date ? ` ${action.date}` : '';
+        return `${label}${target ? `: ${target}` : ''}${amount}${date}`;
+    },
+
+    renderActions(actions) {
+        if (!actions.length) return;
+        const box = document.createElement('div');
+        box.className = 'vs-assistant-actions';
+        box.innerHTML = `
+            <p>Review actions before I run them:</p>
+            <ul></ul>
+            <div class="vs-assistant-action-buttons">
+                <button type="button" class="vs-run-actions">Run actions</button>
+                <button type="button" class="vs-cancel-actions">Cancel</button>
+            </div>
+        `;
+
+        const list = box.querySelector('ul');
+        actions.forEach((action) => {
+            const li = document.createElement('li');
+            li.textContent = this.actionSummary(action);
+            list.appendChild(li);
+        });
+
+        box.querySelector('.vs-run-actions').addEventListener('click', () => this.executeActions(actions, box));
+        box.querySelector('.vs-cancel-actions').addEventListener('click', () => {
+            box.remove();
+            this.addMessage('assistant', 'Cancelled. Nothing was changed.');
+        });
+
+        this.messages.appendChild(box);
+        this.messages.scrollTop = this.messages.scrollHeight;
+    },
+
+    setBusy(isBusy) {
+        this.form.classList.toggle('is-busy', isBusy);
+        this.form.querySelector('button').disabled = isBusy;
+        this.input.disabled = isBusy;
+    },
+
+    async post(payload) {
+        const response = await fetch('/chatbot/message', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.reply || 'Assistant request failed.');
+        }
+        return data;
+    },
+
+    async submit(event) {
+        event.preventDefault();
+        const message = this.input.value.trim();
+        if (!message) return;
+
+        this.input.value = '';
+        this.addMessage('user', message);
+        this.setBusy(true);
+
+        try {
+            const data = await this.post({message});
+            this.addMessage('assistant', data.reply || 'I am ready.');
+            this.pendingActions = Array.isArray(data.actions) ? data.actions : [];
+            this.renderActions(this.pendingActions);
+        } catch (error) {
+            this.addMessage('assistant', error.message);
+        } finally {
+            this.setBusy(false);
+        }
+    },
+
+    async executeActions(actions, box) {
+        this.setBusy(true);
+        box.remove();
+        try {
+            const data = await this.post({execute: true, actions});
+            this.addMessage('assistant', data.reply || 'Done.');
+            Toast.success('Assistant updated VaultSync.');
+        } catch (error) {
+            this.addMessage('assistant', error.message);
+            Toast.error(error.message);
+        } finally {
+            this.setBusy(false);
+        }
+    }
+};
+
+// ============================================
 // Initialize on DOM Ready
 // ============================================
 
@@ -565,6 +731,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CurrentTime.init();
     EditModal.init();
     Preferences.init();
+    VaultSyncAssistant.init();
 
     // Process any flash messages from server
     if (window.flashMessages && window.flashMessages.length > 0) {

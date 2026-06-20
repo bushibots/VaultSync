@@ -1251,6 +1251,342 @@ def call_gemini_json(prompt, response_schema):
     raise ValueError('Gemini API failed for all configured keys: ' + ' | '.join(errors))
 
 
+CHATBOT_FORBIDDEN_TERMS = {
+    'password', 'email', 'login', 'logout', 'role', 'promote', 'demote',
+    'member', 'user', 'invite', 'archive family', 'delete family',
+    'admin', 'security', 'permission', 'account', 'active',
+}
+
+
+def chatbot_response_schema():
+    return {
+        'type': 'object',
+        'properties': {
+            'reply': {'type': 'string'},
+            'actions': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'action': {
+                            'type': 'string',
+                            'enum': [
+                                'create_expense',
+                                'update_expense',
+                                'delete_expense',
+                                'create_category',
+                                'update_category',
+                                'delete_category',
+                                'create_planned_expense',
+                                'update_planned_expense',
+                                'delete_planned_expense',
+                                'mark_planned_paid',
+                                'generate_daily_report',
+                            ],
+                        },
+                        'id': {'type': 'integer'},
+                        'item_name': {'type': 'string'},
+                        'description': {'type': 'string'},
+                        'amount': {'type': 'number'},
+                        'date': {'type': 'string'},
+                        'category': {'type': 'string'},
+                        'name': {'type': 'string'},
+                        'color': {'type': 'string'},
+                        'monthly_limit': {'type': 'number'},
+                        'month': {'type': 'integer'},
+                        'year': {'type': 'integer'},
+                        'due_day': {'type': 'integer'},
+                        'is_bucket': {'type': 'boolean'},
+                    },
+                    'required': ['action'],
+                },
+            },
+        },
+        'required': ['reply', 'actions'],
+    }
+
+
+def parse_chatbot_date(value, default_date=None):
+    if not value:
+        return default_date or datetime.utcnow().date()
+    return datetime.strptime(str(value), '%Y-%m-%d').date()
+
+
+def chatbot_context_payload(user):
+    today = datetime.utcnow().date()
+    month_start = today.replace(day=1)
+    categories = Category.query.filter_by(family_id=user.family_id).order_by(Category.name.asc()).all()
+    recent_expenses = Expense.query.filter_by(
+        family_id=user.family_id
+    ).order_by(Expense.date.desc(), Expense.id.desc()).limit(20).all()
+    planned_items = ExpectedExpense.query.filter_by(
+        family_id=user.family_id,
+        month=today.month,
+        year=today.year
+    ).order_by(ExpectedExpense.due_day.asc()).limit(30).all()
+
+    return {
+        'today': today.isoformat(),
+        'current_month_start': month_start.isoformat(),
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'role': user.user_type,
+            'is_family_manager': is_family_manager(user),
+        },
+        'family': {
+            'id': user.family_id,
+            'name': user.family.name if user.family else '',
+            'monthly_budget': user.family.monthly_budget if user.family else 0,
+        },
+        'categories': [
+            {
+                'id': category.id,
+                'name': category.name,
+                'monthly_limit': round(float(category.monthly_limit or 0), 2),
+            }
+            for category in categories
+        ],
+        'recent_expenses': [
+            {
+                'id': expense.id,
+                'date': expense.date.isoformat(),
+                'item_name': expense.item_name,
+                'amount': round(float(expense.amount or 0), 2),
+                'category': expense.category.name if expense.category else '',
+                'spender': expense.user.username if expense.user else '',
+                'is_mine': expense.user_id == user.id,
+            }
+            for expense in recent_expenses
+        ],
+        'planned_this_month': [
+            {
+                'id': item.id,
+                'name': item.name,
+                'amount': round(float(item.amount or 0), 2),
+                'category': item.category.name if item.category else '',
+                'month': item.month,
+                'year': item.year,
+                'due_day': item.due_day,
+                'is_bucket': bool(item.is_bucket),
+                'is_paid': bool(item.is_paid),
+            }
+            for item in planned_items
+        ],
+    }
+
+
+def build_chatbot_prompt(message, context_payload):
+    return (
+        'You are VaultSync Assistant inside a family expense manager.\n'
+        'Answer questions and, when the user asks to change site data, return structured actions.\n'
+        'Never perform or suggest security/account/admin changes: passwords, login, email, roles, users, members, invites, permissions, family archive/delete.\n'
+        'Do not invent IDs. Use IDs only from context. If an edit/delete target is ambiguous, ask a short clarifying question and return no actions.\n'
+        'For new expenses, use YYYY-MM-DD dates and existing category names. If category is missing, choose the closest existing category and say so.\n'
+        'Family managers can manage planned expenses and reports. Normal members can manage only their own expenses plus categories.\n\n'
+        f'Context JSON:\n{json.dumps(context_payload, ensure_ascii=False)}\n\n'
+        f'User message:\n{message}'
+    )
+
+
+def find_chatbot_category(family_id, category_name):
+    if not category_name:
+        return None
+    normalized = str(category_name).strip().lower()
+    return Category.query.filter(
+        Category.family_id == family_id,
+        func.lower(Category.name) == normalized
+    ).first()
+
+
+def assert_chatbot_manager_action():
+    if not is_family_manager(current_user):
+        raise ValueError('Only a family manager can do that.')
+
+
+def execute_chatbot_action(action_payload):
+    action = action_payload.get('action')
+    family_id = current_user.family_id
+    if any(term in json.dumps(action_payload).lower() for term in CHATBOT_FORBIDDEN_TERMS):
+        raise ValueError('Blocked a security or account-level change.')
+
+    if action == 'create_expense':
+        item_name = str(action_payload.get('item_name') or action_payload.get('name') or '').strip()
+        amount = float(action_payload.get('amount') or 0)
+        category = find_chatbot_category(family_id, action_payload.get('category'))
+        expense_date = parse_chatbot_date(action_payload.get('date'))
+        if not item_name or amount <= 0 or not category:
+            raise ValueError('Expense needs an item, positive amount, and valid category.')
+        bucket = find_budget_bucket(family_id, category.id, expense_date)
+        db.session.add(Expense(
+            date=expense_date,
+            item_name=item_name[:100],
+            description=str(action_payload.get('description') or '')[:1000],
+            amount=amount,
+            category_id=category.id,
+            user_id=current_user.id,
+            family_id=family_id,
+            bucket_id=bucket.id if bucket else None,
+        ))
+        return f'Added expense "{item_name}" for Rs. {amount:,.0f}.'
+
+    if action in {'update_expense', 'delete_expense'}:
+        expense = Expense.query.filter_by(id=action_payload.get('id'), family_id=family_id).first()
+        if not expense:
+            raise ValueError('Expense not found.')
+        if expense.user_id != current_user.id and not is_family_manager(current_user):
+            raise ValueError('You can only change your own expenses.')
+        if action == 'delete_expense':
+            linked_plan = ExpectedExpense.query.filter_by(linked_expense_id=expense.id, family_id=family_id).first()
+            if linked_plan:
+                linked_plan.is_paid = False
+                linked_plan.paid_at = None
+                linked_plan.linked_expense_id = None
+            db.session.delete(expense)
+            return f'Deleted expense "{expense.item_name}".'
+        if action_payload.get('item_name') or action_payload.get('name'):
+            expense.item_name = str(action_payload.get('item_name') or action_payload.get('name')).strip()[:100]
+        if action_payload.get('description') is not None:
+            expense.description = str(action_payload.get('description') or '')[:1000]
+        if action_payload.get('amount') is not None:
+            amount = float(action_payload.get('amount') or 0)
+            if amount <= 0:
+                raise ValueError('Expense amount must be positive.')
+            expense.amount = amount
+        if action_payload.get('date'):
+            expense.date = parse_chatbot_date(action_payload.get('date'))
+        if action_payload.get('category'):
+            category = find_chatbot_category(family_id, action_payload.get('category'))
+            if not category:
+                raise ValueError('Category not found.')
+            expense.category_id = category.id
+            expense.bucket_id = (find_budget_bucket(family_id, category.id, expense.date) or type('Empty', (), {'id': None})()).id
+        return f'Updated expense "{expense.item_name}".'
+
+    if action == 'create_category':
+        name = str(action_payload.get('name') or action_payload.get('category') or '').strip()
+        if not name:
+            raise ValueError('Category needs a name.')
+        if Category.query.filter_by(name=name, family_id=family_id).first():
+            raise ValueError('That category already exists.')
+        monthly_limit = float(action_payload.get('monthly_limit') or 0)
+        color = str(action_payload.get('color') or '').strip() or get_next_auto_color(family_id)
+        db.session.add(Category(
+            name=name[:50],
+            color=color,
+            monthly_limit=max(monthly_limit, 0),
+            is_color_auto=not bool(action_payload.get('color')),
+            family_id=family_id,
+        ))
+        return f'Created category "{name}".'
+
+    if action in {'update_category', 'delete_category'}:
+        category_id = action_payload.get('id')
+        category = Category.query.filter_by(id=category_id, family_id=family_id).first()
+        if not category and action_payload.get('category'):
+            category = find_chatbot_category(family_id, action_payload.get('category'))
+        if not category:
+            raise ValueError('Category not found.')
+        if action == 'delete_category':
+            if Expense.query.filter_by(category_id=category.id, family_id=family_id).count():
+                raise ValueError('I will not delete a category that still has expenses. Move those expenses first.')
+            if ExpectedExpense.query.filter_by(category_id=category.id, family_id=family_id).count():
+                raise ValueError('I will not delete a category that still has planned items. Move those planned items first.')
+            db.session.delete(category)
+            return f'Deleted category "{category.name}".'
+        if action_payload.get('name'):
+            category.name = str(action_payload.get('name')).strip()[:50]
+        if action_payload.get('color'):
+            category.color = str(action_payload.get('color')).strip()
+            category.is_color_auto = False
+        if action_payload.get('monthly_limit') is not None:
+            category.monthly_limit = max(float(action_payload.get('monthly_limit') or 0), 0)
+        return f'Updated category "{category.name}".'
+
+    if action in {'create_planned_expense', 'update_planned_expense', 'delete_planned_expense', 'mark_planned_paid', 'generate_daily_report'}:
+        assert_chatbot_manager_action()
+
+    if action == 'create_planned_expense':
+        name = str(action_payload.get('name') or action_payload.get('item_name') or '').strip()
+        amount = float(action_payload.get('amount') or 0)
+        category = find_chatbot_category(family_id, action_payload.get('category'))
+        month = int(action_payload.get('month') or datetime.utcnow().month)
+        year = int(action_payload.get('year') or datetime.utcnow().year)
+        due_day = int(action_payload.get('due_day') or 1)
+        if not name or amount <= 0 or not category or not (1 <= month <= 12) or not (1 <= due_day <= 31):
+            raise ValueError('Planned expense needs name, amount, category, month, year, and due day.')
+        db.session.add(ExpectedExpense(
+            name=name[:150],
+            amount=amount,
+            is_bucket=bool(action_payload.get('is_bucket')),
+            allocated_amount=amount if action_payload.get('is_bucket') else 0.0,
+            due_day=due_day,
+            category_id=category.id,
+            family_id=family_id,
+            month=month,
+            year=year,
+        ))
+        return f'Created planned item "{name}".'
+
+    if action in {'update_planned_expense', 'delete_planned_expense', 'mark_planned_paid'}:
+        planned = ExpectedExpense.query.filter_by(id=action_payload.get('id'), family_id=family_id).first()
+        if not planned:
+            raise ValueError('Planned item not found.')
+        if action == 'delete_planned_expense':
+            if planned.linked_expense_id:
+                linked = Expense.query.filter_by(id=planned.linked_expense_id, family_id=family_id).first()
+                if linked:
+                    db.session.delete(linked)
+            db.session.delete(planned)
+            return f'Deleted planned item "{planned.name}".'
+        if action == 'mark_planned_paid':
+            if planned.is_bucket:
+                raise ValueError('Buckets are drawn down by linked expenses, not marked paid.')
+            if not planned.is_paid:
+                linked = Expense(
+                    date=expected_expense_date(planned),
+                    item_name=f'Budget Plan: {planned.name}',
+                    description='Posted by VaultSync Assistant.',
+                    amount=planned.amount,
+                    category_id=planned.category_id,
+                    user_id=current_user.id,
+                    family_id=family_id,
+                )
+                db.session.add(linked)
+                db.session.flush()
+                planned.is_paid = True
+                planned.paid_at = datetime.utcnow()
+                planned.linked_expense_id = linked.id
+            return f'Marked "{planned.name}" paid.'
+        if action_payload.get('name'):
+            planned.name = str(action_payload.get('name')).strip()[:150]
+        if action_payload.get('amount') is not None:
+            amount = float(action_payload.get('amount') or 0)
+            if amount <= 0:
+                raise ValueError('Planned amount must be positive.')
+            planned.amount = amount
+            planned.allocated_amount = amount if planned.is_bucket else 0.0
+        if action_payload.get('category'):
+            category = find_chatbot_category(family_id, action_payload.get('category'))
+            if not category:
+                raise ValueError('Category not found.')
+            planned.category_id = category.id
+        if action_payload.get('month') is not None:
+            planned.month = int(action_payload.get('month'))
+        if action_payload.get('year') is not None:
+            planned.year = int(action_payload.get('year'))
+        if action_payload.get('due_day') is not None:
+            planned.due_day = int(action_payload.get('due_day'))
+        return f'Updated planned item "{planned.name}".'
+
+    if action == 'generate_daily_report':
+        report_date = parse_chatbot_date(action_payload.get('date'))
+        report = create_daily_budget_report(family_id, report_date)
+        return f'Generated report for {report.report_date.isoformat()}.'
+
+    raise ValueError(f'Unsupported action: {action}')
+
+
 def build_expense_organization_prompt(expenses, categories, exceptions=None):
     """
     Build the prompt for AI expense organization.
@@ -4113,6 +4449,80 @@ def delete_expense(id):
     db.session.delete(expense_to_delete)
     db.session.commit()
     return back_or('dashboard')
+
+
+@app.route('/chatbot/message', methods=['POST'])
+@login_required
+def chatbot_message():
+    if not current_user.family_id:
+        return jsonify({
+            'reply': 'Join a family first, then I can work with your VaultSync data.',
+            'actions': [],
+            'results': [],
+        }), 400
+
+    payload = request.get_json(silent=True) or {}
+    message = str(payload.get('message') or '').strip()
+    execute = bool(payload.get('execute'))
+    actions = payload.get('actions') or []
+
+    if execute:
+        if not isinstance(actions, list) or not actions:
+            return jsonify({'reply': 'No actions were provided to run.', 'actions': [], 'results': []}), 400
+
+        results = []
+        try:
+            for action_payload in actions[:8]:
+                results.append(execute_chatbot_action(action_payload))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({
+                'reply': f'I stopped before saving because: {exc}',
+                'actions': [],
+                'results': results,
+            }), 400
+
+        return jsonify({
+            'reply': 'Done. ' + ' '.join(results),
+            'actions': [],
+            'results': results,
+        })
+
+    if not message:
+        return jsonify({'reply': 'Tell me what you want to do.', 'actions': [], 'results': []}), 400
+
+    lowered_message = message.lower()
+    if any(term in lowered_message for term in CHATBOT_FORBIDDEN_TERMS):
+        return jsonify({
+            'reply': 'I cannot change security, account, member, invite, role, or family deletion settings. A family manager must handle those directly from the Admin Panel.',
+            'actions': [],
+            'results': [],
+        })
+
+    context_payload = chatbot_context_payload(current_user)
+    try:
+        ai_payload = call_gemini_json(
+            build_chatbot_prompt(message, context_payload),
+            chatbot_response_schema()
+        )
+    except Exception as exc:
+        app.logger.exception('VaultSync Assistant failed')
+        return jsonify({
+            'reply': f'I could not reach the AI service right now: {exc}',
+            'actions': [],
+            'results': [],
+        }), 502
+
+    proposed_actions = ai_payload.get('actions') or []
+    if not isinstance(proposed_actions, list):
+        proposed_actions = []
+
+    return jsonify({
+        'reply': str(ai_payload.get('reply') or 'I can help with that.'),
+        'actions': proposed_actions[:8],
+        'results': [],
+    })
 
 
 @app.route('/features')
