@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VaultSync | My Daily Ledger</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=assistant-20260620">
 </head>
 <body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
 
@@ -144,5 +146,6 @@
         // Set the date picker default to today
         document.getElementById('expense_date').valueAsDate = new Date();
     </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=assistant-20260620"></script>
 </body>
 </html>
