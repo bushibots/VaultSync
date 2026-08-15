@@ -78,6 +78,7 @@ class ExpectedExpense(db.Model):
     allocated_amount = db.Column(db.Float, default=0.0, nullable=False)
     is_paid = db.Column(db.Boolean, default=False, nullable=False)
     due_day = db.Column(db.Integer, default=1, nullable=False)
+    is_autopay = db.Column(db.Boolean, default=False, nullable=False)
     paid_at = db.Column(db.DateTime, nullable=True)
     linked_expense_id = db.Column(db.Integer, db.ForeignKey('expense.id'), nullable=True)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
