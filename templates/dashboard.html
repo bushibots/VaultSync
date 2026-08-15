@@ -1798,7 +1798,9 @@
                     }
                     btnText.innerText = 'Success! Added ' + (data.item_name || 'receipt');
                 } else {
-                    btnText.innerText = 'Failed to analyze';
+                    const errorData = await response.json().catch(() => ({}));
+                    alert('AI Error: ' + (errorData.error || 'Failed to analyze'));
+                    btnText.innerText = 'Failed';
                 }
             } catch (err) {
                 console.error(err);
