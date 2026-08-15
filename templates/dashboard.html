@@ -81,7 +81,7 @@
 
     <!-- Main Content -->
     <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
-        <div class="dashboard-page min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-3 sm:p-4 md:p-8">
+        <div class="dashboard-page min-h-screen premium-bg p-3 sm:p-4 md:p-8">
 
             <!-- Welcome Screen for Users Without Family -->
             {% if not user.family_id %}
@@ -170,7 +170,7 @@
 
             <!-- Top Stat Cards - Full Width Responsive Grid -->
             <div class="dashboard-stat-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-blue-100 hover:shadow-lg transition">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-blue-100 hover:shadow-lg transition">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Family Income</h3>
                         <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
@@ -179,7 +179,7 @@
                     <p class="text-xs text-slate-400 mt-2">This month{% if finance.has_override %} | custom{% endif %}</p>
                 </div>
 
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-red-100 hover:shadow-lg transition">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-red-100 hover:shadow-lg transition">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Spent</h3>
                         <i class="fas fa-credit-card text-red-400 text-lg" aria-hidden="true"></i>
@@ -190,7 +190,7 @@
                     </p>
                 </div>
 
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-green-100 hover:shadow-lg transition sm:col-span-2 lg:col-span-1">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-green-100 hover:shadow-lg transition sm:col-span-2 lg:col-span-1">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Available Balance</h3>
                         <i class="fas fa-piggy-bank text-green-400 text-lg" aria-hidden="true"></i>
@@ -208,7 +208,7 @@
 
             {% if is_family_manager %}
             <!-- Monthly Finance Settings -->
-            <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-blue-100 mb-8">
+            <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-blue-100 mb-8">
                 <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <i class="fas fa-sliders-h text-blue-600"></i>Monthly Settings
                 </h3>
@@ -242,11 +242,18 @@
                 <!-- Left Column: Forms & Management -->
                 <div class="lg:col-span-1 space-y-6">
                     <!-- Add Expense Form -->
-                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
-                        <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            <i class="fas fa-plus text-blue-600 bg-blue-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
-                            Log Expense
-                        </h2>
+                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                        
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fas fa-plus text-blue-600 bg-blue-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
+                                Log Expense
+                            </h2>
+                            <button type="button" onclick="document.getElementById('statementModal').classList.remove('hidden')" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-semibold py-1.5 px-3 rounded-lg text-xs transition border border-indigo-200">
+                                <i class="fas fa-file-invoice-dollar mr-1"></i> Bulk Import
+                            </button>
+                        </div>
+
                         <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-3" data-loading>
                             <div class="mb-3">
                                 <label class="flex items-center justify-center w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg border-2 border-dashed border-slate-300 cursor-pointer transition">
@@ -288,7 +295,7 @@
                     </div>
 
                     <!-- Categories Section -->
-                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                         <h2 class="text-lg font-bold text-slate-800 mb-4">Categories</h2>
                         <form action="{{ url_for('apply_category_presets') }}" method="POST" class="mb-3" data-loading>
                             <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700 duration-200 text-xs md:text-sm flex items-center justify-center gap-2">
@@ -342,7 +349,7 @@
                         </div>
                         <div class="spending-chart-layout">
                             <div class="chart-stage">
-                                <canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas>
+                                <div class="chart-container-responsive"><canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas></div>
                                 <div class="chart-center">
                                     <span id="chartCenterLabel">Total spent</span>
                                     <strong id="chartCenterTotal">&#8377;0</strong>
@@ -407,7 +414,7 @@
             <!-- Budget Planning & Buckets Section -->
             <div class="dashboard-section-grid grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 <!-- Budget Plan -->
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                         <i class="fas fa-calendar-check text-teal-600 bg-teal-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
                         Budget Plan
@@ -527,7 +534,7 @@
                 </div>
 
                 <!-- Reserved Buckets -->
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                         <i class="fas fa-bucket text-slate-600 bg-slate-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
                         Reserved Buckets
@@ -571,7 +578,7 @@
             </div>
 
             <!-- Recent Activity Section -->
-            <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100 mb-8">
+            <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100 mb-8">
                 <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <i class="fas fa-history text-purple-600 bg-purple-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
                     Recent Activity
@@ -765,7 +772,7 @@
             </div>
 
             {% if is_family_manager %}
-            <section class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-6 border border-blue-100 mb-6 md:mb-8">
+            <section class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-6 border border-blue-100 mb-6 md:mb-8">
                 <form method="POST" action="{{ url_for('update_monthly_finance_setting') }}" class="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.2fr_auto] gap-3 items-end">
                     <input type="hidden" name="month" value="{{ selected_month }}">
                     <input type="hidden" name="year" value="{{ selected_year }}">
@@ -793,7 +800,7 @@
                 
                 <div class="dashboard-flow dashboard-manage-column flex flex-col gap-4 sm:gap-6">
                     <!-- Expense Entry Form -->
-                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-6">
                             <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-plus text-blue-600" aria-hidden="true"></i>
@@ -842,7 +849,7 @@
                     </div>
 
                     <!-- Create Custom Category Form -->
-                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-4">
                             <div class="bg-slate-800 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-palette text-white" aria-hidden="true"></i>
@@ -883,7 +890,7 @@
                     </div>
 
                     <!-- Categories Management -->
-                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-center mb-4">
                             <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-layer-group text-orange-600" aria-hidden="true"></i>
@@ -917,7 +924,7 @@
                     </div>
 
                     <!-- Monthly Budget Plan -->
-                    <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                         <div class="flex items-start mb-4">
                             <div class="bg-teal-100 rounded-full p-3 mr-3 flex-shrink-0">
                                 <i class="fas fa-calendar-check text-teal-600" aria-hidden="true"></i>
@@ -1058,7 +1065,7 @@
 
                 <div class="dashboard-flow dashboard-insight-column flex flex-col gap-4 sm:gap-6">
                 <!-- Reserved Buckets -->
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
                     <div class="flex items-start justify-between gap-3 mb-5">
                         <div class="flex items-center">
                             <div class="bg-slate-100 rounded-full p-3 mr-3 flex-shrink-0">
@@ -1125,7 +1132,7 @@
                     </div>
                     <div class="spending-chart-layout">
                         <div class="chart-stage">
-                            <canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas>
+                            <div class="chart-container-responsive"><canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas></div>
                             <div class="chart-center" aria-hidden="true">
                                 <span id="chartCenterLabel">Total spent</span>
                                 <strong id="chartCenterTotal">&#8377;0</strong>
@@ -1163,7 +1170,7 @@
             </div>
 
             <!-- Recent Activity Table -->
-            <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-8">
+            <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-8">
                 <div class="flex items-center mb-6">
                     <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
                         <i class="fas fa-history text-purple-600"></i>
@@ -1322,7 +1329,7 @@
 
             <!-- Budget Tools & Analysis Section -->
             <div class="dashboard-tools-grid grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-fire text-orange-600" aria-hidden="true"></i>
@@ -1342,7 +1349,7 @@
                     </div>
                 </div>
 
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-coins text-green-600" aria-hidden="true"></i>
@@ -1362,7 +1369,7 @@
                     </div>
                 </div>
 
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-cyan-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-calendar-day text-cyan-700" aria-hidden="true"></i>
@@ -1374,7 +1381,7 @@
                     <p class="text-xs text-slate-500 mt-4">Projected month total: <span class="{% if projected_month_total > income %}text-red-600{% else %}text-green-600{% endif %} font-bold">&#8377;{{ "{:,.0f}".format(projected_month_total) }}</span></p>
                 </div>
 
-                <div class="dashboard-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
+                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-6 border border-gray-100">
                     <div class="flex items-center mb-4">
                         <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
                             <i class="fas fa-lightbulb text-purple-600" aria-hidden="true"></i>
@@ -1709,8 +1716,8 @@
                                 bodyColor: getTheme().tooltipText,
                                 padding: 14,
                                 cornerRadius: 10,
-                                titleFont: { size: 13, weight: '700', family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
-                                bodyFont: { size: 12, family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
+                                titleFont: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                                bodyFont: { size: 12, family: "'Inter', sans-serif" },
                                 borderColor: getTheme().tooltipBorder,
                                 borderWidth: 1,
                                 displayColors: true,

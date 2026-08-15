@@ -5890,6 +5890,108 @@ def scan_receipt():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/scan-statement', methods=['POST'])
+@login_required
+def scan_statement():
+    if 'statement' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['statement']
+    instruction = request.form.get('instruction', '')
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file:
+        file_data = file.read()
+        base64_file = base64.b64encode(file_data).decode('utf-8')
+        mime_type = file.mimetype
+        if not mime_type:
+            if file.filename.lower().endswith('.pdf'):
+                mime_type = 'application/pdf'
+            else:
+                mime_type = 'image/jpeg'
+                
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'Gemini API key not configured'}), 500
+            
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}'
+        
+        categories = Category.query.filter_by(family_id=current_user.family_id).all()
+        cat_map = {c.name.lower(): c.id for c in categories}
+        categories_str = ", ".join([c.name for c in categories])
+        
+        prompt = f"Extract all expenses from this statement. You must return ONLY a valid JSON array of objects. Keys for each object: 'amount' (number), 'item_name' (string), 'date' (YYYY-MM-DD), 'category' (string chosen from this exact list: {categories_str}). "
+        if instruction:
+            prompt += f"\n\nUser Instructions: {instruction}"
+            
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": mime_type, "data": base64_file}}
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            }
+        }
+        
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=45) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                text_response = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '[]')
+                parsed = json.loads(text_response)
+                
+                if not isinstance(parsed, list):
+                    parsed = [parsed]
+                    
+                added_count = 0
+                default_cat_id = categories[0].id if categories else None
+                
+                for item in parsed:
+                    if 'amount' not in item or 'item_name' not in item:
+                        continue
+                        
+                    amt = float(item['amount'])
+                    if amt <= 0:
+                        continue
+                        
+                    cat_name = str(item.get('category', '')).lower()
+                    cat_id = cat_map.get(cat_name, default_cat_id)
+                    
+                    date_str = item.get('date')
+                    exp_date = datetime.now().date()
+                    if date_str:
+                        try:
+                            exp_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                        except:
+                            pass
+                            
+                    exp = Expense(
+                        date=exp_date,
+                        item_name=item['item_name'],
+                        amount=amt,
+                        category_id=cat_id,
+                        user_id=current_user.id,
+                        family_id=current_user.family_id
+                    )
+                    db.session.add(exp)
+                    added_count += 1
+                    
+                db.session.commit()
+                return jsonify({'success': True, 'count': added_count, 'message': f'Successfully imported {added_count} expenses.'})
+                
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
