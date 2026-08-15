@@ -8,6 +8,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
+
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#3b82f6">
 </head>
 <body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -245,6 +248,13 @@
                             Log Expense
                         </h2>
                         <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-3" data-loading>
+                            <div class="mb-3">
+                                <label class="flex items-center justify-center w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg border-2 border-dashed border-slate-300 cursor-pointer transition">
+                                    <i class="fas fa-camera mr-2"></i> <span id="receipt-upload-text">Upload Receipt to Auto-fill</span>
+                                    <input type="file" id="receipt-input" class="hidden" accept="image/*" capture="environment">
+                                </label>
+                            </div>
+
                             <div>
                                 <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Name</label>
                                 <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., Groceries" required>
@@ -1747,6 +1757,62 @@
             }
         }
     </script>
+
+    <script>
+        document.getElementById('receipt-input')?.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const btnText = document.getElementById('receipt-upload-text');
+            const originalText = btnText.innerText;
+            btnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+            
+            const formData = new FormData();
+            formData.append('receipt', file);
+            
+            try {
+                const response = await fetch('/api/scan-receipt', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.item_name) document.querySelector('input[name="item_name"]').value = data.item_name;
+                    if (data.amount) document.querySelector('input[name="amount"]').value = data.amount;
+                    if (data.category) {
+                        const select = document.querySelector('select[name="category_id"]');
+                        for (let i = 0; i < select.options.length; i++) {
+                            if (select.options[i].text.toLowerCase().includes(data.category.toLowerCase())) {
+                                select.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    btnText.innerText = 'Success! Added ' + (data.item_name || 'receipt');
+                } else {
+                    btnText.innerText = 'Failed to analyze';
+                }
+            } catch (err) {
+                console.error(err);
+                btnText.innerText = 'Error occurred';
+            }
+            
+            setTimeout(() => {
+                if(btnText) btnText.innerText = originalText;
+            }, 3000);
+        });
+    </script>
+
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/service-worker.js');
+            });
+        }
+    </script>
+
 </body>
 </html>
 
