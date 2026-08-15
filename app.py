@@ -5878,7 +5878,7 @@ def scan_receipt():
         if not api_key:
             return jsonify({'error': 'Gemini API key not configured'}), 500
             
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}'
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
         
         categories = [c.name for c in Category.query.filter_by(family_id=current_user.family_id).all()]
         categories_str = ", ".join(categories)
@@ -5969,7 +5969,7 @@ def scan_statement():
         if not api_key:
             return jsonify({'error': 'Gemini API key not configured'}), 500
             
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}'
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
         
         parts = [{"text": full_prompt}]
         if base64_file:
