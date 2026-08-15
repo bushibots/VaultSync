@@ -3224,3 +3224,72 @@ body {
         min-height: 250px;
     }
 }
+
+
+/* ============================================
+   VaultSync Bug Fixes & Dark Mode Perfection
+   ============================================ */
+
+/* Dark Mode Text Overrides */
+.dark-mode .text-slate-800,
+.dark-mode .text-gray-800,
+.dark-mode .text-slate-700,
+.dark-mode .text-gray-700,
+.dark-mode .text-slate-900,
+.dark-mode .text-gray-900 {
+    color: #f1f5f9 !important; /* slate-100 */
+}
+
+.dark-mode .text-slate-600,
+.dark-mode .text-gray-600,
+.dark-mode .text-slate-500,
+.dark-mode .text-gray-500 {
+    color: #94a3b8 !important; /* slate-400 */
+}
+
+/* Dark Mode Background Overrides for Cards/Badges */
+.dark-mode .bg-white,
+.dark-mode .bg-slate-50,
+.dark-mode .bg-gray-50,
+.dark-mode .bg-blue-50,
+.dark-mode .bg-indigo-50 {
+    background-color: rgba(30, 41, 59, 0.5) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #e2e8f0 !important;
+}
+
+/* Dark Mode Form Inputs */
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+    background-color: rgba(15, 23, 42, 0.8) !important; /* slate-900 */
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: #f8fafc !important; /* slate-50 */
+}
+
+.dark-mode input::placeholder,
+.dark-mode textarea::placeholder {
+    color: #64748b !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.7);
+}
+.dark-mode ::-webkit-scrollbar-thumb {
+    background: rgba(71, 85, 105, 0.6);
+}
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.8);
+}
