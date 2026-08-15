@@ -639,7 +639,7 @@ def summarize_expenses(expenses):
 
 
 def build_ai_budget_export(period_type, start, end, target_start, target_end):
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    expenses = Expense.query.filter(
         Expense.date >= start,
         Expense.date <= end,
         Expense.family_id == current_user.family_id
@@ -819,7 +819,7 @@ def build_family_ai_plan_context(family_id, target_start, target_end):
     today = datetime.now().date()
     source_end = min(max(today, target_start), target_end)
     source_start = target_start
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= source_start,
         Expense.date <= source_end
@@ -1356,7 +1356,7 @@ def chatbot_context_payload(user):
     today = datetime.utcnow().date()
     month_start = today.replace(day=1)
     categories = Category.query.filter_by(family_id=user.family_id).order_by(Category.name.asc()).all()
-    recent_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+    recent_expenses = Expense.query.filter_by(
         family_id=user.family_id
     ).order_by(Expense.date.desc(), Expense.id.desc()).limit(20).all()
     planned_items = ExpectedExpense.query.filter_by(
@@ -1476,7 +1476,7 @@ def execute_chatbot_action(action_payload):
         return f'Added expense "{item_name}" for Rs. {amount:,.0f}.'
 
     if action in {'update_expense', 'delete_expense'}:
-        expense = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(id=action_payload.get('id'), family_id=family_id).first()
+        expense = Expense.query.filter_by(id=action_payload.get('id'), family_id=family_id).first()
         if not expense:
             raise ValueError('Expense not found.')
         if expense.user_id != current_user.id and not is_family_manager(current_user):
@@ -1533,7 +1533,7 @@ def execute_chatbot_action(action_payload):
         if not category:
             raise ValueError('Category not found.')
         if action == 'delete_category':
-            if Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(category_id=category.id, family_id=family_id).count():
+            if Expense.query.filter_by(category_id=category.id, family_id=family_id).count():
                 raise ValueError('I will not delete a category that still has expenses. Move those expenses first.')
             if ExpectedExpense.query.filter_by(category_id=category.id, family_id=family_id).count():
                 raise ValueError('I will not delete a category that still has planned items. Move those planned items first.')
@@ -1579,7 +1579,7 @@ def execute_chatbot_action(action_payload):
             raise ValueError('Planned item not found.')
         if action == 'delete_planned_expense':
             if planned.linked_expense_id:
-                linked = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(id=planned.linked_expense_id, family_id=family_id).first()
+                linked = Expense.query.filter_by(id=planned.linked_expense_id, family_id=family_id).first()
                 if linked:
                     db.session.delete(linked)
             db.session.delete(planned)
@@ -1733,7 +1733,7 @@ def organize_expenses_for_family(family_id, start_date, end_date):
             'message': 'No categories available.'
         }
 
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= start_date,
         Expense.date <= end_date
@@ -2066,7 +2066,7 @@ def build_forecast_engine(family_id, month_start, today, month_end, monthly_budg
     lookback_start = add_months(month_start, -6)
     note_rules = build_forecast_note_rules(admin_notes, categories)
 
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= lookback_start,
         Expense.date <= today
@@ -2385,7 +2385,7 @@ def build_savings_forecast_context(family_id, admin_notes):
     remaining_days = max((month_end - today).days, 0)
 
     # Backend-First Math: Get actual expenses for current month (up to today)
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= month_start,
         Expense.date <= today
@@ -2722,14 +2722,14 @@ def build_daily_report_context(family_id, report_date=None):
     week_end = week_start + timedelta(days=6)
     
     # Get today's expenses
-    today_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    today_expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date == report_date
     ).all()
     today_total = sum(float(exp.amount) for exp in today_expenses)
     
     # Get this week's expenses
-    week_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    week_expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= week_start,
         Expense.date <= min(week_end, report_date)
@@ -2737,7 +2737,7 @@ def build_daily_report_context(family_id, report_date=None):
     week_total = sum(float(exp.amount) for exp in week_expenses)
     
     # Get this month's expenses
-    month_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    month_expenses = Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= month_start,
         Expense.date <= report_date
@@ -2767,7 +2767,7 @@ def build_daily_report_context(family_id, report_date=None):
     # Spend trend (compare last 7 days vs previous 7 days)
     seven_days_ago = report_date - timedelta(days=7)
     last_week_start = seven_days_ago - timedelta(days=7)
-    last_week_total = sum(float(exp.amount) for exp in Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    last_week_total = sum(float(exp.amount) for exp in Expense.query.filter(
         Expense.family_id == family_id,
         Expense.date >= last_week_start,
         Expense.date <= seven_days_ago
@@ -3346,7 +3346,7 @@ def dashboard():
     year_str = str(selected_year)
 
     # Filter expenses by the selected month, year, AND family
-    all_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    all_expenses = Expense.query.filter(
         func.strftime('%Y', Expense.date) == year_str,
         func.strftime('%m', Expense.date) == month_str,
         Expense.family_id == current_user.family_id
@@ -3521,7 +3521,7 @@ def financial_reports():
     monthly_budget = finance['monthly_budget']
 
     categories = Category.query.filter_by(family_id=current_user.family_id).order_by(Category.name.asc()).all()
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter(
+    expenses = Expense.query.filter(
         Expense.family_id == current_user.family_id,
         Expense.date >= month_start,
         Expense.date <= month_end
@@ -3800,7 +3800,7 @@ def daily_diary():
     else:
         selected_date = today
 
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+    expenses = Expense.query.filter_by(
         date=selected_date,
         family_id=current_user.family_id
     ).order_by(Expense.id.asc()).all()
@@ -3836,7 +3836,7 @@ def daily_diary():
 def my_spendings():
     all_categories = Category.query.filter_by(family_id=current_user.family_id).all()
     # Fetch ONLY the logged-in user's expenses in their family
-    my_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+    my_expenses = Expense.query.filter_by(
         user_id=current_user.id, 
         family_id=current_user.family_id
     ).order_by(Expense.date.desc()).all()
@@ -4019,7 +4019,7 @@ def toggle_expected(id):
 
     if ee.is_paid:
         if ee.linked_expense_id:
-            linked_expense = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+            linked_expense = Expense.query.filter_by(
                 id=ee.linked_expense_id,
                 family_id=current_user.family_id
             ).first()
@@ -4053,7 +4053,7 @@ def toggle_expected(id):
 @app.route('/edit_expense/<int:id>', methods=['GET', 'POST'])
 @login_required
 def edit_expense(id):
-    expense = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+    expense = Expense.query.filter_by(
         id=id,
         family_id=current_user.family_id
     ).first_or_404()
@@ -4153,13 +4153,13 @@ def delete_expected(id):
     ).first_or_404()
 
     if ee.is_bucket:
-        Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+        Expense.query.filter_by(
             bucket_id=ee.id,
             family_id=current_user.family_id
         ).update({'bucket_id': None})
 
     if ee.linked_expense_id:
-        linked_expense = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+        linked_expense = Expense.query.filter_by(
             id=ee.linked_expense_id,
             family_id=current_user.family_id
         ).first()
@@ -4234,7 +4234,7 @@ def edit_expected(id):
         planned.due_day = planned_due_day
 
         if planned.linked_expense_id:
-            linked_expense = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+            linked_expense = Expense.query.filter_by(
                 id=planned.linked_expense_id,
                 family_id=current_user.family_id
             ).first()
@@ -4385,7 +4385,7 @@ def edit_category(id):
         Category.family_id == current_user.family_id,
         Category.id != id
     ).order_by(Category.name.asc()).all()
-    expenses_count = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(category_id=id, family_id=current_user.family_id).count()
+    expenses_count = Expense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
     expected_count = ExpectedExpense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
     current_month = datetime.utcnow()
     month_spent = db.session.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
@@ -4443,7 +4443,7 @@ def edit_category(id):
 def delete_category(id):
     category = Category.query.filter_by(id=id, family_id=current_user.family_id).first_or_404()
     # Check if category has expenses in this family
-    expenses_count = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(category_id=id, family_id=current_user.family_id).count()
+    expenses_count = Expense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
     expected_count = ExpectedExpense.query.filter_by(category_id=id, family_id=current_user.family_id).count()
     if expenses_count == 0 and expected_count == 0:
         db.session.delete(category)
@@ -4460,7 +4460,7 @@ def delete_category(id):
             Category.family_id == current_user.family_id
         ).first()
         if request.method == 'POST' and replacement:
-            Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+            Expense.query.filter_by(
                 category_id=id,
                 family_id=current_user.family_id
             ).update({'category_id': replacement.id})
@@ -4479,7 +4479,7 @@ def delete_category(id):
 @app.route('/delete_expense/<int:id>')
 @login_required
 def delete_expense(id):
-    expense_to_delete = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(
+    expense_to_delete = Expense.query.filter_by(
         id=id, 
         family_id=current_user.family_id
     ).first_or_404()
@@ -4923,7 +4923,7 @@ def revert_ai_budget_application(application_id):
         ).first()
         if not category:
             continue
-        has_expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(category_id=category.id, family_id=current_user.family_id).first()
+        has_expenses = Expense.query.filter_by(category_id=category.id, family_id=current_user.family_id).first()
         has_expected = ExpectedExpense.query.filter_by(category_id=category.id, family_id=current_user.family_id).first()
         if has_expenses or has_expected:
             continue
@@ -4954,7 +4954,7 @@ def revert_ai_budget_application(application_id):
 @app.route('/export_ai_data')
 @login_required
 def export_ai_data():
-    expenses = Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(family_id=current_user.family_id).all()
+    expenses = Expense.query.filter_by(family_id=current_user.family_id).all()
     def generate():
         data = StringIO()
         writer = csv.writer(data)
@@ -5503,7 +5503,7 @@ def delete_family():
     family_id = current_user.family_id
 
     # Delete all expenses, categories, expected expenses
-    Expense.query.options(db.joinedload(Expense.category), db.joinedload(Expense.user)).filter_by(family_id=family_id).delete()
+    Expense.query.filter_by(family_id=family_id).delete()
     Category.query.filter_by(family_id=family_id).delete()
     ExpectedExpense.query.filter_by(family_id=family_id).delete()
     MonthlyFinanceSetting.query.filter_by(family_id=family_id).delete()
