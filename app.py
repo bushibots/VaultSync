@@ -5901,96 +5901,94 @@ def scan_statement():
     
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
+        
+    extracted_text = None
+    base64_file = None
+    mime_type = file.mimetype
+    
     if file:
         file_data = file.read()
-        base64_file = base64.b64encode(file_data).decode('utf-8')
-        mime_type = file.mimetype
+        
         if not mime_type:
             if file.filename.lower().endswith('.pdf'):
                 mime_type = 'application/pdf'
             else:
                 mime_type = 'image/jpeg'
                 
+        if mime_type == 'application/pdf':
+            try:
+                import PyPDF2
+                import io
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_data))
+                text_parts = []
+                for page in pdf_reader.pages:
+                    text_parts.append(page.extract_text() or '')
+                extracted_text = "\n".join(text_parts)
+            except ImportError:
+                return jsonify({'error': 'PyPDF2 is not installed. Please run `pip install PyPDF2` in your server console.'}), 500
+            except Exception as e:
+                return jsonify({'error': f'Failed to parse PDF locally: {str(e)}'}), 500
+        else:
+            base64_file = base64.b64encode(file_data).decode('utf-8')
+
+        context_payload = chatbot_context_payload(current_user)
+        base_prompt = "You are a bulk statement importer. Extract all valid expenses from the provided document and return standard VaultSync AI actions (e.g., 'create_expense'). Do NOT return a reply, only return actions."
+        if instruction:
+            base_prompt += f"\n\nUSER INSTRUCTIONS (Must follow closely): {instruction}"
+            
+        if extracted_text:
+            base_prompt += f"\n\nDOCUMENT TEXT:\n{extracted_text}"
+            
+        full_prompt = build_chatbot_prompt(base_prompt, context_payload)
+        
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             return jsonify({'error': 'Gemini API key not configured'}), 500
             
         url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}'
         
-        categories = Category.query.filter_by(family_id=current_user.family_id).all()
-        cat_map = {c.name.lower(): c.id for c in categories}
-        categories_str = ", ".join([c.name for c in categories])
-        
-        prompt = f"Extract all expenses from this statement. You must return ONLY a valid JSON array of objects. Keys for each object: 'amount' (number), 'item_name' (string), 'date' (YYYY-MM-DD), 'category' (string chosen from this exact list: {categories_str}). "
-        if instruction:
-            prompt += f"\n\nUser Instructions: {instruction}"
+        parts = [{"text": full_prompt}]
+        if base64_file:
+            parts.append({"inlineData": {"mimeType": mime_type, "data": base64_file}})
             
+        schema = chatbot_response_schema()
+        
         payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": mime_type, "data": base64_file}}
-                ]
-            }],
+            "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.1,
                 "responseMimeType": "application/json",
+                "responseSchema": schema
             }
         }
         
         try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
             with urllib.request.urlopen(req, timeout=45) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                text_response = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '[]')
-                parsed = json.loads(text_response)
+                text_response = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '{}')
+                ai_payload = json.loads(text_response)
                 
-                if not isinstance(parsed, list):
-                    parsed = [parsed]
+                proposed_actions = ai_payload.get('actions') or []
+                if not isinstance(proposed_actions, list):
+                    proposed_actions = []
                     
-                added_count = 0
-                default_cat_id = categories[0].id if categories else None
+                if not proposed_actions:
+                    return jsonify({'success': False, 'message': ai_payload.get('reply', 'No valid expenses or actions found.')})
+                    
+                # Execute actions
+                results = []
+                for act in proposed_actions:
+                    results.append(execute_chatbot_action(act))
                 
-                for item in parsed:
-                    if 'amount' not in item or 'item_name' not in item:
-                        continue
-                        
-                    amt = float(item['amount'])
-                    if amt <= 0:
-                        continue
-                        
-                    cat_name = str(item.get('category', '')).lower()
-                    cat_id = cat_map.get(cat_name, default_cat_id)
-                    
-                    date_str = item.get('date')
-                    exp_date = datetime.now().date()
-                    if date_str:
-                        try:
-                            exp_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        except:
-                            pass
-                            
-                    exp = Expense(
-                        date=exp_date,
-                        item_name=item['item_name'],
-                        amount=amt,
-                        category_id=cat_id,
-                        user_id=current_user.id,
-                        family_id=current_user.family_id
-                    )
-                    db.session.add(exp)
-                    added_count += 1
-                    
                 db.session.commit()
-                return jsonify({'success': True, 'count': added_count, 'message': f'Successfully imported {added_count} expenses.'})
+                
+                return jsonify({'success': True, 'count': len(proposed_actions), 'message': f'Executed {len(proposed_actions)} actions: ' + ', '.join(results)})
                 
         except Exception as e:
+            db.session.rollback()
             return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     with app.app_context():
