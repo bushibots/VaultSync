@@ -5848,11 +5848,32 @@ def scan_receipt():
     file = request.files['receipt']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
-    if file:
-        image_data = file.read()
-        base64_image = base64.b64encode(image_data).decode('utf-8')
-        mime_type = file.mimetype or 'image/jpeg'
         
+    if file:
+        file_data = file.read()
+        mime_type = file.mimetype
+        if not mime_type:
+            mime_type = 'application/pdf' if file.filename.lower().endswith('.pdf') else 'image/jpeg'
+            
+        extracted_text = None
+        base64_file = None
+        
+        if mime_type == 'application/pdf':
+            try:
+                import PyPDF2
+                import io
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_data))
+                text_parts = []
+                for page in pdf_reader.pages:
+                    text_parts.append(page.extract_text() or '')
+                extracted_text = "\n".join(text_parts)
+            except ImportError:
+                return jsonify({'error': 'PyPDF2 is not installed.'}), 500
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        else:
+            base64_file = base64.b64encode(file_data).decode('utf-8')
+
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             return jsonify({'error': 'Gemini API key not configured'}), 500
@@ -5862,13 +5883,16 @@ def scan_receipt():
         categories = [c.name for c in Category.query.filter_by(family_id=current_user.family_id).all()]
         categories_str = ", ".join(categories)
         
+        prompt = f"Extract the total amount, the main item name/vendor, and suggest the best category from this list: {categories_str}. Return ONLY valid JSON with keys: 'amount' (number), 'item_name' (string), 'category' (string). "
+        if extracted_text:
+            prompt += f"\n\nDOCUMENT TEXT:\n{extracted_text}"
+            
+        parts = [{"text": prompt}]
+        if base64_file:
+            parts.append({"inlineData": {"mimeType": mime_type, "data": base64_file}})
+            
         payload = {
-            "contents": [{
-                "parts": [
-                    {"text": f"Extract the total amount, the main item name/vendor, and suggest the best category from this list: {categories_str}. Return ONLY valid JSON with keys: 'amount' (number), 'item_name' (string), 'category' (string)."},
-                    {"inlineData": {"mimeType": mime_type, "data": base64_image}}
-                ]
-            }],
+            "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.1,
                 "responseMimeType": "application/json",
