@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="VaultSync - Modern Family Budget Planner & Expense Manager">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
+    <title>{% block title %}VaultSync{% endblock %}</title>
+
+    <!-- Prevent Dark Mode FOUC -->
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('vaultsync-dark-mode');
+                var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (saved === 'true' || (saved === null && prefersDark)) {
+                    document.documentElement.classList.add('dark');
+                }
+            } catch (e) {}
+        })();
+    </script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        display: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
+                    }
+                }
+            }
+        };
+    </script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.0">
+    {% block head %}{% endblock %}
+</head>
+<body class=" antialiased">
+    <script>
+        if (document.documentElement.classList.contains('dark')) {
+            document.body.classList.add('dark-mode');
+        }
+    </script>
+
+    <!-- Mobile & Tablet Top Bar (< 1024px) -->
+    <header class="vs-mobile-topbar">
+        <div class="flex items-center gap-3">
+            <button type="button" data-drawer-toggle class="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/15 flex items-center justify-center text-white" aria-label="Open navigation menu">
+                <i class="fas fa-bars text-sm"></i>
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="vs-brand-link">
+                <span class="vs-brand-icon" style="width: 2rem; height: 2rem; font-size: 0.85rem;">
+                    <i class="fas fa-vault"></i>
+                </span>
+                <span class="vs-brand-title text-base">VaultSync</span>
+            </a>
+        </div>
+        <div class="flex items-center gap-2">
+            {% if current_user.is_authenticated and current_user.family %}
+            <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-xs font-semibold text-slate-200">
+                <i class="fas fa-users text-indigo-400 text-[10px]"></i>
+                {{ current_user.family.name }}
+            </span>
+            {% endif %}
+            <button type="button" data-theme-toggle class="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/15 flex items-center justify-center text-slate-200" aria-label="Toggle color theme">
+                <i class="fas fa-moon text-sm"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Slide-over Drawer Backdrop -->
+    <div id="vs-drawer-backdrop" class="vs-drawer-backdrop"></div>
+
+    <div class="vs-app-shell">
+        <!-- Unified Sidebar (Fixed on Desktop, Slide-over Drawer on Mobile/Tablet) -->
+        <aside id="vs-sidebar" class="vs-sidebar" aria-label="Primary Navigation">
+            <div class="vs-sidebar-brand">
+                <a href="{{ url_for('dashboard') }}" class="vs-brand-link">
+                    <span class="vs-brand-icon">
+                        <i class="fas fa-vault"></i>
+                    </span>
+                    <div>
+                        <div class="vs-brand-title">VaultSync</div>
+                        <div class="vs-brand-subtitle">Family Finance Hub</div>
+                    </div>
+                </a>
+                <button type="button" data-drawer-close class="lg:hidden w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-slate-300 flex items-center justify-center" aria-label="Close menu">
+                    <i class="fas fa-times text-xs"></i>
+                </button>
+            </div>
+
+            {% if current_user.is_authenticated and current_user.family %}
+            <div class="vs-family-pill">
+                <div class="min-w-0">
+                    <div class="vs-family-pill-name" title="{{ current_user.family.name }}">
+                        <i class="fas fa-house-user text-indigo-400 mr-1.5 text-xs"></i>{{ current_user.family.name }}
+                    </div>
+                    <div class="vs-family-pill-code mt-0.5">Code: {{ current_user.family.invite_code }}</div>
+                </div>
+                <button type="button" onclick="copyToClipboard('{{ current_user.family.invite_code }}', this)" class="px-2 py-1 rounded-md bg-white/10 hover:bg-white/15 text-[11px] font-semibold text-slate-200 flex items-center gap-1 flex-shrink-0" title="Copy family invite code">
+                    <i class="fas fa-copy"></i>
+                    <span>Copy</span>
+                </button>
+            </div>
+            {% endif %}
+
+            <!-- Workspace Section -->
+            <div class="vs-nav-section">
+                <div class="vs-nav-label">Workspace</div>
+                <nav class="vs-nav-list">
+                    <a href="{{ url_for('dashboard') }}" class="vs-nav-link {% if current_endpoint == 'dashboard' %}active{% endif %}">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Overview</span>
+                    </a>
+                    <a href="{{ url_for('daily_diary') }}" class="vs-nav-link {% if current_endpoint == 'daily_diary' %}active{% endif %}">
+                        <i class="fas fa-calendar-day"></i>
+                        <span>Daily Ledger</span>
+                    </a>
+                    <a href="{{ url_for('my_spendings') }}" class="vs-nav-link {% if current_endpoint == 'my_spendings' %}active{% endif %}">
+                        <i class="fas fa-wallet"></i>
+                        <span>My Spendings</span>
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Intelligence & Reports Section -->
+            <div class="vs-nav-section">
+                <div class="vs-nav-label">Intelligence</div>
+                <nav class="vs-nav-list">
+                    <a href="{{ url_for('financial_reports') }}" class="vs-nav-link {% if current_endpoint == 'financial_reports' %}active{% endif %}">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Financial Analytics</span>
+                    </a>
+                    <a href="{{ url_for('daily_reports') }}" class="vs-nav-link {% if current_endpoint in ['daily_reports', 'view_report'] %}active{% endif %}">
+                        <i class="fas fa-bolt"></i>
+                        <span>Daily AI Briefings</span>
+                        {% if unread_reports_count > 0 %}
+                        <span class="vs-nav-badge">{{ unread_reports_count }}</span>
+                        {% endif %}
+                    </a>
+                    <a href="{{ url_for('ai_budget') }}" class="vs-nav-link {% if current_endpoint == 'ai_budget' %}active{% endif %}">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <span>AI Budget Planner</span>
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Vault & Administration Section -->
+            <div class="vs-nav-section">
+                <div class="vs-nav-label">Management</div>
+                <nav class="vs-nav-list">
+                    <a href="{{ url_for('archive') }}" class="vs-nav-link {% if current_endpoint == 'archive' %}active{% endif %}">
+                        <i class="fas fa-box-archive"></i>
+                        <span>Monthly Archive</span>
+                    </a>
+                    {% if is_manager %}
+                    <a href="{{ url_for('admin_panel') }}" class="vs-nav-link {% if current_endpoint == 'admin_panel' %}active{% endif %}">
+                        <i class="fas fa-sliders"></i>
+                        <span>Family Admin</span>
+                    </a>
+                    {% endif %}
+                    <a href="{{ url_for('features') }}" class="vs-nav-link {% if current_endpoint == 'features' %}active{% endif %}">
+                        <i class="fas fa-circle-question"></i>
+                        <span>App Guide</span>
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Sidebar Footer -->
+            <div class="vs-sidebar-footer">
+                <button type="button" data-theme-toggle class="vs-nav-link justify-between" style="padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.04);">
+                    <span class="flex items-center gap-2.5">
+                        <i class="fas fa-moon"></i>
+                        <span data-theme-label>Dark Mode</span>
+                    </span>
+                    <span class="text-[11px] text-slate-400">Theme</span>
+                </button>
+
+                {% if current_user.is_authenticated %}
+                <div class="vs-user-card">
+                    <div class="vs-user-avatar">
+                        {{ current_user.username[:1].upper() }}
+                    </div>
+                    <div class="vs-user-info">
+                        <div class="vs-user-name">{{ current_user.username }}</div>
+                        <div class="vs-user-role">
+                            {% if is_manager %}Family Manager{% else %}Family Member{% endif %}
+                        </div>
+                    </div>
+                    <a href="{{ url_for('logout') }}" class="w-8 h-8 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 flex items-center justify-center transition" title="Log out">
+                        <i class="fas fa-right-from-bracket text-xs"></i>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <div class="vs-main-wrap">
+            <main class="vs-main-container">
+                <!-- Flash Notifications -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="space-y-2.5 mb-6" role="status" aria-live="polite">
+                    {% for category, message in messages %}
+                    <div class="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm font-medium shadow-xs
+                        {% if category == 'error' %}bg-rose-50 border-rose-200 text-rose-800
+                        {% elif category == 'warning' %}bg-amber-50 border-amber-200 text-amber-800
+                        {% elif category == 'success' %}bg-emerald-50 border-emerald-200 text-emerald-800
+                        {% else %}bg-indigo-50 border-indigo-200 text-indigo-800{% endif %}">
+                        <div class="flex items-center gap-2.5">
+                            <i class="fas {% if category == 'error' %}fa-circle-exclamation text-rose-500{% elif category == 'warning' %}fa-triangle-exclamation text-amber-500{% elif category == 'success' %}fa-circle-check text-emerald-500{% else %}fa-circle-info text-indigo-500{% endif %}"></i>
+                            <span>{{ message }}</span>
+                        </div>
+                        <button type="button" onclick="this.parentElement.remove()" class="vs-icon-btn" aria-label="Dismiss notification">
+                            <i class="fas fa-times text-xs"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endwith %}
+
+                <!-- Join Family Prompt if user has no family -->
+                {% if current_user.is_authenticated and not current_user.family_id %}
+                <div class="vs-card mb-6 border-indigo-200 bg-indigo-50/70">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <i class="fas fa-users text-indigo-600"></i>
+                                Join Your Family Workspace
+                            </h2>
+                            <p class="text-xs text-slate-600 mt-1">Enter your family's invite code to start logging shared expenses and viewing budgets.</p>
+                        </div>
+                        <form action="{{ url_for('join_family') }}" method="POST" class="flex items-center gap-2">
+                            <input type="text" name="invite_code" placeholder="Paste invite code..." required class="vs-input sm:w-56">
+                            <button type="submit" class="vs-btn vs-btn-primary">Join Family</button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Tab Bar (< 768px) -->
+    <nav class="vs-bottom-nav" aria-label="Mobile Quick Navigation">
+        <a href="{{ url_for('dashboard') }}" class="vs-bottom-tab {% if current_endpoint == 'dashboard' %}active{% endif %}">
+            <i class="fas fa-chart-pie"></i>
+            <span>Overview</span>
+        </a>
+        <a href="{{ url_for('daily_diary') }}" class="vs-bottom-tab {% if current_endpoint in ['daily_diary', 'my_spendings'] %}active{% endif %}">
+            <i class="fas fa-calendar-day"></i>
+            <span>Ledger</span>
+        </a>
+        <a href="{{ url_for('financial_reports') }}" class="vs-bottom-tab {% if current_endpoint in ['financial_reports', 'daily_reports', 'view_report'] %}active{% endif %}">
+            {% if unread_reports_count > 0 %}<span class="vs-bottom-tab-dot"></span>{% endif %}
+            <i class="fas fa-chart-line"></i>
+            <span>Reports</span>
+        </a>
+        <a href="{{ url_for('ai_budget') }}" class="vs-bottom-tab {% if current_endpoint == 'ai_budget' %}active{% endif %}">
+            <i class="fas fa-wand-magic-sparkles"></i>
+            <span>AI Plan</span>
+        </a>
+        <button type="button" data-drawer-toggle class="vs-bottom-tab {% if current_endpoint in ['admin_panel', 'archive', 'features'] %}active{% endif %}">
+            <i class="fas fa-bars"></i>
+            <span>More</span>
+        </button>
+    </nav>
+
+    {% block modals %}{% endblock %}
+
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=3.0"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

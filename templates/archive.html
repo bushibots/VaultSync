@@ -1,264 +1,68 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync | Archive</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+{% extends "_layout.html" %}
+{% block title %}Monthly Archive · VaultSync{% endblock %}
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
-
-        @keyframes scaleIn {
-            from {
-                opacity: 0;
-                transform: scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-in-out;
-        }
-
-        .animate-scale-in {
-            animation: scaleIn 0.4s ease-out;
-        }
-
-        .month-card {
-            animation: scaleIn 0.4s ease-out;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .month-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-
-        .sidebar-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 55;
-        }
-
-        .sidebar-overlay.active {
-            display: block;
-        }
-
-        .sidebar {
-            transition: transform 0.3s ease;
-            height: 100vh;
-            height: 100dvh;
-            max-height: 100dvh;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            z-index: 60;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .sidebar.active {
-            transform: translateX(0);
-        }
-
-        @media (max-width: 767px) {
-            .sidebar {
-                transform: translateX(-100%);
-                width: min(20rem, calc(100vw - 2rem));
-            }
-
-            body.menu-open {
-                overflow: hidden;
-            }
-        }
-
-        .skip-link {
-            position: absolute;
-            top: -40px;
-            left: 0;
-            background: #000;
-            color: #fff;
-            padding: 8px;
-            text-decoration: none;
-            z-index: 100;
-        }
-
-        .skip-link:focus {
-            top: 0;
-        }
-    </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
-</head>
-<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
-    <!-- Skip to content link for accessibility -->
-    <a href="#main-content" class="skip-link">Skip to main content</a>
-
-    <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar dashboard-desktop-sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
-        <div class="mb-8 mt-8 md:mt-0">
-            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+{% block content %}
+<div class="vs-page-header">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
+            <i class="fas fa-box-archive text-[11px]"></i>
+            <span>Historical Ledger Vault</span>
         </div>
+        <h1 class="vs-page-title">Monthly Archive</h1>
+        <p class="vs-page-subtitle">Browse any past month with recorded family expenses or open its financial analytics.</p>
+    </div>
 
-        <nav class="flex-1 space-y-2 sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
-            </a>
-            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
-            </a>
-            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
-            </a>
-            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
-            </a>
-            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Reports</span>
-            </a>
-            <a href="{{ url_for('financial_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-chart-line mr-3" aria-hidden="true"></i><span>Reports & Planning</span>
-            </a>
-            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
-            </a>
-            {% if is_family_manager %}
-            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
-                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
-            </a>
-            {% endif %}
-        </nav>
+    <div class="vs-page-actions">
+        <a href="{{ url_for('export_ai_data') }}" class="vs-btn vs-btn-secondary">
+            <i class="fas fa-download text-indigo-500"></i>
+            <span>Export Full CSV</span>
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="vs-btn vs-btn-primary">
+            <i class="fas fa-calendar-check"></i>
+            <span>Current Month</span>
+        </a>
+    </div>
+</div>
 
-        <div class="mt-auto space-y-4">
-            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
-                <button type="button" id="dark-mode-toggle" data-theme-toggle class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
-                </button>
-                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
-                <select id="language-select" data-language-select class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                </select>
-            </div>
-            <!-- User Profile Card -->
-            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
-                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
-                <p class="text-xs text-blue-300 mt-1">
-                    <i class="fas fa-clock mr-1" aria-hidden="true"></i>{{ months|length }} months
+{% if months %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for item in months %}
+    <div class="vs-card flex flex-col justify-between gap-4 hover:border-indigo-400 dark:hover:border-indigo-500 transition">
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <span class="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">{{ item.year }}</span>
+                <h2 class="text-lg font-extrabold text-slate-900 dark:text-white mt-0.5">{{ item.month_name }}</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-0">
+                    {{ item.count }} recorded transaction{% if item.count != 1 %}s{% endif %}
                 </p>
-                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
             </div>
+            <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-calendar-alt"></i>
+            </div>
+        </div>
 
-
-            <!-- Logout Button -->
-            <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
-                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i>Logout
+        <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <a href="{{ url_for('dashboard', month=item.month, year=item.year) }}" class="vs-btn vs-btn-sm vs-btn-primary flex-1">
+                <i class="fas fa-chart-pie"></i>
+                <span>Overview</span>
+            </a>
+            <a href="{{ url_for('financial_reports', month=item.month, year=item.year) }}" class="vs-btn vs-btn-sm vs-btn-secondary flex-1">
+                <i class="fas fa-chart-line"></i>
+                <span>Analytics</span>
             </a>
         </div>
-    </aside>
-
-    {% set active_page = 'archive' %}
-    {% include '_mobile_nav.html' %}
-
-    <!-- Main Content -->
-    <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
-        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
-            <!-- Header -->
-            <header class="mb-8 animate-fade-in">
-                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div>
-                        <h1 class="text-3xl md:text-4xl font-bold text-slate-800">
-                            <i class="fas fa-history mr-2 text-blue-600" aria-hidden="true"></i>Monthly Archive
-                        </h1>
-                        <p class="text-slate-500 text-sm mt-2">Browse historical months and view your expense records</p>
-                    </div>
-                    <a href="{{ url_for('dashboard') }}" class="bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-2.5 rounded-lg shadow text-white font-semibold hover:shadow-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200">
-                        <i class="fas fa-arrow-left mr-2" aria-hidden="true"></i>Back to Dashboard
-                    </a>
-                </div>
-            </header>
-
-            <!-- Archive Content -->
-            {% if months %}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 animate-fade-in">
-                {% for m in months %}
-                <a href="{{ url_for('dashboard', month=m['month'], year=m['year']) }}" class="month-card group relative bg-white rounded-xl shadow-md p-6 border border-gray-100 overflow-hidden">
-                    <!-- Background gradient on hover -->
-                    <div class="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-
-                    <!-- Content -->
-                    <div class="relative z-10">
-                        <div class="flex items-start justify-between mb-4">
-                            <div>
-                                <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">
-                                    <i class="fas fa-calendar-alt mr-1" aria-hidden="true"></i>{{ m['month_name'] }}
-                                </p>
-                                <h3 class="text-2xl font-bold text-slate-800 mt-1">{{ m['year'] }}</h3>
-                            </div>
-                            <div class="bg-blue-100 rounded-full p-3 flex-shrink-0 group-hover:bg-blue-200 transition-colors duration-200">
-                                <i class="fas fa-chart-line text-blue-600 text-lg" aria-hidden="true"></i>
-                            </div>
-                        </div>
-
-                        <!-- Stats -->
-                        <div class="mt-4 pt-4 border-t border-gray-100">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs text-slate-500 font-medium">Expenses</p>
-                                    <p class="text-xl font-bold text-slate-800">{{ m['count'] }}</p>
-                                </div>
-                                <div class="text-blue-600 group-hover:translate-x-1 transition-transform duration-200">
-                                    <i class="fas fa-arrow-right text-lg" aria-hidden="true"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="animate-scale-in">
-                <div class="bg-white rounded-xl shadow-md p-12 md:p-16 text-center border border-gray-100">
-                    <div class="inline-block bg-gray-100 rounded-full p-4 mb-4">
-                        <i class="fas fa-inbox text-gray-400 text-3xl" aria-hidden="true"></i>
-                    </div>
-                    <h2 class="text-xl font-bold text-slate-800 mt-4">No Archived Months Yet</h2>
-                    <p class="text-slate-500 mt-2">Add some expenses to build an archive.</p>
-                    <a href="{{ url_for('dashboard') }}" class="inline-block mt-6 bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-2.5 rounded-lg shadow text-white font-semibold hover:shadow-lg transition-all duration-200">
-                        <i class="fas fa-plus mr-2" aria-hidden="true"></i>Add Expense
-                    </a>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </main>
-
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
-</body>
-</html>
-
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<section class="vs-card text-center py-12">
+    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+        <i class="fas fa-folder-open text-lg"></i>
+    </div>
+    <h2 class="text-base font-bold text-slate-900 dark:text-white">No Archived Months Yet</h2>
+    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+        As soon as you log expenses on the Overview or Daily Ledger, active months will appear here automatically.
+    </p>
+</section>
+{% endif %}
+{% endblock %}

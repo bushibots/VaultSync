@@ -1,220 +1,208 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Budget Reports - VaultSync</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
-</head>
-<body class="dashboard-body bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-    {% set active_page = 'reports' %}
-    {% include '_mobile_nav.html' %}
+{% extends "_layout.html" %}
+{% block title %}Daily AI Briefings · VaultSync{% endblock %}
 
-    <!-- Header -->
-    <header class="hidden md:block bg-white dark:bg-gray-800 shadow">
-        <div class="max-w-6xl mx-auto px-4 py-6 flex justify-between items-center">
-            <h1 class="text-3xl font-bold text-blue-600 dark:text-blue-400">Daily Budget Reports</h1>
-            <nav class="flex gap-4">
-                <a href="{{ url_for('dashboard') }}" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">Back to Dashboard</a>
-                {% if is_family_manager %}
-                <form method="POST" action="{{ url_for('generate_report_now') }}" style="display: inline;">
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Generate Report Now</button>
-                </form>
+{% block content %}
+<div class="vs-page-header">
+    <div>
+        <div class="vs-tabs mb-3">
+            <a href="{{ url_for('financial_reports') }}" class="vs-tab">
+                <i class="fas fa-chart-line"></i>
+                <span>Financial Analytics</span>
+            </a>
+            <a href="{{ url_for('daily_reports') }}" class="vs-tab active">
+                <i class="fas fa-bolt"></i>
+                <span>Daily AI Briefings</span>
+                {% if unread_count > 0 %}
+                <span class="vs-badge vs-badge-danger ml-1">{{ unread_count }} new</span>
                 {% endif %}
-            </nav>
+            </a>
         </div>
-    </header>
+        <h1 class="vs-page-title">Daily AI Budget Briefings</h1>
+        <p class="vs-page-subtitle">Automated nightly digests generated at 11:58 PM with safe daily spend targets and alerts.</p>
+    </div>
 
-    <main id="main-content" class="dashboard-main max-w-6xl mx-auto px-4 py-8">
-        <!-- Unread Count Banner -->
-        {% if unread_count > 0 %}
-        <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg">
-            <p class="text-blue-800 dark:text-blue-200">
-                <strong>{{ unread_count }} unread report{% if unread_count != 1 %}s{% endif %}</strong> - Click on a report to mark it as read
-            </p>
-        </div>
-        {% endif %}
+    {% if is_manager %}
+    <div class="vs-page-actions">
+        <form action="{{ url_for('generate_report_now') }}" method="POST">
+            <button type="submit" class="vs-btn vs-btn-primary">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                <span>Generate Today's Briefing</span>
+            </button>
+        </form>
+    </div>
+    {% endif %}
+</div>
 
-        <!-- Latest Report Highlight -->
-        {% if latest_report %}
-        <section class="mb-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h2 class="text-2xl font-bold mb-4">Latest Report - {{ latest_report.report_date.strftime('%B %d, %Y') }}</h2>
-            
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-blue-50 dark:bg-blue-900 p-4 rounded">
-                    <p class="text-gray-600 dark:text-gray-400 text-sm">Today's Spending</p>
-                    <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">Rs {{ "{:,.0f}".format(latest_report.total_spent_today) }}</p>
-                </div>
-                <div class="bg-purple-50 dark:bg-purple-900 p-4 rounded">
-                    <p class="text-gray-600 dark:text-gray-400 text-sm">This Week</p>
-                    <p class="text-2xl font-bold text-purple-600 dark:text-purple-400">Rs {{ "{:,.0f}".format(latest_report.total_spent_this_week) }}</p>
-                </div>
-                <div class="bg-green-50 dark:bg-green-900 p-4 rounded">
-                    <p class="text-gray-600 dark:text-gray-400 text-sm">This Month</p>
-                    <p class="text-2xl font-bold text-green-600 dark:text-green-400">Rs {{ "{:,.0f}".format(latest_report.total_spent_this_month) }}</p>
-                </div>
-                <div class="bg-orange-50 dark:bg-orange-900 p-4 rounded">
-                    <p class="text-gray-600 dark:text-gray-400 text-sm">Budget Used</p>
-                    <p class="text-2xl font-bold text-orange-600 dark:text-orange-400">{{ '%.1f'|format(latest_report.budget_used_percentage) }}%</p>
-                </div>
-            </div>
-
-            <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded">
-                <h3 class="font-bold text-lg mb-2">Summary</h3>
-                <p class="text-gray-700 dark:text-gray-300">{{ latest_report.summary }}</p>
-            </div>
-
-            {% if latest_action_plan %}
-            <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-100 dark:border-blue-700 rounded">
-                <h3 class="font-bold text-lg mb-3 text-blue-900 dark:text-blue-100"><i class="fas fa-list-check mr-2"></i>What to do next</h3>
-                <ol class="space-y-2 text-sm text-blue-900 dark:text-blue-100">
-                    {% for action in latest_action_plan.actions %}
-                    <li class="flex gap-2"><span class="font-bold">{{ loop.index }}.</span><span>{{ action }}</span></li>
-                    {% endfor %}
-                </ol>
-            </div>
-            {% endif %}
-
-            {% set suggestions = latest_report.suggestions | fromjson %}
-            {% set warnings = latest_report.warnings | fromjson %}
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {% if suggestions %}
-                <div>
-                    <h3 class="font-bold text-lg mb-3 text-blue-600 dark:text-blue-400"><i class="fas fa-lightbulb mr-2"></i>Suggestions</h3>
-                    <ul class="space-y-2">
-                        {% for suggestion in suggestions %}
-                        <li class="flex gap-2">
-                            <span class="text-blue-500 font-bold">&bull;</span>
-                            <span class="text-gray-700 dark:text-gray-300">{{ suggestion }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
+{% if latest_report %}
+<!-- Highlighted Latest Report Card -->
+<section class="vs-card mb-6 border-indigo-200 dark:border-indigo-500/30">
+    <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="vs-badge vs-badge-primary">Latest Digest</span>
+                {% if not latest_report.is_read %}
+                <span class="vs-badge vs-badge-danger">Unread</span>
                 {% endif %}
-
-                {% if warnings %}
-                <div>
-                    <h3 class="font-bold text-lg mb-3 text-red-600 dark:text-red-400"><i class="fas fa-triangle-exclamation mr-2"></i>Warnings</h3>
-                    <ul class="space-y-2">
-                        {% for warning in warnings %}
-                        <li class="flex gap-2">
-                            <span class="text-red-500 font-bold">&bull;</span>
-                            <span class="text-gray-700 dark:text-gray-300">{{ warning }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
+                <span class="text-xs text-slate-500 dark:text-slate-400">
+                    Generated {{ latest_report.created_at.strftime('%I:%M %p') }}
+                </span>
             </div>
-
-            {% if not latest_report.is_read %}
-            <form method="POST" action="{{ url_for('mark_report_read', report_id=latest_report.id) }}" class="mt-6">
-                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Mark as Read</button>
-            </form>
-            {% else %}
-            <p class="text-gray-500 dark:text-gray-400 text-sm mt-6"><i class="fas fa-check mr-1"></i>Marked as read</p>
-            {% endif %}
-
-            <a href="{{ url_for('view_report', report_id=latest_report.id) }}" class="inline-block mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">View Full Report</a>
-        </section>
-        {% else %}
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-            <p class="text-gray-600 dark:text-gray-400 mb-4">No reports generated yet.</p>
-            <p class="text-gray-500 dark:text-gray-500 text-sm mb-6">Reports are generated automatically at 11:58 PM daily with AI-powered budget analysis and suggestions.</p>
-            {% if is_family_manager %}
-            <form method="POST" action="{{ url_for('generate_report_now') }}" style="display: inline;">
-                <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700">Generate First Report</button>
-            </form>
-            {% endif %}
+            <h2 class="text-lg font-extrabold text-slate-900 dark:text-white mt-1">
+                {{ latest_report.report_date.strftime('%A, %B %d, %Y') }}
+            </h2>
         </div>
-        {% endif %}
 
-        <!-- All Reports List -->
-        <section class="mt-8">
-            <h2 class="text-2xl font-bold mb-4">All Reports</h2>
-            
-            {% if reports.items %}
-            <div class="space-y-3">
-                {% for report in reports.items %}
-                <a href="{{ url_for('view_report', report_id=report.id) }}" class="block p-4 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition border-l-4 {% if report.is_read %}border-gray-400 dark:border-gray-600{% else %}border-blue-500{% endif %}">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <div class="flex gap-2 items-center">
-                                {% if not report.is_read %}
-                                <span class="bg-blue-500 text-white text-xs px-2 py-1 rounded">New</span>
-                                {% endif %}
-                                <h3 class="font-bold text-lg">{{ report.report_date.strftime('%A, %B %d, %Y') }}</h3>
-                            </div>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
-                                Spent: <strong>Rs {{ "{:,.0f}".format(report.total_spent_this_month) }}</strong> | 
-                                Budget: <strong>{{ '%.1f'|format(report.budget_used_percentage) }}%</strong> |
-                                Trend: <strong>{{ report.spending_trend.capitalize() }}</strong>
-                            </p>
-                            {% if report.summary %}
-                            <p class="text-gray-700 dark:text-gray-300 text-sm mt-2 line-clamp-2">{{ report.summary }}</p>
+        <a href="{{ url_for('view_report', report_id=latest_report.id) }}" class="vs-btn vs-btn-primary">
+            <span>Open Full Report</span>
+            <i class="fas fa-arrow-right text-xs"></i>
+        </a>
+    </div>
+
+    <!-- 4 Quick Metrics -->
+    <div class="vs-kpi-grid mb-5">
+        <div class="vs-card-muted">
+            <div class="vs-kpi-label">Spent That Day</div>
+            <div class="text-lg font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                Rs. {{ "{:,.0f}".format(latest_report.total_spent_today) }}
+            </div>
+        </div>
+        <div class="vs-card-muted">
+            <div class="vs-kpi-label">Week Total</div>
+            <div class="text-lg font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                Rs. {{ "{:,.0f}".format(latest_report.total_spent_this_week) }}
+            </div>
+        </div>
+        <div class="vs-card-muted">
+            <div class="vs-kpi-label">Month Used</div>
+            <div class="text-lg font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                {{ "{:.1f}".format(latest_report.budget_used_percentage) }}%
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Rs. {{ "{:,.0f}".format(latest_report.total_spent_this_month) }} spent</div>
+        </div>
+        <div class="vs-card-muted">
+            <div class="vs-kpi-label">Budget Remaining</div>
+            <div class="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
+                Rs. {{ "{:,.0f}".format(latest_report.budget_remaining) }}
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Top: {{ latest_report.top_spending_category }}</div>
+        </div>
+    </div>
+
+    {% if latest_report.summary %}
+    <div class="p-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-500/10 border border-indigo-200/80 dark:border-indigo-500/25 mb-4">
+        <div class="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-1">
+            <i class="fas fa-robot mr-1"></i> AI Executive Summary
+        </div>
+        <p class="text-sm text-slate-800 dark:text-slate-200 leading-relaxed m-0">{{ latest_report.summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if latest_action_plan %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/25">
+            <div class="text-xs font-bold text-emerald-800 dark:text-emerald-300">Safe Daily Limit</div>
+            <div class="text-base font-extrabold text-emerald-900 dark:text-white mt-0.5 tabular-nums">
+                Rs. {{ "{:,.0f}".format(latest_action_plan.safe_daily_spend) }}/day
+            </div>
+            <div class="text-[11px] text-emerald-700 dark:text-emerald-400">{{ latest_action_plan.days_remaining }} days remaining</div>
+        </div>
+        <div class="md:col-span-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <div class="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Recommended Next Steps</div>
+            <ul class="space-y-1 text-xs text-slate-600 dark:text-slate-300 m-0 pl-4 list-disc">
+                {% for step in latest_action_plan.actions[:3] %}
+                <li>{{ step }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+<!-- Archive of Daily Reports -->
+<section class="vs-card">
+    <h2 class="text-base font-bold text-slate-900 dark:text-white mb-4">Report History</h2>
+
+    {% if reports.items %}
+    <div class="vs-table-wrap -mx-4 sm:mx-0">
+        <table class="vs-table">
+            <thead>
+                <tr>
+                    <th>Report Date</th>
+                    <th class="text-right">Day Spend</th>
+                    <th class="text-right">Month Used</th>
+                    <th>Top Category</th>
+                    <th>Trend</th>
+                    <th class="text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rep in reports.items %}
+                <tr>
+                    <td>
+                        <div class="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+                            <span>{{ rep.report_date.strftime('%d %b %Y') }}</span>
+                            {% if not rep.is_read %}
+                            <span class="vs-badge vs-badge-primary">New</span>
                             {% endif %}
                         </div>
-                        <div class="text-right">
-                            <div class="text-2xl font-bold {% if report.budget_used_percentage > 80 %}text-red-600 dark:text-red-400{% elif report.budget_used_percentage > 60 %}text-orange-600 dark:text-orange-400{% else %}text-green-600 dark:text-green-400{% endif %}">
-                                {{ '%.0f'|format(report.budget_used_percentage) }}%
-                            </div>
-                        </div>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
-
-            <!-- Pagination -->
-            {% if reports.pages > 1 %}
-            <div class="mt-6 flex justify-center gap-2">
-                {% if reports.has_prev %}
-                <a href="{{ url_for('daily_reports', page=reports.prev_num) }}" class="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">Previous</a>
-                {% endif %}
-
-                {% for page_num in reports.iter_pages() %}
-                    {% if page_num %}
-                        {% if page_num == reports.page %}
-                        <span class="px-3 py-2 bg-blue-600 text-white rounded">{{ page_num }}</span>
+                        <div class="text-xs text-slate-500 dark:text-slate-400 truncate max-w-xs">{{ rep.summary }}</div>
+                    </td>
+                    <td class="text-right tabular-nums font-semibold">Rs. {{ "{:,.0f}".format(rep.total_spent_today) }}</td>
+                    <td class="text-right tabular-nums">
+                        <span class="vs-badge {% if rep.budget_used_percentage >= 100 %}vs-badge-danger{% elif rep.budget_used_percentage >= 80 %}vs-badge-warning{% else %}vs-badge-success{% endif %}">
+                            {{ "{:.1f}".format(rep.budget_used_percentage) }}%
+                        </span>
+                    </td>
+                    <td class="text-xs font-semibold">{{ rep.top_spending_category }}</td>
+                    <td class="text-xs">
+                        {% if rep.spending_trend == 'increasing' %}
+                        <span class="text-rose-500 font-semibold"><i class="fas fa-arrow-trend-up mr-1"></i>Rising</span>
+                        {% elif rep.spending_trend == 'decreasing' %}
+                        <span class="text-emerald-500 font-semibold"><i class="fas fa-arrow-trend-down mr-1"></i>Falling</span>
                         {% else %}
-                        <a href="{{ url_for('daily_reports', page=page_num) }}" class="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">{{ page_num }}</a>
+                        <span class="text-slate-500"><i class="fas fa-minus mr-1"></i>Stable</span>
                         {% endif %}
-                    {% else %}
-                    <span class="px-3 py-2">...</span>
-                    {% endif %}
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                        <div class="inline-flex items-center gap-1.5">
+                            <a href="{{ url_for('view_report', report_id=rep.id) }}" class="vs-btn vs-btn-sm vs-btn-secondary">View</a>
+                            {% if is_manager %}
+                            <form action="{{ url_for('delete_report', report_id=rep.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete this report?');">
+                                <button type="submit" class="vs-icon-btn hover:text-rose-500" title="Delete report">
+                                    <i class="fas fa-trash text-xs"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
                 {% endfor %}
+            </tbody>
+        </table>
+    </div>
 
-                {% if reports.has_next %}
-                <a href="{{ url_for('daily_reports', page=reports.next_num) }}" class="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">Next</a>
-                {% endif %}
-            </div>
-            {% endif %}
-
-            {% else %}
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-                <p class="text-gray-600 dark:text-gray-400">No reports available yet.</p>
-            </div>
-            {% endif %}
-        </section>
-    </main>
-
-    <!-- Footer -->
-    <footer class="border-t dark:border-gray-700 mt-12 py-6 text-center text-gray-600 dark:text-gray-400 text-sm">
-        <p>Daily budget reports are generated automatically at 11:58 PM with AI-powered analysis and personalized suggestions.</p>
-    </footer>
-
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
-    <script>
-        // Mark reports as read when viewed
-        document.querySelectorAll('a[href*="view_report"]').forEach(link => {
-            link.addEventListener('click', function(e) {
-                // Allow normal navigation
-            });
-        });
-    </script>
-</body>
-</html>
-
+    {% if reports.pages > 1 %}
+    <div class="flex items-center justify-center gap-2 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
+        {% if reports.has_prev %}
+        <a href="{{ url_for('daily_reports', page=reports.prev_num) }}" class="vs-btn vs-btn-sm vs-btn-secondary">← Previous</a>
+        {% endif %}
+        <span class="text-xs text-slate-500">Page {{ reports.page }} of {{ reports.pages }}</span>
+        {% if reports.has_next %}
+        <a href="{{ url_for('daily_reports', page=reports.next_num) }}" class="vs-btn vs-btn-sm vs-btn-secondary">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="text-center py-12 px-4">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+            <i class="fas fa-bolt text-lg"></i>
+        </div>
+        <p class="text-sm font-bold text-slate-800 dark:text-slate-200">No daily briefings generated yet</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+            VaultSync automatically generates a daily budget digest at 11:58 PM, or a Family Manager can generate today's briefing immediately using the button above.
+        </p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,976 +1,632 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync | Admin Panel</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=assistant-20260620">
-    <style>
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .tab-btn {
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s ease;
-        }
-        .tab-btn.active {
-            border-bottom-color: #3b82f6;
-            color: #3b82f6;
-        }
-    </style>
-</head>
-<body class="bg-gray-50">
-    <!-- Navigation Bar -->
-    <nav class="bg-white shadow sticky top-0 z-40">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center">
-                    <h1 class="text-2xl font-bold text-blue-600">
-                        <i class="fas fa-vault mr-2"></i>VaultSync Admin
-                    </h1>
-                </div>
-                <div class="flex items-center gap-4">
-                    <span class="text-sm text-gray-700">
-                        <i class="fas fa-user mr-2 text-blue-500"></i>{{ user.username }}
-                    </span>
-                    <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800 font-semibold text-sm">Back to Dashboard</a>
-                    <a href="{{ url_for('logout') }}" class="text-red-600 hover:text-red-800 font-semibold text-sm">Logout</a>
-                </div>
-            </div>
+{% extends "_layout.html" %}
+{% block title %}Family Admin · {{ family.name }} · VaultSync{% endblock %}
+
+{% block content %}
+<div class="vs-page-header">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
+            <i class="fas fa-sliders text-[11px]"></i>
+            <span>Family Manager Console</span>
         </div>
-    </nav>
+        <h1 class="vs-page-title">{{ family.name }} Administration</h1>
+        <p class="vs-page-subtitle">Manage members, default budgets, category caps, and AI forecasting engines.</p>
+    </div>
 
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-                {% for category, message in messages %}
-                    <div class="mb-4 p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% elif category == 'warning' %}bg-yellow-50 border border-yellow-200 text-yellow-800{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
-                        <div class="flex items-center">
-                            <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} mr-3"></i>
-                            <span>{{ message }}</span>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
-    <!-- Main Content -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- Tab Navigation -->
-        <div class="bg-white rounded-t-xl shadow border-b border-gray-200">
-            <div class="flex space-x-8 px-6 overflow-x-auto">
-                <button class="tab-btn active py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('dashboard')">
-                    <i class="fas fa-chart-line mr-2"></i>Dashboard
-                </button>
-                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('members')">
-                    <i class="fas fa-users mr-2"></i>Members
-                </button>
-                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('budget')">
-                    <i class="fas fa-wallet mr-2"></i>Budget & Limits
-                </button>
-                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('ai-forecast')">
-                    <i class="fas fa-chart-pie mr-2"></i>AI Forecast
-                </button>
-                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('ai-organizer')">
-                    <i class="fas fa-wand-magic-sparkles mr-2"></i>AI Organizer
-                </button>
-                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('ai-exceptions')">
-                    <i class="fas fa-shield-alt mr-2"></i>Expense Exceptions
-                </button>
-                <button class="tab-btn py-4 font-semibold text-gray-700 whitespace-nowrap" onclick="switchTab('settings')">
-                    <i class="fas fa-cog mr-2"></i>Settings
-                </button>
-            </div>
+    <div class="vs-page-actions">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 border border-indigo-200 dark:border-indigo-500/30">
+            <span class="text-xs text-slate-600 dark:text-slate-300">Invite Code:</span>
+            <code class="text-xs font-bold text-indigo-700 dark:text-indigo-300">{{ family.invite_code }}</code>
+            <button type="button" onclick="copyToClipboard('{{ family.invite_code }}', this)" class="vs-btn vs-btn-sm vs-btn-secondary py-1 px-2 text-xs">
+                <i class="fas fa-copy"></i> Copy
+            </button>
         </div>
+    </div>
+</div>
 
-        <!-- Dashboard Tab -->
-        <div id="dashboard" class="tab-content active bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-tachometer-alt mr-2 text-blue-500"></i>Family Dashboard
-            </h2>
+<!-- 4 Admin Summary KPIs -->
+<div class="vs-kpi-grid mb-6">
+    <div class="vs-kpi-card">
+        <div class="vs-kpi-top">
+            <span class="vs-kpi-label">Family Members</span>
+            <span class="vs-kpi-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400"><i class="fas fa-users"></i></span>
+        </div>
+        <div class="vs-kpi-value">{{ family_members|length }}</div>
+        <div class="vs-kpi-meta"><span>Active workspace members</span></div>
+    </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
-                <!-- Budget Health Card -->
-                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-700">Family Budget</h3>
-                        <i class="fas fa-wallet text-blue-600 text-2xl"></i>
-                    </div>
-                    <p class="text-3xl font-bold text-blue-600">&#8377;{{ "{:,.0f}".format(current_monthly_budget) }}</p>
-                    <p class="text-xs text-gray-600 mt-1">Spending budget this month</p>
-                </div>
+    <div class="vs-kpi-card">
+        <div class="vs-kpi-top">
+            <span class="vs-kpi-label">Default Budget</span>
+            <span class="vs-kpi-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"><i class="fas fa-wallet"></i></span>
+        </div>
+        <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(current_monthly_budget) }}</div>
+        <div class="vs-kpi-meta"><span>Income: Rs. {{ "{:,.0f}".format(current_monthly_income) }}</span></div>
+    </div>
 
-                <!-- Current Spending Card -->
-                <div class="bg-gradient-to-br from-red-50 to-orange-50 rounded-lg p-6 border border-red-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-700">Current Spending</h3>
-                        <i class="fas fa-shopping-cart text-red-600 text-2xl"></i>
-                    </div>
-                    <p class="text-3xl font-bold text-red-600">&#8377;{{ "{:,.0f}".format(monthly_spending) }}</p>
-                    <p class="text-xs text-gray-600 mt-1">This month</p>
-                </div>
+    <div class="vs-kpi-card">
+        <div class="vs-kpi-top">
+            <span class="vs-kpi-label">Month Spend</span>
+            <span class="vs-kpi-icon bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400"><i class="fas fa-chart-pie"></i></span>
+        </div>
+        <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(monthly_spending) }}</div>
+        <div class="vs-kpi-meta"><span>{{ "{:.1f}".format(budget_percentage) }}% of budget</span></div>
+    </div>
 
-                <!-- Remaining Budget Card -->
-                <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-6 border border-green-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-700">Remaining</h3>
-                        <i class="fas fa-piggy-bank text-green-600 text-2xl"></i>
-                    </div>
-                    <p class="text-3xl font-bold text-green-600">&#8377;{{ "{:,.0f}".format(remaining_budget) }}</p>
-                    <p class="text-xs text-gray-600 mt-1">
-                        {% if remaining_budget >= 0 %}
-                            {{ "{:.1f}".format(budget_percentage) }}% spent
-                        {% else %}
-                            OVERSPENT
-                        {% endif %}
-                    </p>
-                </div>
+    <div class="vs-kpi-card">
+        <div class="vs-kpi-top">
+            <span class="vs-kpi-label">AI Engine Status</span>
+            <span class="vs-kpi-icon bg-purple-50 text-purple-600 dark:bg-purple-500/15 dark:text-purple-400"><i class="fas fa-robot"></i></span>
+        </div>
+        <div class="vs-kpi-value text-base">
+            {% if ai_organizer_configured %}Active ({{ gemini_key_count }} key{% if gemini_key_count != 1 %}s{% endif %}){% else %}Offline{% endif %}
+        </div>
+        <div class="vs-kpi-meta"><span>Model: {{ ai_organizer_model }}</span></div>
+    </div>
+</div>
 
-                <div class="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg p-6 border border-teal-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-700">Planned Upcoming</h3>
-                        <i class="fas fa-calendar-check text-teal-600 text-2xl"></i>
-                    </div>
-                    <p class="text-3xl font-bold text-teal-600">&#8377;{{ "{:,.0f}".format(planned_unpaid_total) }}</p>
-                    <p class="text-xs text-gray-600 mt-1">Not posted yet</p>
-                </div>
+<!-- Segmented Admin Tab Navigation -->
+<div class="vs-tabs mb-6" role="tablist">
+    <button type="button" class="vs-tab active" data-admin-tab="members" role="tab">
+        <i class="fas fa-users"></i>
+        <span>Members &amp; Roles</span>
+    </button>
+    <button type="button" class="vs-tab" data-admin-tab="budget" role="tab">
+        <i class="fas fa-coins"></i>
+        <span>Budgets &amp; Category Caps</span>
+    </button>
+    <button type="button" class="vs-tab" data-admin-tab="ai-forecast" role="tab">
+        <i class="fas fa-wand-magic-sparkles"></i>
+        <span>AI Forecast &amp; Organizer</span>
+    </button>
+    <button type="button" class="vs-tab" data-admin-tab="settings" role="tab">
+        <i class="fas fa-gear"></i>
+        <span>Workspace Settings</span>
+    </button>
+</div>
 
-                <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-6 border border-purple-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-700">AI Suggestions</h3>
-                        <i class="fas fa-wand-magic-sparkles text-purple-600 text-2xl"></i>
-                    </div>
-                    <p class="text-3xl font-bold text-purple-600">{{ ai_suggestions_count }}</p>
-                    <p class="text-xs text-gray-600 mt-1">Saved plans</p>
-                </div>
-
-                <div class="bg-gradient-to-br from-emerald-50 to-lime-50 rounded-lg p-6 border border-emerald-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-700">AI Savings</h3>
-                        <i class="fas fa-chart-pie text-emerald-600 text-2xl"></i>
-                    </div>
-                    {% if latest_savings_forecast %}
-                    <p class="text-3xl font-bold {% if latest_savings_forecast.expected_savings >= 0 %}text-emerald-600{% else %}text-red-600{% endif %}">&#8377;{{ "{:,.0f}".format(latest_savings_forecast.expected_savings) }}</p>
-                    <p class="text-xs text-gray-600 mt-1">Forecast savings</p>
-                    {% else %}
-                    <p class="text-3xl font-bold text-gray-400">--</p>
-                    <p class="text-xs text-gray-600 mt-1">No forecast yet</p>
-                    {% endif %}
-                </div>
+<!-- =======================================================================
+     TAB 1: MEMBERS & ROLES
+     ======================================================================= -->
+<div data-admin-panel="members" class="space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- Add Member Card -->
+        <section class="vs-card lg:col-span-4 space-y-4">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">Add or Invite Member</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Add an existing VaultSync user or share your family invite code.</p>
             </div>
 
-            <!-- Budget Progress Bar -->
-            <div class="bg-white rounded-lg p-6 border border-gray-200">
-                <h3 class="font-semibold text-gray-700 mb-4">Monthly Budget Progress</h3>
-                <div class="relative">
-                    <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
-                        <div class="h-full bg-gradient-to-r {% if budget_percentage <= 80 %}from-green-400 to-emerald-500{% elif budget_percentage <= 100 %}from-yellow-400 to-orange-500{% else %}from-red-400 to-red-600{% endif %} rounded-full" style="width: {{ [budget_percentage, 100]|min }}%"></div>
-                    </div>
-                    <p class="text-sm text-gray-600 mt-2">
-                        {% if budget_percentage <= 50 %}
-                            <i class="fas fa-check-circle text-green-500 mr-1"></i>You're doing great! Less than 50% spent.
-                        {% elif budget_percentage <= 80 %}
-                            <i class="fas fa-info-circle text-yellow-500 mr-1"></i>You're doing well. 50-80% spent.
-                        {% else %}
-                            <i class="fas fa-exclamation-circle text-red-500 mr-1"></i>Getting close to limit. More than 80% spent!
-                        {% endif %}
-                    </p>
+            <form action="{{ url_for('admin_panel') }}" method="POST" class="space-y-3">
+                <div>
+                    <label class="vs-label" for="add-member-username">Username</label>
+                    <input id="add-member-username" type="text" name="member_username" placeholder="Enter exact username..." required class="vs-input">
                 </div>
-            </div>
+                <button type="submit" class="vs-btn vs-btn-primary w-full">
+                    <i class="fas fa-user-plus"></i>
+                    <span>Add to Family</span>
+                </button>
+            </form>
 
-            <!-- Family Info Card -->
-            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
-                    <h3 class="font-semibold text-gray-700 mb-4">Family Information</h3>
-                    <div class="space-y-3">
-                        <div>
-                            <p class="text-xs text-gray-600 font-semibold">Family Name</p>
-                            <p class="text-lg font-bold text-gray-800">{{ family.name }}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-gray-600 font-semibold">Total Members</p>
-                            <p class="text-lg font-bold text-gray-800">{{ family_members|length }}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-gray-600 font-semibold">Categories</p>
-                            <p class="text-lg font-bold text-gray-800">{{ categories|length }}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-gray-600 font-semibold">Created</p>
-                            <p class="text-lg font-bold text-gray-800">{{ family.created_at.strftime('%b %d, %Y') }}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
-                    <h3 class="font-semibold text-gray-700 mb-4">Invite Code</h3>
-                    <div class="flex items-center justify-between bg-white rounded-lg p-4 border-2 border-blue-200 mb-2">
-                        <code class="font-mono text-xl font-bold text-blue-600 tracking-widest">{{ family.invite_code }}</code>
-                        <button class="text-blue-600 hover:text-blue-800 transition" onclick="copyToClipboard('{{ family.invite_code }}')">
-                            <i class="fas fa-copy text-lg"></i>
-                        </button>
-                    </div>
-                    <p class="text-xs text-gray-600">Share this code with family members to invite them</p>
-                    <form method="POST" action="{{ url_for('regenerate_invite_code') }}" class="mt-4">
-                        <button type="submit" class="w-full bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 duration-200 text-sm" onclick="return confirm('Regenerate invite code? The old code will stop working.')">
-                            <i class="fas fa-rotate mr-1"></i>Regenerate Invite Code
+            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Share Invite Code</span>
+                    <form action="{{ url_for('regenerate_invite_code') }}" method="POST" onsubmit="return confirm('Generate a new invite code? Old code will stop working.');">
+                        <button type="submit" class="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                            <i class="fas fa-rotate mr-0.5"></i> Regenerate
                         </button>
                     </form>
                 </div>
+                <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <code class="text-xs font-bold text-slate-900 dark:text-white">{{ family.invite_code }}</code>
+                    <button type="button" onclick="copyToClipboard('{{ family.invite_code }}', this)" class="vs-btn vs-btn-sm vs-btn-secondary">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
             </div>
-        </div>
+        </section>
 
-        <!-- Members Tab -->
-        <div id="members" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-users mr-2 text-purple-500"></i>Family Members
-            </h2>
+        <!-- Member Directory Table -->
+        <section class="vs-card lg:col-span-8">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1">Family Member Directory</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Manage roles and inspect current month spending per member</p>
 
-            <!-- Add Member Form -->
-            <div class="bg-purple-50 rounded-lg p-6 border border-purple-200 mb-8">
-                <h3 class="font-semibold text-gray-700 mb-4">Add Existing Member</h3>
-                <form method="POST" action="{{ url_for('admin_panel') }}" class="space-y-4">
-                    <div class="flex gap-3">
-                        <input
-                            type="text"
-                            name="member_username"
-                            placeholder="Enter member's username"
-                            class="flex-1 border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none"
-                            required
-                        >
-                        <button type="submit" class="bg-purple-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-purple-700 duration-200 flex items-center gap-2 whitespace-nowrap">
-                            <i class="fas fa-user-plus"></i>Add Member
-                        </button>
-                    </div>
-                    <p class="text-xs text-gray-600">
-                        <i class="fas fa-lightbulb mr-1"></i>Enter the exact username of the user you want to add to your family
-                    </p>
-                </form>
-            </div>
-
-            <!-- Members List -->
-            <div>
-                <h3 class="font-semibold text-gray-700 mb-4">Members ({{ family_members|length }})</h3>
-                {% if family_members %}
-                    <div class="space-y-3">
+            <div class="vs-table-wrap -mx-4 sm:mx-0">
+                <table class="vs-table">
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Role</th>
+                            <th class="text-right">Month Spend</th>
+                            <th class="text-right">Entries</th>
+                            <th class="text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
                         {% for member in family_members %}
-                        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-100 hover:shadow-md transition">
-                            <div class="flex items-center gap-4 flex-1 min-w-0">
-                                <div class="bg-indigo-600 text-white rounded-full w-10 h-10 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                                    {{ member.username[0].upper() }}
+                        {% set stats = member_stats.get(member.id, {'total': 0, 'count': 0}) %}
+                        <tr>
+                            <td>
+                                <div class="font-semibold text-slate-900 dark:text-white">
+                                    {{ member.username }}
+                                    {% if member.id == user.id %}<span class="vs-badge vs-badge-primary ml-1">You</span>{% endif %}
                                 </div>
-                                <div class="min-w-0 flex-1">
-                                    <p class="font-semibold text-gray-800 truncate">{{ member.username }}</p>
-                                    <p class="text-xs text-gray-600 truncate">{{ member.email }}</p>
-                                    <p class="text-xs text-gray-500 mt-1">
-                                        This month: <span class="font-bold">&#8377;{{ "{:,.0f}".format(member_stats.get(member.id, {}).get('total', 0)) }}</span>
-                                        · {{ member_stats.get(member.id, {}).get('count', 0) }} expense{% if member_stats.get(member.id, {}).get('count', 0) != 1 %}s{% endif %}
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-3 flex-shrink-0">
+                                <div class="text-xs text-slate-500 dark:text-slate-400">{{ member.email }}</div>
+                            </td>
+                            <td>
                                 {% if member.user_type == 'family_manager' %}
-                                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700">
-                                        <i class="fas fa-crown"></i>Manager
-                                    </span>
+                                <span class="vs-badge vs-badge-primary"><i class="fas fa-crown text-[10px]"></i> Manager</span>
+                                {% else %}
+                                <span class="vs-badge vs-badge-neutral">Member</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-right font-bold tabular-nums">Rs. {{ "{:,.0f}".format(stats['total']) }}</td>
+                            <td class="text-right tabular-nums text-slate-500">{{ stats['count'] }}</td>
+                            <td class="text-right whitespace-nowrap">
+                                <div class="inline-flex items-center gap-1.5">
+                                    {% if member.user_type != 'family_manager' %}
+                                    <form action="{{ url_for('promote_member', member_id=member.id) }}" method="POST" class="inline">
+                                        <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary" title="Promote to Family Manager">Promote</button>
+                                    </form>
+                                    {% elif member.id != family.created_by_user_id %}
+                                    <form action="{{ url_for('demote_member', member_id=member.id) }}" method="POST" class="inline">
+                                        <button type="submit" class="vs-btn vs-btn-sm vs-btn-ghost" title="Demote to Member">Demote</button>
+                                    </form>
+                                    {% endif %}
+
                                     {% if member.id != user.id %}
-                                    <form method="POST" action="{{ url_for('demote_member', member_id=member.id) }}" class="inline">
-                                        <button type="submit" class="px-3 py-1 text-xs font-semibold text-blue-600 hover:text-blue-800" title="Demote to Member" onclick="return confirm('Demote this member?')">
-                                            <i class="fas fa-arrow-down"></i>Demote
+                                    <form action="{{ url_for('remove_member', member_id=member.id) }}" method="POST" class="inline" onsubmit="return confirm('Remove {{ member.username }} from the family?');">
+                                        <button type="submit" class="vs-btn vs-btn-sm vs-btn-danger" title="Remove from family">
+                                            <i class="fas fa-user-minus"></i>
                                         </button>
                                     </form>
                                     {% endif %}
-                                {% else %}
-                                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-700">
-                                        <i class="fas fa-user"></i>Member
-                                    </span>
-                                    <form method="POST" action="{{ url_for('promote_member', member_id=member.id) }}" class="inline">
-                                        <button type="submit" class="px-3 py-1 text-xs font-semibold text-green-600 hover:text-green-800" title="Promote to Manager">
-                                            <i class="fas fa-arrow-up"></i>Promote
-                                        </button>
-                                    </form>
-                                {% endif %}
-                                {% if member.id != user.id %}
-                                <form method="POST" action="{{ url_for('remove_member', member_id=member.id) }}" class="inline">
-                                    <button type="submit" class="px-3 py-1 text-xs font-semibold text-red-600 hover:text-red-800" title="Remove from family" onclick="return confirm('Remove this member from the family?')">
-                                        <i class="fas fa-trash-alt"></i>Remove
-                                    </button>
-                                </form>
-                                {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- =======================================================================
+     TAB 2: BUDGETS & CATEGORY CAPS
+     ======================================================================= -->
+<div data-admin-panel="budget" class="space-y-6 hidden">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- Default & Monthly Budget Settings -->
+        <div class="lg:col-span-5 space-y-6">
+            <section class="vs-card">
+                <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1">Default Family Income &amp; Budget</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Baseline numbers used for any month without a custom override.</p>
+
+                <form action="{{ url_for('update_budget') }}" method="POST" class="space-y-3.5">
+                    <div>
+                        <label class="vs-label">Default Monthly Income (Rs.)</label>
+                        <input type="number" step="0.01" min="0" name="monthly_income" value="{{ (family.monthly_income or family.monthly_budget)|round(2) }}" required class="vs-input tabular-nums font-semibold">
+                    </div>
+                    <div>
+                        <label class="vs-label">Default Monthly Spending Budget (Rs.)</label>
+                        <input type="number" step="0.01" min="1000" name="monthly_budget" value="{{ family.monthly_budget|round(2) }}" required class="vs-input tabular-nums font-semibold">
+                    </div>
+                    <button type="submit" class="vs-btn vs-btn-primary w-full">
+                        <i class="fas fa-check"></i>
+                        <span>Save Default Budget</span>
+                    </button>
+                </form>
+            </section>
+
+            <section class="vs-card">
+                <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1">Specific Month Override</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Set custom income or budget for a specific month &amp; year.</p>
+
+                <form action="{{ url_for('update_monthly_finance_setting') }}" method="POST" class="space-y-3.5">
+                    <input type="hidden" name="next" value="{{ url_for('admin_panel', tab='budget') }}">
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="vs-label">Month</label>
+                            <select name="month" class="vs-select">
+                                {% for m in range(1, 13) %}
+                                <option value="{{ m }}" {% if m == today.month %}selected{% endif %}>
+                                    {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="vs-label">Year</label>
+                            <select name="year" class="vs-select">
+                                {% for y in year_range %}
+                                <option value="{{ y }}" {% if y == today.year %}selected{% endif %}>{{ y }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="vs-label">Income (Rs.)</label>
+                            <input type="number" step="0.01" min="0" name="monthly_income" value="{{ current_monthly_income|round(2) }}" required class="vs-input tabular-nums">
+                        </div>
+                        <div>
+                            <label class="vs-label">Budget (Rs.)</label>
+                            <input type="number" step="0.01" min="0" name="monthly_budget" value="{{ current_monthly_budget|round(2) }}" required class="vs-input tabular-nums">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="vs-label">Notes</label>
+                        <input type="text" name="notes" value="{{ current_finance.notes or '' }}" placeholder="Optional note for this month..." class="vs-input text-xs">
+                    </div>
+                    <button type="submit" class="vs-btn vs-btn-secondary w-full">
+                        <i class="fas fa-calendar-check text-indigo-500"></i>
+                        <span>Save Month Override</span>
+                    </button>
+                </form>
+            </section>
+        </div>
+
+        <!-- Category Monthly Caps -->
+        <section class="vs-card lg:col-span-7">
+            <div class="flex items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 dark:text-white">Category Monthly Caps ({{ categories|length }})</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Set monthly spending limits per category (0 = no cap)</p>
+                </div>
+            </div>
+
+            <div class="space-y-2.5 max-h-[560px] overflow-y-auto pr-1">
+                {% for cat in categories %}
+                {% set spent = category_spending.get(cat.id, 0) %}
+                {% set limit = cat.monthly_limit or 0 %}
+                {% set pct = (spent / limit * 100) if limit > 0 else 0 %}
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full" style="background-color: {{ cat.color }};"></span>
+                                <span class="font-bold text-sm text-slate-900 dark:text-white">{{ cat.name }}</span>
+                                <a href="{{ url_for('edit_category', id=cat.id) }}" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Edit</a>
+                            </div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                                Spent this month: <strong>Rs. {{ "{:,.0f}".format(spent) }}</strong>
+                                {% if limit > 0 %} / Cap: Rs. {{ "{:,.0f}".format(limit) }} ({{ "{:.0f}".format(pct) }}%){% endif %}
                             </div>
                         </div>
-                        {% endfor %}
+
+                        <form action="{{ url_for('update_category_limit', category_id=cat.id) }}" method="POST" class="flex items-center gap-1.5">
+                            <input type="number" step="1" min="0" name="monthly_limit" value="{{ limit|round(0)|int }}" placeholder="Cap Rs." class="vs-input py-1.5 text-xs w-28 tabular-nums">
+                            <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary">Save</button>
+                        </form>
                     </div>
-                {% else %}
-                    <div class="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                        <i class="fas fa-users text-4xl text-gray-300 mb-3"></i>
-                        <p class="text-gray-500 font-semibold">No family members yet</p>
-                        <p class="text-gray-400 text-sm mt-1">Add members using their username or share the invite code above</p>
+                    {% if limit > 0 %}
+                    <div class="vs-progress h-1.5 mt-2">
+                        <div class="vs-progress-fill {% if pct >= 100 %}bg-rose-500{% elif pct >= 80 %}bg-amber-500{% else %}bg-emerald-500{% endif %}"
+                             style="width: {{ [pct, 100]|min }}%;"></div>
                     </div>
-                {% endif %}
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- =======================================================================
+     TAB 3: AI FORECAST & ORGANIZER
+     ======================================================================= -->
+<div data-admin-panel="ai-forecast" class="space-y-6 hidden">
+    <!-- Section A: Month-End AI Savings Forecast -->
+    <section class="vs-card">
+        <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="vs-badge vs-badge-primary"><i class="fas fa-chart-line"></i> Ensemble Forecast Engine</span>
+                    {% if latest_savings_forecast %}
+                    <span class="vs-badge vs-badge-neutral">Confidence: {{ (latest_savings_forecast.confidence_score * 100)|round(0)|int }}% ({{ latest_savings_forecast.confidence_level|upper }})</span>
+                    {% endif %}
+                </div>
+                <h2 class="text-base font-extrabold text-slate-900 dark:text-white">AI Month-End Savings Forecast</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Combines current actuals, unpaid planned bills, reserved buckets, weekday burn patterns, and your custom rules.
+                </p>
             </div>
         </div>
 
-        <!-- Budget & Limits Tab -->
-        <div id="budget" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-wallet mr-2 text-green-500"></i>Budget & Limits
-            </h2>
-
-            <!-- Update Family Budget -->
-            <div class="bg-green-50 rounded-lg p-6 border border-green-200 mb-8">
-                <h3 class="font-semibold text-gray-700 mb-4">Default Monthly Income & Budget</h3>
-                <form method="POST" action="{{ url_for('update_budget') }}" class="space-y-4">
-                    <div class="flex gap-3">
-                        <div class="flex-1">
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">Default Income</label>
-                            <input
-                                type="number"
-                                name="monthly_income"
-                                value="{{ family.monthly_income or family.monthly_budget }}"
-                                min="0"
-                                step="500"
-                                class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-green-500 focus:outline-none"
-                                required
-                            >
-                        </div>
-                        <div class="flex-1">
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">Default Spending Budget</label>
-                            <input
-                                type="number"
-                                name="monthly_budget"
-                                value="{{ family.monthly_budget }}"
-                                min="1000"
-                                step="500"
-                                class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-green-500 focus:outline-none"
-                                required
-                            >
-                        </div>
-                        <div class="flex items-end">
-                            <button type="submit" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 duration-200 flex items-center gap-2">
-                                <i class="fas fa-save"></i>Save Defaults
-                            </button>
-                        </div>
-                    </div>
-                    <p class="text-xs text-gray-600">
-                        <i class="fas fa-info-circle mr-1"></i>Defaults apply when a month has no custom override.
-                    </p>
-                </form>
+        <form action="{{ url_for('admin_ai_savings_forecast') }}" method="POST" class="mb-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-3">
+            <label class="vs-label" for="ai-forecast-notes">Custom Forecasting Rules / Admin Notes (Optional)</label>
+            <textarea id="ai-forecast-notes" name="ai_notes" rows="2" placeholder="e.g., Ignore unpaid Car Loan this month; keep Shopping at current actual spend only." class="vs-textarea text-xs">{{ ai_notes }}</textarea>
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <span class="text-[11px] text-slate-500 dark:text-slate-400">The forecast engine parses these notes as hard rules before projecting month-end totals.</span>
+                <button type="submit" class="vs-btn vs-btn-primary">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <span>Run AI Savings Forecast</span>
+                </button>
             </div>
+        </form>
 
-            <div class="bg-indigo-50 rounded-lg p-6 border border-indigo-200 mb-8">
-                <h3 class="font-semibold text-gray-700 mb-4">Current Month Override</h3>
-                <form method="POST" action="{{ url_for('update_monthly_finance_setting') }}" class="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
-                    <input type="hidden" name="month" value="{{ today.month }}">
-                    <input type="hidden" name="year" value="{{ today.year }}">
-                    <input type="hidden" name="next" value="{{ url_for('admin_panel', tab='budget') }}">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">This Month Income</label>
-                        <input type="number" name="monthly_income" value="{{ '%.0f'|format(current_monthly_income) }}" min="0" step="500" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-indigo-500 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">This Month Budget</label>
-                        <input type="number" name="monthly_budget" value="{{ '%.0f'|format(current_monthly_budget) }}" min="0" step="500" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-indigo-500 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Reason</label>
-                        <input type="text" name="notes" value="{{ current_finance.notes }}" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-indigo-500 focus:outline-none" placeholder="Salary delay, bonus, repair month">
-                    </div>
-                    <button type="submit" class="bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 duration-200 flex items-center gap-2 justify-center">
-                        <i class="fas fa-calendar-check"></i>Save Month
-                    </button>
-                </form>
-            </div>
-
-            <!-- Category Limits Manager -->
-            <div class="bg-blue-50 rounded-lg p-6 border border-blue-200">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                    <div>
-                        <h3 class="font-semibold text-gray-700">Category Spending Limits</h3>
-                        <p class="text-sm text-gray-600 mt-1">Edit every category limit and monitor current usage from one admin view.</p>
-                    </div>
-                    <form action="{{ url_for('apply_category_presets') }}" method="POST">
-                        <button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 text-sm">
-                            <i class="fas fa-wand-magic-sparkles mr-1"></i>Add Missing Presets
-                        </button>
-                    </form>
+        {% if latest_savings_forecast %}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div class="vs-card-muted">
+                <div class="vs-kpi-label">Spent To Date</div>
+                <div class="text-base font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                    Rs. {{ "{:,.0f}".format(latest_savings_forecast.current_spent) }}
                 </div>
+            </div>
+            <div class="vs-card-muted">
+                <div class="vs-kpi-label">Predicted Additional</div>
+                <div class="text-base font-extrabold text-amber-600 mt-1 tabular-nums">
+                    +Rs. {{ "{:,.0f}".format(latest_savings_forecast.predicted_additional_spend) }}
+                </div>
+            </div>
+            <div class="vs-card-muted">
+                <div class="vs-kpi-label">Predicted Month Total</div>
+                <div class="text-base font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                    Rs. {{ "{:,.0f}".format(latest_savings_forecast.predicted_total_spend) }}
+                </div>
+            </div>
+            <div class="vs-card-muted">
+                <div class="vs-kpi-label">Expected Savings</div>
+                <div class="text-base font-extrabold mt-1 tabular-nums {% if latest_savings_forecast.expected_savings < 0 %}text-rose-500{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+                    Rs. {{ "{:,.0f}".format(latest_savings_forecast.expected_savings) }}
+                </div>
+            </div>
+        </div>
 
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-left text-sm">
+        {% if latest_savings_payload %}
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <div class="lg:col-span-7">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-2">Category Month-End Projections</h3>
+                <div class="vs-table-wrap max-h-72 overflow-y-auto">
+                    <table class="vs-table">
                         <thead>
-                            <tr class="border-b border-blue-200 text-gray-700">
-                                <th class="py-3 pr-4">Category</th>
-                                <th class="py-3 pr-4">Spent</th>
-                                <th class="py-3 pr-4">Limit</th>
-                                <th class="py-3">Action</th>
+                            <tr>
+                                <th>Category</th>
+                                <th class="text-right">Current</th>
+                                <th class="text-right">Projected EOM</th>
+                                <th>Driver Note</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for category in categories %}
-                            {% set spent = category_spending.get(category.id, 0) %}
-                            <tr class="border-b border-blue-100">
-                                <td class="py-3 pr-4">
-                                    <div class="flex items-center gap-2">
-                                        <span class="h-3 w-3 rounded-full" style="background-color: {{ category.color }}"></span>
-                                        <span class="font-semibold text-gray-800">{{ category.name }}</span>
-                                        {% if category.is_fixed %}<span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Preset</span>{% endif %}
-                                    </div>
-                                </td>
-                                <td class="py-3 pr-4 font-bold {% if category.monthly_limit and spent > category.monthly_limit %}text-red-600{% else %}text-gray-800{% endif %}">&#8377;{{ "{:,.0f}".format(spent) }}</td>
-                                <td class="py-3 pr-4">
-                                    <input form="category-limit-form-{{ category.id }}" type="number" name="monthly_limit" value="{{ category.monthly_limit or 0 }}" min="0" step="0.01" class="w-32 border-2 border-gray-200 rounded-lg p-2 text-sm">
-                                </td>
-                                <td class="py-3">
-                                    <form id="category-limit-form-{{ category.id }}" method="POST" action="{{ url_for('update_category_limit', category_id=category.id) }}"></form>
-                                    <button form="category-limit-form-{{ category.id }}" type="submit" class="bg-slate-800 text-white font-bold py-2 px-3 rounded-lg hover:bg-slate-700 text-xs">Save</button>
-                                </td>
+                            {% for row in latest_savings_payload.get('category_forecasts', []) %}
+                            <tr>
+                                <td class="font-semibold">{{ row.category }}</td>
+                                <td class="text-right tabular-nums">Rs. {{ "{:,.0f}".format(row.current_spent) }}</td>
+                                <td class="text-right tabular-nums font-bold text-indigo-600 dark:text-indigo-400">Rs. {{ "{:,.0f}".format(row.predicted_month_end_spend) }}</td>
+                                <td class="text-xs text-slate-500 dark:text-slate-400">{{ row.note }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div>
 
-        <!-- AI Forecast Tab -->
-        <div id="ai-forecast" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-chart-pie mr-2 text-emerald-500"></i>AI End-of-Month Forecast
-            </h2>
-
-            <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_24rem] gap-6 mb-6">
-                <div class="bg-emerald-50 rounded-lg p-6 border border-emerald-200">
-                    <div class="flex items-start justify-between gap-3 mb-5">
-                        <div>
-                            <h3 class="font-semibold text-gray-700">Run Savings Analysis</h3>
-                            <p class="text-sm text-gray-600 mt-1">VaultSync now runs a local forecast engine first, then Gemini audits the numbers and writes the action plan.</p>
-                        </div>
-                        {% if ai_organizer_configured %}
-                        <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full">Ready</span>
-                        {% else %}
-                        <span class="text-xs bg-yellow-100 text-yellow-800 font-bold px-3 py-1 rounded-full">Needs key</span>
-                        {% endif %}
-                    </div>
-
-                    <form method="POST" action="{{ url_for('admin_ai_savings_forecast') }}" class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">Important Notes For AI</label>
-                            <textarea name="ai_notes" rows="6" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-emerald-500 focus:outline-none" placeholder="Rules to remember, e.g., ignore one-time medical expense, school fee repeats next week, avoid reducing rent/EMI, consider guests visiting this month.">{{ ai_notes }}</textarea>
-                        </div>
-                        <button type="submit" class="bg-emerald-600 text-white font-bold py-3 px-5 rounded-lg hover:bg-emerald-700 duration-200 flex items-center justify-center gap-2" onclick="return confirm('Run AI savings forecast for this month?')">
-                            <i class="fas fa-chart-line"></i>Analyze Savings
-                        </button>
-                    </form>
+            <div class="lg:col-span-5 space-y-3">
+                {% if latest_savings_payload.get('recommended_actions') %}
+                <div class="vs-card-muted">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-2">Recommended Actions</h4>
+                    <ul class="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 m-0 pl-4 list-disc">
+                        {% for act in latest_savings_payload.get('recommended_actions', []) %}
+                        <li>{{ act }}</li>
+                        {% endfor %}
+                    </ul>
                 </div>
+                {% endif %}
 
-                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
-                    <h3 class="font-semibold text-gray-700 mb-3">Forecast Window</h3>
-                    <div class="space-y-3 text-sm text-gray-600">
-                        <p><span class="font-bold text-gray-800">Start:</span> {{ current_month_start.strftime('%b %d, %Y') }}</p>
-                        <p><span class="font-bold text-gray-800">End:</span> {{ current_month_end.strftime('%b %d, %Y') }}</p>
-                        <p><span class="font-bold text-gray-800">Run mode:</span> admin click</p>
-                        <p><span class="font-bold text-gray-800">Model:</span> {{ ai_organizer_model }}</p>
-                        <p><span class="font-bold text-gray-800">Key pool:</span> {{ gemini_key_count }} configured</p>
-                    </div>
-                    <div class="mt-4 p-3 bg-white border border-slate-200 rounded-lg text-xs text-gray-500">
-                        The forecast uses current pace, last 7-day pace, historical months, weekday behavior, unpaid bills, reserved buckets, category limits, and the notes above.
-                    </div>
+                {% if latest_savings_payload.get('risk_flags') %}
+                <div class="vs-card-muted">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-rose-500 mb-2">Risk Flags</h4>
+                    <ul class="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 m-0 pl-4 list-disc">
+                        {% for flag in latest_savings_payload.get('risk_flags', []) %}
+                        <li>{{ flag }}</li>
+                        {% endfor %}
+                    </ul>
                 </div>
-            </div>
-
-            {% if latest_savings_forecast %}
-            <div class="grid grid-cols-1 xl:grid-cols-[24rem_minmax(0,1fr)] gap-6">
-                <div class="bg-white border border-gray-200 rounded-lg p-6">
-                    <h3 class="font-bold text-slate-800 mb-1">{{ latest_savings_payload.forecast_title or 'End-of-month savings forecast' }}</h3>
-                    <p class="text-xs text-gray-500 mb-5">Generated {{ latest_savings_forecast.created_at.strftime('%b %d, %Y %I:%M %p') }}</p>
-                    <div class="relative mx-auto max-w-xs">
-                        <canvas id="savingsForecastChart" aria-label="AI savings forecast donut chart"></canvas>
-                        <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <p class="text-xs text-gray-500 font-semibold">Expected Savings</p>
-                            <p class="text-2xl font-bold {% if latest_savings_forecast.expected_savings >= 0 %}text-emerald-600{% else %}text-red-600{% endif %}">&#8377;{{ "{:,.0f}".format(latest_savings_forecast.expected_savings) }}</p>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3 mt-5 text-sm">
-                        <div class="bg-red-50 border border-red-100 rounded-lg p-3">
-                            <p class="text-xs text-red-700 font-semibold">Spent</p>
-                            <p class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(latest_savings_forecast.current_spent) }}</p>
-                        </div>
-                        <div class="bg-yellow-50 border border-yellow-100 rounded-lg p-3">
-                            <p class="text-xs text-yellow-700 font-semibold">Forecast More</p>
-                            <p class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(latest_savings_forecast.predicted_additional_spend) }}</p>
-                        </div>
-                        <div class="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                            <p class="text-xs text-slate-600 font-semibold">Month-End Spend</p>
-                            <p class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(latest_savings_forecast.predicted_total_spend) }}</p>
-                        </div>
-                        <div class="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                            <p class="text-xs text-blue-700 font-semibold">Confidence</p>
-                            <p class="font-bold text-slate-800">{{ latest_savings_forecast.confidence_level.title() }} · {{ "{:.0f}".format(latest_savings_forecast.confidence_score * 100) }}%</p>
-                        </div>
-                    </div>
-                    {% set forecast_engine = latest_savings_payload.get('forecast_engine') if latest_savings_payload else none %}
-                    {% if forecast_engine %}
-                    {% set candidate_totals = forecast_engine.get('candidate_totals', {}) %}
-                    {% set admin_note_rules = forecast_engine.get('admin_note_rules', {}) %}
-                    <div class="mt-5 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-gray-600">
-                        <p class="font-bold text-slate-800 mb-2">Forecast Engine</p>
-                        <div class="space-y-1">
-                            <p>Simple pace: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('simple_pace_total', 0)) }}</strong></p>
-                            <p>7-day pace: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('last_7_pace_total', 0)) }}</strong></p>
-                            <p>Weekday weighted: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('weekday_weighted_total', 0)) }}</strong></p>
-                            <p>Commitments floor: <strong>&#8377;{{ "{:,.0f}".format(candidate_totals.get('commitments_floor_total', 0)) }}</strong></p>
-                            <p>Regular pace base: <strong>&#8377;{{ "{:,.0f}".format(forecast_engine.get('regular_current_spend', forecast_engine.get('projectable_spend_to_date', 0))) }}</strong></p>
-                            <p>One-time current: <strong>&#8377;{{ "{:,.0f}".format(forecast_engine.get('one_time_current_spend', 0)) }}</strong></p>
-                            <p>Non-pace current: <strong>&#8377;{{ "{:,.0f}".format(forecast_engine.get('locked_current_spend', 0)) }}</strong></p>
-                        </div>
-                        {% if admin_note_rules.get('current_only_categories') %}
-                        <div class="mt-3 pt-3 border-t border-slate-200">
-                            {% if admin_note_rules.get('admin_current_only_categories') %}
-                            <p>Admin note locked: <strong>{{ admin_note_rules.get('admin_current_only_categories')|join(', ') }}</strong></p>
-                            {% endif %}
-                            {% if admin_note_rules.get('automatic_current_only_categories') %}
-                            <p>Auto fixed-bill lock: <strong>{{ admin_note_rules.get('automatic_current_only_categories')|join(', ') }}</strong></p>
-                            {% endif %}
-                            {% if admin_note_rules.get('exception_tokens') %}
-                            <p>Exceptions kept: <strong>{{ admin_note_rules.get('exception_tokens')|join(', ') }}</strong></p>
-                            {% endif %}
-                        </div>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                </div>
-
-                <div class="space-y-6">
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div class="bg-slate-50 border border-gray-200 rounded-lg p-5">
-                            <h3 class="font-bold text-slate-800 mb-3">Important Notes Applied</h3>
-                            {% if latest_savings_payload.important_notes_response %}
-                            <ul class="space-y-2 text-sm text-gray-700">
-                                {% for note in latest_savings_payload.important_notes_response %}
-                                <li>{{ note }}</li>
-                                {% endfor %}
-                            </ul>
-                            {% else %}
-                            <p class="text-sm text-gray-500">No specific admin notes were applied.</p>
-                            {% endif %}
-                        </div>
-                        <div class="bg-red-50 border border-red-100 rounded-lg p-5">
-                            <h3 class="font-bold text-slate-800 mb-3">Risks</h3>
-                            {% if latest_savings_payload.risk_flags %}
-                            <ul class="space-y-2 text-sm text-gray-700">
-                                {% for risk in latest_savings_payload.risk_flags %}
-                                <li>{{ risk }}</li>
-                                {% endfor %}
-                            </ul>
-                            {% else %}
-                            <p class="text-sm text-gray-500">No major risks flagged.</p>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-5">
-                        <h3 class="font-bold text-slate-800 mb-3">Recommended Actions</h3>
-                        {% if latest_savings_payload.recommended_actions %}
-                        <ul class="space-y-2 text-sm text-gray-700">
-                            {% for action in latest_savings_payload.recommended_actions %}
-                            <li>{{ action }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% else %}
-                        <p class="text-sm text-gray-500">Run a forecast to get actions.</p>
-                        {% endif %}
-                    </div>
-
-                    {% if latest_savings_payload.category_forecasts %}
-                    <div class="bg-white border border-gray-200 rounded-lg p-5">
-                        <h3 class="font-bold text-slate-800 mb-3">Category Forecasts</h3>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full text-left text-sm">
-                                <thead>
-                                    <tr class="border-b border-gray-200 text-gray-700">
-                                        <th class="py-2 pr-4">Category</th>
-                                        <th class="py-2 pr-4">Current</th>
-                                        <th class="py-2 pr-4">Forecast</th>
-                                        <th class="py-2">Note</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for row in latest_savings_payload.category_forecasts %}
-                                    <tr class="border-b border-gray-100">
-                                        <td class="py-2 pr-4 font-semibold text-slate-800">{{ row.category }}</td>
-                                        <td class="py-2 pr-4">&#8377;{{ "{:,.0f}".format(row.current_spent) }}</td>
-                                        <td class="py-2 pr-4 font-bold">&#8377;{{ "{:,.0f}".format(row.predicted_month_end_spend) }}</td>
-                                        <td class="py-2 text-gray-600">{{ row.note }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% else %}
-            <div class="bg-slate-50 border border-gray-200 rounded-lg p-10 text-center">
-                <i class="fas fa-chart-pie text-4xl text-gray-300 mb-3"></i>
-                <p class="text-gray-500 font-semibold">No AI savings forecast yet</p>
-                <p class="text-gray-400 text-sm mt-1">Add optional notes and click Analyze Savings.</p>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- AI Organizer Tab -->
-        <div id="ai-organizer" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-wand-magic-sparkles mr-2 text-purple-500"></i>AI Expense Organizer
-            </h2>
-
-            <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem] gap-6">
-                <div class="bg-purple-50 rounded-lg p-6 border border-purple-200">
-                    <div class="flex items-start justify-between gap-3 mb-5">
-                        <div>
-                            <h3 class="font-semibold text-gray-700">Organize Expense Categories</h3>
-                            <p class="text-sm text-gray-600 mt-1">Gemini reads the expense name and description, then chooses the closest existing family category.</p>
-                        </div>
-                        {% if ai_organizer_configured %}
-                        <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full">Ready</span>
-                        {% else %}
-                        <span class="text-xs bg-yellow-100 text-yellow-800 font-bold px-3 py-1 rounded-full">Needs key</span>
-                        {% endif %}
-                    </div>
-
-                    <form method="POST" action="{{ url_for('admin_ai_organize_expenses') }}" class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">Start Date</label>
-                            <input type="date" name="start_date" value="{{ today.strftime('%Y-%m-%d') }}" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">End Date</label>
-                            <input type="date" name="end_date" value="{{ today.strftime('%Y-%m-%d') }}" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-purple-500 focus:outline-none" required>
-                        </div>
-                        <button type="submit" class="bg-purple-600 text-white font-bold py-3 px-5 rounded-lg hover:bg-purple-700 duration-200 flex items-center justify-center gap-2" onclick="return confirm('Let AI reorganize expense categories in this date range?')">
-                            <i class="fas fa-wand-magic-sparkles"></i>Organize
-                        </button>
-                    </form>
-                </div>
-
-                <div class="bg-slate-50 rounded-lg p-6 border border-gray-200">
-                    <h3 class="font-semibold text-gray-700 mb-3">Automation</h3>
-                    <div class="space-y-3 text-sm text-gray-600">
-                        <p><span class="font-bold text-gray-800">Daily run:</span> 11:30 PM server time</p>
-                        <p><span class="font-bold text-gray-800">Scope:</span> current date only</p>
-                        <p><span class="font-bold text-gray-800">Model:</span> {{ ai_organizer_model }}</p>
-                        <p><span class="font-bold text-gray-800">Key:</span> GEMINI_API_KEY {% if ai_organizer_configured %}configured{% else %}missing{% endif %}</p>
-                    </div>
-                    <div class="mt-4 p-3 bg-white border border-slate-200 rounded-lg text-xs text-gray-500">
-                        Category choice in the log remains available as a fallback. The organizer can correct it later from the richer name and description.
-                    </div>
-                </div>
+                {% endif %}
             </div>
         </div>
+        {% endif %}
+        {% endif %}
+    </section>
 
-        <!-- AI Expense Exceptions Tab -->
-        <div id="ai-exceptions" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-shield-alt mr-2 text-blue-500"></i>Expense Exceptions for AI Organizer
-            </h2>
-
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-                <p class="text-sm text-gray-700 mb-2">
-                    <strong>Purpose:</strong> Create exception rules to prevent the AI from confusing expenses between household members with different budgets (e.g., father lives in another home, mom and child in another).
-                </p>
-                <p class="text-sm text-gray-600 mt-3">
-                    When an expense matches an exception rule, it will be excluded from automatic organization, allowing you to categorize it manually.
+    <!-- Section B: AI Expense Organizer & Exception Rules -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <section class="vs-card lg:col-span-5 space-y-4">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">AI Expense Organizer</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Automatically standardizes item names and assigns the best category. Runs nightly at 11:30 PM or manually below.
                 </p>
             </div>
 
-            <!-- Add Exception Form -->
-            <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200 mb-8">
-                <h3 class="font-bold text-gray-800 mb-4">
-                    <i class="fas fa-plus-circle mr-2 text-blue-600"></i>Create Exception Rule
-                </h3>
-
-                <form method="POST" action="{{ url_for('add_ai_expense_exception') }}" class="space-y-4">
+            <form action="{{ url_for('admin_ai_organize_expenses') }}" method="POST" class="space-y-3">
+                <div class="grid grid-cols-2 gap-2.5">
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">
-                            Rule Description <span class="text-red-500">*</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            name="description" 
-                            placeholder="e.g., Father's expenses - separate household"
-                            class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm"
-                            required
-                            maxlength="200"
-                        >
-                        <p class="text-xs text-gray-500 mt-1">A clear description of what this exception rule is for.</p>
+                        <label class="vs-label">Start Date</label>
+                        <input type="date" name="start_date" value="{{ current_month_start.strftime('%Y-%m-%d') }}" required class="vs-input text-xs">
                     </div>
-
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">
-                            Match Keywords <span class="text-gray-500">(Optional)</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            name="match_keywords" 
-                            placeholder="e.g., father, dad, father's"
-                            class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm"
-                            maxlength="500"
-                        >
-                        <p class="text-xs text-gray-500 mt-1">Comma-separated keywords. Expenses with item_name containing any of these will be excluded (case-insensitive).</p>
+                        <label class="vs-label">End Date</label>
+                        <input type="date" name="end_date" value="{{ today.strftime('%Y-%m-%d') }}" required class="vs-input text-xs">
                     </div>
+                </div>
+                <button type="submit" class="vs-btn vs-btn-secondary w-full">
+                    <i class="fas fa-broom text-indigo-500"></i>
+                    <span>Organize Expenses in Range</span>
+                </button>
+            </form>
+        </section>
 
+        <section class="vs-card lg:col-span-7 space-y-4">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">AI Exception Rules ({{ ai_exceptions|length }})</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Protect specific keywords or notes from being recategorized or merged by the nightly AI organizer.
+                </p>
+            </div>
+
+            <form action="{{ url_for('add_ai_expense_exception') }}" method="POST" class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">
-                            Match Description Contains <span class="text-gray-500">(Optional)</span>
-                        </label>
-                        <textarea 
-                            name="match_description_contains" 
-                            placeholder="e.g., father's home, father's expenses"
-                            class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm"
-                            rows="3"
-                            maxlength="500"
-                        ></textarea>
-                        <p class="text-xs text-gray-500 mt-1">Comma-separated patterns. Expenses with description containing any of these will be excluded (case-insensitive).</p>
+                        <label class="vs-label">Rule Name / Description</label>
+                        <input type="text" name="description" placeholder="e.g., Medical reimbursement items" required class="vs-input py-1.5 text-xs">
                     </div>
-
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Action</label>
-                        <select name="action" class="w-full border-2 border-gray-300 rounded-lg p-3 focus:border-blue-500 focus:outline-none text-sm">
-                            <option value="exclude">Exclude from AI organization</option>
-                            <option value="separate">Flag as separate household</option>
+                        <label class="vs-label">Action</label>
+                        <select name="action" class="vs-select py-1.5 text-xs">
+                            <option value="exclude">Exclude from AI Organizer</option>
+                            <option value="separate">Keep in Separate Category</option>
                         </select>
-                        <p class="text-xs text-gray-500 mt-1">What should happen when this rule matches an expense.</p>
                     </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                        <label class="vs-label">Match Item Keywords (comma-separated)</label>
+                        <input type="text" name="match_keywords" placeholder="e.g., clinic, hospital, lab" class="vs-input py-1.5 text-xs">
+                    </div>
+                    <div>
+                        <label class="vs-label">Or Description Contains</label>
+                        <input type="text" name="match_description_contains" placeholder="e.g., do not move" class="vs-input py-1.5 text-xs">
+                    </div>
+                </div>
+                <button type="submit" class="vs-btn vs-btn-sm vs-btn-primary">
+                    <i class="fas fa-plus"></i> Add Exception Rule
+                </button>
+            </form>
 
-                    <button 
-                        type="submit" 
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg duration-200 flex items-center gap-2 w-full justify-center"
-                    >
-                        <i class="fas fa-plus"></i>Create Exception Rule
-                    </button>
-                </form>
-            </div>
-
-            <!-- Active Exception Rules -->
             {% if ai_exceptions %}
-            <div class="space-y-4">
-                <h3 class="font-bold text-gray-800 text-lg">
-                    <i class="fas fa-list mr-2 text-blue-600"></i>Exception Rules ({{ ai_exceptions | length }})
-                </h3>
-
+            <div class="space-y-2">
                 {% for exc in ai_exceptions %}
-                <div class="border-2 {% if exc.is_active %}border-blue-200 bg-blue-50{% else %}border-gray-300 bg-gray-50{% endif %} rounded-lg p-4">
-                    <div class="flex items-start justify-between gap-4 mb-3">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-3">
-                                <h4 class="font-bold text-gray-800">{{ exc.description }}</h4>
-                                <span class="text-xs font-bold {% if exc.is_active %}bg-blue-100 text-blue-800{% else %}bg-gray-200 text-gray-700{% endif %} px-3 py-1 rounded-full">
-                                    {% if exc.is_active %}Active{% else %}Disabled{% endif %}
-                                </span>
-                                <span class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{{ exc.action }}</span>
-                            </div>
-                            
-                            <div class="mt-3 space-y-2 text-sm text-gray-700">
-                                {% if exc.match_keywords %}
-                                <p><strong>Keywords:</strong> <code class="bg-white px-2 py-1 rounded border border-gray-300 text-xs">{{ exc.match_keywords }}</code></p>
-                                {% endif %}
-                                {% if exc.match_description_contains %}
-                                <p><strong>Description patterns:</strong> <code class="bg-white px-2 py-1 rounded border border-gray-300 text-xs">{{ exc.match_description_contains }}</code></p>
-                                {% endif %}
-                            </div>
+                <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>{{ exc.description }}</span>
+                            <span class="vs-badge {% if exc.is_active %}vs-badge-success{% else %}vs-badge-neutral{% endif %}">
+                                {% if exc.is_active %}Active{% else %}Paused{% endif %}
+                            </span>
                         </div>
-
-                        <div class="flex flex-col gap-2 whitespace-nowrap">
-                            <form method="POST" action="{{ url_for('toggle_ai_expense_exception', exc_id=exc.id) }}" class="inline">
-                                <button type="submit" class="text-xs font-bold {% if exc.is_active %}bg-yellow-100 text-yellow-800 hover:bg-yellow-200{% else %}bg-green-100 text-green-800 hover:bg-green-200{% endif %} px-4 py-2 rounded-lg duration-200">
-                                    {% if exc.is_active %}<i class="fas fa-pause mr-1"></i>Disable{% else %}<i class="fas fa-play mr-1"></i>Enable{% endif %}
-                                </button>
-                            </form>
-                            <form method="POST" action="{{ url_for('delete_ai_expense_exception', exc_id=exc.id) }}" class="inline" onsubmit="return confirm('Delete this exception rule?');">
-                                <button type="submit" class="text-xs font-bold bg-red-100 text-red-800 hover:bg-red-200 px-4 py-2 rounded-lg duration-200">
-                                    <i class="fas fa-trash mr-1"></i>Delete
-                                </button>
-                            </form>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400">
+                            {% if exc.match_keywords %}Keywords: {{ exc.match_keywords }}{% endif %}
+                            {% if exc.match_description_contains %} · Note: "{{ exc.match_description_contains }}"{% endif %}
                         </div>
+                    </div>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <form action="{{ url_for('toggle_ai_expense_exception', exc_id=exc.id) }}" method="POST">
+                            <button type="submit" class="vs-btn vs-btn-sm vs-btn-ghost">
+                                {% if exc.is_active %}Pause{% else %}Enable{% endif %}
+                            </button>
+                        </form>
+                        <form action="{{ url_for('delete_ai_expense_exception', exc_id=exc.id) }}" method="POST" onsubmit="return confirm('Delete this exception rule?');">
+                            <button type="submit" class="vs-icon-btn hover:text-rose-500"><i class="fas fa-trash text-xs"></i></button>
+                        </form>
                     </div>
                 </div>
                 {% endfor %}
             </div>
-            {% else %}
-            <div class="text-center py-8 text-gray-500">
-                <i class="fas fa-info-circle text-2xl mb-3"></i>
-                <p>No exception rules created yet. Add one to protect specific expenses from AI organization.</p>
-            </div>
             {% endif %}
-        </div>
+        </section>
+    </div>
+</div>
 
-        <!-- Settings Tab -->
-        <div id="settings" class="tab-content bg-white rounded-b-xl shadow p-6 md:p-8">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6">
-                <i class="fas fa-cog mr-2 text-gray-600"></i>Family Settings
-            </h2>
+<!-- =======================================================================
+     TAB 4: WORKSPACE SETTINGS & DANGER ZONE
+     ======================================================================= -->
+<div data-admin-panel="settings" class="space-y-6 hidden">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <section class="vs-card space-y-4">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">Family Profile &amp; Data Export</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Rename your family workspace or export all historical records.</p>
+            </div>
 
-            <!-- Update Family Name -->
-            <div class="bg-slate-50 rounded-lg p-6 border border-gray-200 mb-8">
-                <h3 class="font-semibold text-gray-700 mb-4">Change Family Name</h3>
-                <form method="POST" action="{{ url_for('update_family') }}" class="space-y-4">
-                    <div class="flex gap-3">
-                        <input
-                            type="text"
-                            name="family_name"
-                            value="{{ family.name }}"
-                            minlength="2"
-                            class="flex-1 border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none"
-                            required
-                        >
-                        <button type="submit" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 duration-200 flex items-center gap-2 whitespace-nowrap">
-                            <i class="fas fa-save"></i>Update Name
-                        </button>
-                    </div>
+            <form action="{{ url_for('update_family') }}" method="POST" class="space-y-3">
+                <div>
+                    <label class="vs-label">Family Workspace Name</label>
+                    <input type="text" name="family_name" value="{{ family.name }}" required class="vs-input">
+                </div>
+                <button type="submit" class="vs-btn vs-btn-primary">
+                    <i class="fas fa-check"></i>
+                    <span>Update Family Name</span>
+                </button>
+            </form>
+
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                    <div class="text-xs font-bold text-slate-900 dark:text-white">Export Complete Family Ledger</div>
+                    <div class="text-[11px] text-slate-500">Download all transactions as a CSV spreadsheet</div>
+                </div>
+                <a href="{{ url_for('export_ai_data') }}" class="vs-btn vs-btn-sm vs-btn-secondary">
+                    <i class="fas fa-download text-indigo-500"></i> Download CSV
+                </a>
+            </div>
+        </section>
+
+        <section class="vs-card border-rose-200 dark:border-rose-500/30 space-y-4">
+            <div>
+                <h2 class="text-base font-bold text-rose-600 dark:text-rose-400">Danger Zone</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Archive or permanently delete this family workspace.</p>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 flex items-center justify-between gap-3">
+                <div>
+                    <div class="text-xs font-bold text-slate-900 dark:text-white">Archive Family Workspace</div>
+                    <div class="text-[11px] text-slate-500 dark:text-slate-400">Pauses scheduled nightly AI tasks while keeping data intact.</div>
+                </div>
+                <form action="{{ url_for('archive_family') }}" method="POST" onsubmit="return confirm('Archive this family workspace?');">
+                    <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary">Archive</button>
                 </form>
             </div>
 
-            <!-- Danger Zone -->
-            <div class="bg-red-50 rounded-lg p-6 border-2 border-red-300">
-                <h3 class="font-bold text-red-700 mb-4">
-                    <i class="fas fa-exclamation-triangle mr-2"></i>Danger Zone
-                </h3>
-
-                <div class="space-y-4">
-                    <!-- Archive Family -->
-                    <div class="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
-                        <div>
-                            <p class="font-semibold text-gray-800">Archive Family</p>
-                            <p class="text-xs text-gray-600 mt-1">Hide this family from view but keep the data</p>
-                        </div>
-                        <form method="POST" action="{{ url_for('archive_family') }}" class="inline">
-                            <button type="submit" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 duration-200 text-sm" onclick="return confirm('Archive this family? You can unarchive it later.')">
-                                <i class="fas fa-box mr-1"></i>Archive
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- Delete Family -->
-                    <div class="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
-                        <div>
-                            <p class="font-semibold text-gray-800">Delete Family</p>
-                            <p class="text-xs text-gray-600 mt-1">Permanently delete family, expenses, and all data (CANNOT be undone)</p>
-                        </div>
-                        <form method="POST" action="{{ url_for('delete_family') }}" class="inline">
-                            <button type="submit" class="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 duration-200 text-sm" onclick="return confirm('PERMANENTLY DELETE this family and all data? This cannot be undone!')">
-                                <i class="fas fa-trash-alt mr-1"></i>Delete
-                            </button>
-                        </form>
-                    </div>
+            <div class="p-3.5 rounded-xl bg-rose-50/70 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/25 flex items-center justify-between gap-3">
+                <div>
+                    <div class="text-xs font-bold text-rose-800 dark:text-rose-300">Permanently Delete Family</div>
+                    <div class="text-[11px] text-rose-600 dark:text-rose-400">Deletes all expenses, categories, plans, and unlinks members. Cannot be undone.</div>
                 </div>
+                <form action="{{ url_for('delete_family') }}" method="POST" onsubmit="return confirm('PERMANENTLY DELETE {{ family.name }} and all expenses? This cannot be undone!');">
+                    <button type="submit" class="vs-btn vs-btn-sm vs-btn-danger">Delete Forever</button>
+                </form>
             </div>
-        </div>
+        </section>
     </div>
+</div>
+{% endblock %}
 
-    <script>
-        function switchTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
+{% block scripts %}
+<script>
+    (function() {
+        const tabs = document.querySelectorAll('[data-admin-tab]');
+        const panels = document.querySelectorAll('[data-admin-panel]');
+        if (!tabs.length) return;
+
+        function activateTab(tabName) {
+            // Map legacy sub-tabs to consolidated tab
+            if (tabName === 'ai-organizer' || tabName === 'ai-exceptions') {
+                tabName = 'ai-forecast';
+            }
+            if (tabName === 'overview') {
+                tabName = 'members';
+            }
+            tabs.forEach((btn) => {
+                btn.classList.toggle('active', btn.getAttribute('data-admin-tab') === tabName);
             });
-
-            // Remove active class from all buttons
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-
-            // Show selected tab
-            document.getElementById(tabName).classList.add('active');
-
-            // Add active class to clicked button
-            event.target.closest('.tab-btn').classList.add('active');
-        }
-
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                alert('Invite code copied to clipboard!');
-            });
-        }
-
-        const initialTab = new URLSearchParams(window.location.search).get('tab');
-        if (initialTab && document.getElementById(initialTab)) {
-            const button = Array.from(document.querySelectorAll('.tab-btn')).find((btn) => {
-                return btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(`'${initialTab}'`);
-            });
-            if (button) button.click();
-        }
-
-        const savingsForecastCanvas = document.getElementById('savingsForecastChart');
-        if (savingsForecastCanvas && window.Chart) {
-            const forecastData = {{ savings_chart_data | tojson }};
-            const currentSpent = Number(forecastData.current_spent || 0);
-            const additionalSpend = Number(forecastData.predicted_additional_spend || 0);
-            const savings = Number(forecastData.expected_savings || 0);
-            const overspend = Number(forecastData.expected_overspend || 0);
-            const monthlyBudget = Number(forecastData.monthly_budget || 0);
-            const currentRemaining = Math.max(monthlyBudget - currentSpent, 0);
-            const forecastBalance = savings > 0 ? savings : overspend;
-
-            new Chart(savingsForecastCanvas.getContext('2d'), {
-                type: 'doughnut',
-                data: {
-                    labels: ['Current spent', 'Forecast additional', savings > 0 ? 'Expected savings' : 'Expected overspend', 'Current remaining'],
-                    datasets: [
-                        {
-                            label: 'Forecast shadow',
-                            data: [currentSpent, additionalSpend, forecastBalance],
-                            backgroundColor: [
-                                'rgba(239, 68, 68, 0.72)',
-                                'rgba(245, 158, 11, 0.38)',
-                                savings > 0 ? 'rgba(16, 185, 129, 0.42)' : 'rgba(220, 38, 38, 0.42)'
-                            ],
-                            borderWidth: 0,
-                            radius: '100%',
-                            cutout: '68%'
-                        },
-                        {
-                            label: 'Current month',
-                            data: [currentSpent, currentRemaining],
-                            backgroundColor: ['#ef4444', '#e5e7eb'],
-                            borderWidth: 0,
-                            radius: '64%',
-                            cutout: '48%'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                usePointStyle: true,
-                                boxWidth: 8,
-                                font: { size: 11, weight: 'bold' }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return `${context.dataset.label}: Rs. ${Number(context.raw || 0).toLocaleString('en-IN')}`;
-                                }
-                            }
-                        }
-                    }
-                }
+            panels.forEach((panel) => {
+                panel.classList.toggle('hidden', panel.getAttribute('data-admin-panel') !== tabName);
             });
         }
-    </script>
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=assistant-20260620"></script>
-</body>
-</html>
+
+        tabs.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const target = btn.getAttribute('data-admin-tab');
+                activateTab(target);
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', target);
+                window.history.replaceState({}, '', url);
+            });
+        });
+
+        const params = new URLSearchParams(window.location.search);
+        const initialTab = params.get('tab') || 'members';
+        activateTab(initialTab);
+    })();
+</script>
+{% endblock %}

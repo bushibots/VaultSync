@@ -56,6 +56,7 @@ load_local_env()
 from flask_caching import Cache
 
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 cache = Cache(config={'CACHE_TYPE': 'SimpleCache'})
 cache.init_app(app)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(32)
@@ -3167,6 +3168,28 @@ def ensure_ai_organizer_scheduler_running():
     start_daily_report_scheduler()
     start_ai_plan_scheduler()
 
+
+@app.context_processor
+def inject_global_layout_context():
+    unread_reports_count = 0
+    is_manager = False
+    if current_user.is_authenticated:
+        is_manager = is_family_manager(current_user)
+        if current_user.family_id:
+            try:
+                unread_reports_count = BudgetReport.query.filter_by(
+                    family_id=current_user.family_id,
+                    is_read=False
+                ).count()
+            except Exception:
+                unread_reports_count = 0
+    return {
+        'unread_reports_count': unread_reports_count,
+        'gemini_ready': gemini_configured(),
+        'is_manager': is_manager,
+        'current_endpoint': request.endpoint or '',
+    }
+
 # --- AUTH ROUTES ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -3322,6 +3345,7 @@ def join_family():
 
 # --- ROUTES ---
 @app.route('/')
+@app.route('/dashboard')
 def dashboard():
     if not current_user.is_authenticated:
         return redirect(url_for('login'))
@@ -3744,9 +3768,10 @@ def financial_reports():
 @app.route('/financial_reports/ai_suggested_plan', methods=['POST'])
 @login_required
 def generate_ai_suggested_plan_now():
+    return_to = request.form.get('return_to', 'financial_reports')
     if not is_family_manager(current_user):
         flash('Unauthorized: family manager only', 'error')
-        return redirect(url_for('financial_reports'))
+        return redirect(url_for('ai_budget' if return_to == 'ai_budget' else 'financial_reports'))
     if not current_user.family_id:
         flash('Please join a family before generating an AI plan.', 'error')
         return redirect(url_for('dashboard'))
@@ -3771,14 +3796,20 @@ def generate_ai_suggested_plan_now():
     except ValueError as exc:
         db.session.rollback()
         flash(f'AI suggested plan could not run: {exc}', 'error')
+        if return_to == 'ai_budget':
+            return redirect(url_for('ai_budget'))
         return redirect(url_for('financial_reports', month=selected_month, year=selected_year))
     except Exception as exc:
         db.session.rollback()
         app.logger.exception('AI suggested plan failed')
         flash(f'AI suggested plan failed unexpectedly: {exc}', 'error')
+        if return_to == 'ai_budget':
+            return redirect(url_for('ai_budget'))
         return redirect(url_for('financial_reports', month=selected_month, year=selected_year))
 
-    flash(f'AI suggested plan saved: Rs. {suggestion.total_planned:,.0f} across the selected month.', 'success')
+    flash(f'AI suggested plan saved: Rs. {suggestion.total_planned:,.0f} across {calendar.month_name[selected_month]} {selected_year}.', 'success')
+    if return_to == 'ai_budget':
+        return redirect(url_for('ai_budget', suggestion_id=suggestion.id))
     return redirect(url_for('financial_reports', month=selected_month, year=selected_year))
 
 
@@ -3792,6 +3823,7 @@ def daily_diary():
 
     today = datetime.now().date()
     selected_date_str = request.args.get('date', '').strip()
+    mine_only = request.args.get('mine') == '1'
 
     if selected_date_str:
         try:
@@ -3802,10 +3834,18 @@ def daily_diary():
     else:
         selected_date = today
 
-    expenses = Expense.query.filter_by(
+    all_day_expenses = Expense.query.filter_by(
         date=selected_date,
         family_id=current_user.family_id
-    ).order_by(Expense.id.asc()).all()
+    ).order_by(Expense.id.desc()).all()
+
+    family_daily_total = sum(exp.amount for exp in all_day_expenses)
+    my_daily_total = sum(exp.amount for exp in all_day_expenses if exp.user_id == current_user.id)
+
+    if mine_only:
+        expenses = [exp for exp in all_day_expenses if exp.user_id == current_user.id]
+    else:
+        expenses = all_day_expenses
 
     categories = Category.query.filter_by(
         family_id=current_user.family_id
@@ -3816,7 +3856,6 @@ def daily_diary():
         {'label': 'Yesterday', 'date': today - timedelta(days=1)},
         {'label': 'Today', 'date': today},
         {'label': 'Tomorrow', 'date': today + timedelta(days=1)},
-        {'label': 'Selected', 'date': selected_date},
     ]
 
     return render_template(
@@ -3825,6 +3864,9 @@ def daily_diary():
         expenses=expenses,
         categories=categories,
         daily_total=daily_total,
+        family_daily_total=family_daily_total,
+        my_daily_total=my_daily_total,
+        mine_only=mine_only,
         selected_date=selected_date,
         today=today,
         previous_date=selected_date - timedelta(days=1),
@@ -3836,20 +3878,38 @@ def daily_diary():
 @app.route('/my_spendings')
 @login_required
 def my_spendings():
-    all_categories = Category.query.filter_by(family_id=current_user.family_id).all()
-    # Fetch ONLY the logged-in user's expenses in their family
+    if not current_user.family_id:
+        flash('Please join a family before viewing personal spendings.', 'error')
+        return redirect(url_for('dashboard'))
+
+    all_categories = Category.query.filter_by(family_id=current_user.family_id).order_by(Category.name.asc()).all()
     my_expenses = Expense.query.filter_by(
         user_id=current_user.id, 
         family_id=current_user.family_id
-    ).order_by(Expense.date.desc()).all()
+    ).order_by(Expense.date.desc(), Expense.id.desc()).all()
     
     my_total = sum(exp.amount for exp in my_expenses)
+    today = datetime.now().date()
+    this_month_total = sum(
+        exp.amount for exp in my_expenses
+        if exp.date and exp.date.year == today.year and exp.date.month == today.month
+    )
+    avg_expense = (my_total / len(my_expenses)) if my_expenses else 0.0
+    cat_totals = {}
+    for exp in my_expenses:
+        cname = exp.category.name if exp.category else 'Uncategorized'
+        cat_totals[cname] = cat_totals.get(cname, 0.0) + float(exp.amount or 0)
+    top_category_name = max(cat_totals.items(), key=lambda x: x[1])[0] if cat_totals else 'None'
 
     return render_template('my_spendings.html', 
                            user=current_user,
                            expenses=my_expenses,
                            categories=all_categories,
-                           total_spent=my_total)
+                           total_spent=my_total,
+                           this_month_total=this_month_total,
+                           avg_expense=avg_expense,
+                           top_category_name=top_category_name,
+                           today=today)
 
 # --- UPDATED: ADD EXPENSE WITH DATE ---
 @app.route('/add_expense', methods=['POST'])
@@ -5528,90 +5588,8 @@ def delete_family():
 @app.route('/admin_panel/reports', methods=['GET'])
 @login_required
 def reports():
-    """Analytics and reports for family spending"""
-    if not is_family_manager(current_user):
-        flash('Unauthorized: family manager only', 'error')
-        return redirect(url_for('dashboard'))
-
-    import calendar
-
-    family = current_user.family
-    current_date = datetime.utcnow()
-
-    # Get last 6 months of data for trends
-    months_data = []
-    for i in range(5, -1, -1):
-        date = current_date - timedelta(days=30*i)
-        month = date.month
-        year = date.year
-        month_str = f"{month:02d}"
-        year_str = str(year)
-
-        total = db.session.query(
-            func.sum(Expense.amount).label('total')
-        ).filter(
-            func.strftime('%Y', Expense.date) == year_str,
-            func.strftime('%m', Expense.date) == month_str,
-            Expense.family_id == family.id
-        ).scalar() or 0.0
-
-        months_data.append({
-            'month': calendar.month_abbr[month],
-            'year': year,
-            'amount': float(total)
-        })
-
-    # Get current month category breakdown
-    month_str = f"{current_date.month:02d}"
-    year_str = str(current_date.year)
-
-    category_totals = db.session.query(
-        Category.name,
-        Category.monthly_limit,
-        func.sum(Expense.amount).label('spent')
-    ).join(Expense, Expense.category_id == Category.id).filter(
-        func.strftime('%Y', Expense.date) == year_str,
-        func.strftime('%m', Expense.date) == month_str,
-        Expense.family_id == family.id
-    ).group_by(Category.id).all()
-
-    categories_data = []
-    for cat_name, cat_limit, spent in category_totals:
-        categories_data.append({
-            'name': cat_name,
-            'spent': float(spent),
-            'limit': float(cat_limit) if cat_limit else None
-        })
-
-    # Member contribution
-    member_totals = db.session.query(
-        User.username,
-        func.sum(Expense.amount).label('total')
-    ).join(Expense, Expense.user_id == User.id).filter(
-        func.strftime('%Y', Expense.date) == year_str,
-        func.strftime('%m', Expense.date) == month_str,
-        Expense.family_id == family.id
-    ).group_by(User.id).all()
-
-    members_data = [
-        {'name': username, 'amount': float(total)}
-        for username, total in member_totals
-    ]
-
-    # Current month stats
-    current_month_total = sum(cat['spent'] for cat in categories_data)
-    budget_percentage = (current_month_total / family.monthly_budget * 100) if family.monthly_budget else 0
-
-    return render_template('reports.html',
-                          user=current_user,
-                          family=family,
-                          months_data=months_data,
-                          categories_data=categories_data,
-                          members_data=members_data,
-                          current_month_total=current_month_total,
-                          budget_percentage=budget_percentage,
-                          month_name=calendar.month_name[current_date.month],
-                          year=current_date.year)
+    """Redirect legacy admin reports route to unified financial reports."""
+    return redirect(url_for('financial_reports'))
 
 
 @app.route('/admin_panel/reports/data', methods=['GET'])
@@ -5628,9 +5606,9 @@ def reports_data():
     trend_labels = []
     trend_data = []
     for i in range(5, -1, -1):
-        date = current_date - timedelta(days=30*i)
-        month = date.month
-        year = date.year
+        date_Cursor = current_date - timedelta(days=30*i)
+        month = date_Cursor.month
+        year = date_Cursor.year
         month_str = f"{month:02d}"
         year_str = str(year)
 
@@ -5642,7 +5620,6 @@ def reports_data():
             Expense.family_id == family.id
         ).scalar() or 0.0
 
-        import calendar
         trend_labels.append(f"{calendar.month_abbr[month]} {year}")
         trend_data.append(float(total))
 
@@ -5800,7 +5777,6 @@ def generate_report_now():
         return redirect(url_for('daily_reports'))
 
 
-
 from flask_apscheduler import APScheduler
 scheduler = APScheduler()
 
@@ -5810,12 +5786,15 @@ def auto_pay_expected_expenses():
         today = datetime.now().date()
         due_buckets = ExpectedExpense.query.filter_by(is_autopay=True, is_paid=False, month=today.month, year=today.year).filter(ExpectedExpense.due_day <= today.day).all()
         for bucket in due_buckets:
+            target_user_id = default_family_ai_user_id(bucket.family) if bucket.family else None
+            if not target_user_id:
+                continue
             exp = Expense(
                 date=today, 
                 item_name=f'Auto-Pay: {bucket.name}', 
                 amount=bucket.amount, 
                 category_id=bucket.category_id, 
-                user_id=bucket.family.created_by_user_id, 
+                user_id=target_user_id, 
                 family_id=bucket.family_id, 
                 bucket_id=bucket.id
             )
@@ -5876,16 +5855,14 @@ def scan_receipt():
         else:
             base64_file = base64.b64encode(file_data).decode('utf-8')
 
-        api_key = os.environ.get('GEMINI_API_KEY')
-        if not api_key:
+        api_keys = configured_gemini_keys()
+        if not api_keys:
             return jsonify({'error': 'Gemini API key not configured'}), 500
             
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
-        
         categories = [c.name for c in Category.query.filter_by(family_id=current_user.family_id).all()]
         categories_str = ", ".join(categories)
         
-        prompt = f"Extract the total amount, the main item name/vendor, and suggest the best category from this list: {categories_str}. Return ONLY valid JSON with keys: 'amount' (number), 'item_name' (string), 'category' (string). "
+        prompt = f"Extract the total amount, the main item name/vendor, optional date (YYYY-MM-DD if visible), and suggest the best category from this list: {categories_str}. Return ONLY valid JSON with keys: 'amount' (number), 'item_name' (string), 'category' (string), 'date' (string, optional)."
         if extracted_text:
             prompt += f"\n\nDOCUMENT TEXT:\n{extracted_text}"
             
@@ -5901,119 +5878,731 @@ def scan_receipt():
             }
         }
         
+        last_error = 'Failed to analyze receipt'
+        for api_key in api_keys:
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode('utf-8'),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    result = json.loads(response.read().decode('utf-8'))
+                    text_response = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '{}')
+                    parsed = json.loads(text_response)
+                    return jsonify(parsed)
+            except Exception as e:
+                last_error = str(e)
+                continue
+        return jsonify({'error': last_error}), 500
+
+
+def parse_xlsx_rows(file_bytes):
+    """Zero-dependency column-aligned .xlsx reader supporting multi-sheet Expense Books."""
+    import io
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    def col_to_idx(cell_ref):
+        m = re.match(r'([A-Z]+)', cell_ref or '')
+        if not m:
+            return 0
+        idx = 0
+        for ch in m.group(1):
+            idx = idx * 26 + (ord(ch) - ord('A') + 1)
+        return idx - 1
+
+    ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    all_sheets_rows = []
+    with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+        strings = []
+        if 'xl/sharedStrings.xml' in z.namelist():
+            root = ET.fromstring(z.read('xl/sharedStrings.xml'))
+            for si in root.findall(f'.//{ns}si'):
+                strings.append(''.join(t.text or '' for t in si.findall(f'.//{ns}t')))
+
+        sheet_files = sorted(
+            [name for name in z.namelist() if name.startswith('xl/worksheets/sheet') and name.endswith('.xml')],
+            key=lambda x: int(re.search(r'sheet(\d+)\.xml', x).group(1)) if re.search(r'sheet(\d+)\.xml', x) else 999
+        )
+        for sf in sheet_files:
+            sroot = ET.fromstring(z.read(sf))
+            sheet_rows = []
+            for r in sroot.findall(f'.//{ns}row'):
+                row_map = {}
+                for c in r.findall(f'{ns}c'):
+                    cidx = col_to_idx(c.attrib.get('r'))
+                    t = c.attrib.get('t')
+                    v = c.find(f'{ns}v')
+                    is_el = c.find(f'{ns}is')
+                    val = ''
+                    if t == 's' and v is not None and v.text:
+                        s_idx = int(v.text)
+                        if 0 <= s_idx < len(strings):
+                            val = strings[s_idx]
+                    elif t == 'inlineStr' and is_el is not None:
+                        val = ''.join(x.text or '' for x in is_el.findall(f'.//{ns}t'))
+                    elif v is not None and v.text:
+                        val = v.text
+                    row_map[cidx] = str(val).strip()
+                if row_map and any(row_map.values()):
+                    max_c = max(row_map.keys())
+                    sheet_rows.append([row_map.get(i, '') for i in range(max_c + 1)])
+            if sheet_rows:
+                all_sheets_rows.extend(sheet_rows)
+                all_sheets_rows.append([])
+    return all_sheets_rows
+
+
+def parse_book_date_value(raw_val):
+    """Parse ISO dates, DD/MM/YYYY, DD-MM-YYYY, or Excel serial dates (e.g. 46296 -> 2026-10-01)."""
+    if raw_val is None:
+        return None
+    s = str(raw_val).strip()
+    if not s or s in ('--', '-', 'N/A', 'None'):
+        return None
+    # Check Excel serial date (integer or float like '46296' or '46296.0')
+    if re.match(r'^\d{5}(\.0+)?$', s):
+        serial = int(float(s))
+        if 36526 <= serial <= 60000:
+            return date(1899, 12, 30) + timedelta(days=serial)
+    # Try common date formats
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y/%m/%d', '%d %b %Y', '%d %B %Y', '%m/%d/%Y'):
         try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            return datetime.strptime(s[:10] if fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y/%m/%d') else s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def parse_book_amount_value(raw_val):
+    if raw_val is None:
+        return None
+    s = str(raw_val).strip()
+    if not s or s in ('--', '-', 'N/A'):
+        return None
+    cleaned = re.sub(r'(?i)(rs\.?|inr|₹|,|\s)', '', s)
+    try:
+        return round(float(cleaned), 2)
+    except ValueError:
+        return None
+
+
+def extract_structured_book_data(rows):
+    """
+    Scan 2D rows (from CSV, TSV, pasted spreadsheet, or multi-sheet XLSX) and extract:
+    - transactions: list of dicts
+    - category_budgets: dict of {category_name: float_limit}
+    - settings_categories: list of category names
+    - settings_members: list of member names
+    """
+    transactions = []
+    category_budgets = {}
+    settings_categories = []
+    settings_members = []
+
+    n = len(rows)
+    i = 0
+    while i < n:
+        row = [str(c or '').strip() for c in rows[i]]
+        lower_row = [c.lower() for c in row]
+
+        # 1. Check if this row contains a Category Monthly Budget sub-table header
+        for c_idx in range(len(lower_row) - 1):
+            if lower_row[c_idx] == 'category' and lower_row[c_idx + 1] in ('monthly budget', 'budget', 'monthly limit', 'allocated budget'):
+                b_row_idx = i + 1
+                while b_row_idx < n:
+                    b_row = [str(c or '').strip() for c in rows[b_row_idx]]
+                    if c_idx >= len(b_row):
+                        b_row_idx += 1
+                        continue
+                    cat_cell = b_row[c_idx].strip()
+                    amt_cell = b_row[c_idx + 1].strip() if (c_idx + 1) < len(b_row) else ''
+                    if not cat_cell and not amt_cell:
+                        b_row_idx += 1
+                        continue
+                    if cat_cell.lower() in ('total', 'total expenses', 'grand total', 'categories', 'date'):
+                        break
+                    amt_val = parse_book_amount_value(amt_cell)
+                    if cat_cell and amt_val is not None and amt_val >= 0 and not parse_book_date_value(cat_cell):
+                        category_budgets[cat_cell] = amt_val
+                    elif cat_cell and amt_val is None and b_row_idx > i + 2:
+                        break
+                    b_row_idx += 1
+
+        # 2. Check if this row is the Settings / Reference lists table header
+        if 'categories' in lower_row and 'members' in lower_row:
+            cat_col = lower_row.index('categories')
+            mem_col = lower_row.index('members')
+            s_idx = i + 1
+            while s_idx < n:
+                s_row = [str(c or '').strip() for c in rows[s_idx]]
+                if not any(s_row):
+                    break
+                c_val = s_row[cat_col] if cat_col < len(s_row) else ''
+                m_val = s_row[mem_col] if mem_col < len(s_row) else ''
+                if c_val.lower() in ('date', 'category', 'total'):
+                    break
+                if c_val and c_val.lower() not in ('transfer/conversion', 'transfer', '--'):
+                    if c_val not in settings_categories:
+                        settings_categories.append(c_val)
+                if m_val and m_val.lower() not in ('--', 'family', 'all'):
+                    if m_val not in settings_members:
+                        settings_members.append(m_val)
+                s_idx += 1
+
+        # 3. Check if this row is the Transaction Ledger Header
+        has_date = 'date' in lower_row
+        has_amount = any(k in lower_row for k in ('amount', 'debit', 'spent', 'cost', 'amount (rs)', 'amount (₹)'))
+        has_desc = any(k in lower_row for k in ('expense description', 'description', 'item', 'item name', 'item_name', 'particulars', 'narration'))
+
+        if has_date and has_amount and has_desc:
+            def find_col(*names):
+                for name in names:
+                    if name in lower_row:
+                        return lower_row.index(name)
+                return None
+
+            col_date = find_col('date')
+            col_time = find_col('time')
+            col_desc = find_col('expense description', 'item name', 'item_name', 'item', 'description', 'particulars', 'narration')
+            col_cat = find_col('category', 'category name')
+            col_amt = find_col('amount', 'debit', 'spent', 'cost', 'amount (rs)', 'amount (₹)')
+            col_method = find_col('payment method', 'method', 'mode', 'payment mode')
+            col_account = find_col('account / paid by', 'account', 'paid by', 'source account')
+            col_payee = find_col('payee / beneficiary', 'payee', 'beneficiary', 'merchant', 'vendor')
+            col_txid = find_col('transaction id', 'txn id', 'tx id', 'reference id')
+            col_utr = find_col('utr no.', 'utr no', 'utr', 'upi ref')
+            col_type = find_col('type', 'expense type', 'need/want')
+            col_member = find_col('member', 'spender', 'user', 'paid by member', 'person')
+            col_notes = find_col('notes / purpose', 'notes', 'purpose', 'remarks')
+
+            t_idx = i + 1
+            empty_streak = 0
+            while t_idx < n:
+                t_row = [str(c or '').strip() for c in rows[t_idx]]
+                if not any(t_row):
+                    empty_streak += 1
+                    if empty_streak >= 2:
+                        break
+                    t_idx += 1
+                    continue
+                empty_streak = 0
+
+                def get_cell(col_idx):
+                    if col_idx is not None and col_idx < len(t_row):
+                        val = t_row[col_idx].strip()
+                        return '' if val in ('--', '-') else val
+                    return ''
+
+                raw_date = get_cell(col_date)
+                tx_date = parse_book_date_value(raw_date)
+                tx_amt = parse_book_amount_value(get_cell(col_amt))
+                tx_desc = get_cell(col_desc)
+
+                if not tx_date:
+                    # Stop if we hit summary/dashboard section headers
+                    first_non_empty = next((c.lower() for c in t_row if c), '')
+                    if any(h in first_non_empty for h in ('family expense dashboard', 'total spent', 'daily expense', 'categories')):
+                        break
+                    t_idx += 1
+                    continue
+
+                if tx_amt is not None and tx_amt > 0 and tx_desc:
+                    transactions.append({
+                        'date': tx_date,
+                        'time': get_cell(col_time),
+                        'item_name': tx_desc[:150],
+                        'category': get_cell(col_cat) or 'Other',
+                        'amount': tx_amt,
+                        'payment_method': get_cell(col_method),
+                        'account': get_cell(col_account),
+                        'payee': get_cell(col_payee),
+                        'tx_id': get_cell(col_txid),
+                        'utr': get_cell(col_utr),
+                        'tx_type': get_cell(col_type) or 'Need',
+                        'member': get_cell(col_member),
+                        'notes': get_cell(col_notes),
+                    })
+                t_idx += 1
+            i = t_idx
+            continue
+
+        i += 1
+
+    return {
+        'transactions': transactions,
+        'category_budgets': category_budgets,
+        'settings_categories': settings_categories,
+        'settings_members': settings_members,
+    }
+
+
+def extract_ai_book_data(raw_text, base64_file, mime_type, instruction, family_id):
+    """Fallback to Gemini AI to extract transactions, category budgets, and members from unstructured files/PDFs/images."""
+    api_keys = configured_gemini_keys()
+    if not api_keys:
+        raise ValueError('Gemini API key not configured for unstructured document parsing.')
+
+    existing_cats = [c.name for c in Category.query.filter_by(family_id=family_id).all()]
+    prompt = (
+        "You are VaultSync's Smart Expense Book & Ledger Importer.\n"
+        "Extract ALL transactions, any Category Monthly Budget table, and family member names from the provided expense book or statement.\n"
+        "For each transaction, identify:\n"
+        "- date (YYYY-MM-DD)\n"
+        "- item_name (short clean name of expense)\n"
+        "- category (use book category or best match from: " + ", ".join(existing_cats) + ")\n"
+        "- amount (number)\n"
+        "- tx_type ('Need', 'Want', or 'Transfer' for ATM withdrawals/cash conversions/settled splits)\n"
+        "- member (person name if mentioned, e.g., Arish, Nahid, Shakir, Family)\n"
+        "- payment_method (e.g., UPI/ONLINE, CASH)\n"
+        "- account (e.g., SBI, Axis Bank, Cash in Hand)\n"
+        "- payee (merchant/beneficiary)\n"
+        "- utr (UTR or reference number if present)\n"
+        "- notes (purpose or details)\n"
+    )
+    if instruction:
+        prompt += f"\nUSER INSTRUCTIONS: {instruction}\n"
+    if raw_text:
+        prompt += f"\nDOCUMENT CONTENT:\n{raw_text[:60000]}\n"
+
+    schema = {
+        'type': 'object',
+        'properties': {
+            'transactions': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'date': {'type': 'string'},
+                        'item_name': {'type': 'string'},
+                        'category': {'type': 'string'},
+                        'amount': {'type': 'number'},
+                        'tx_type': {'type': 'string'},
+                        'member': {'type': 'string'},
+                        'payment_method': {'type': 'string'},
+                        'account': {'type': 'string'},
+                        'payee': {'type': 'string'},
+                        'utr': {'type': 'string'},
+                        'notes': {'type': 'string'},
+                    },
+                    'required': ['date', 'item_name', 'category', 'amount']
+                }
+            },
+            'category_budgets': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'category': {'type': 'string'},
+                        'monthly_budget': {'type': 'number'}
+                    },
+                    'required': ['category', 'monthly_budget']
+                }
+            }
+        },
+        'required': ['transactions']
+    }
+
+    parts = [{'text': prompt}]
+    if base64_file and mime_type:
+        parts.append({'inlineData': {'mimeType': mime_type, 'data': base64_file}})
+
+    payload = {
+        'contents': [{'parts': parts}],
+        'generationConfig': {
+            'temperature': 0.1,
+            'responseMimeType': 'application/json',
+            'responseSchema': schema,
+        }
+    }
+
+    last_error = 'Failed to parse document with AI'
+    for api_key in api_keys:
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
+        try:
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(req, timeout=60) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 text_response = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '{}')
-                parsed = json.loads(text_response)
-                return jsonify(parsed)
+                ai_data = json.loads(text_response)
+                txs = []
+                for item in (ai_data.get('transactions') or []):
+                    d = parse_book_date_value(item.get('date')) or datetime.now().date()
+                    amt = parse_book_amount_value(item.get('amount'))
+                    if amt and amt > 0:
+                        txs.append({
+                            'date': d,
+                            'time': '',
+                            'item_name': str(item.get('item_name') or 'Expense').strip()[:150],
+                            'category': str(item.get('category') or 'Other').strip(),
+                            'amount': amt,
+                            'payment_method': str(item.get('payment_method') or '').strip(),
+                            'account': str(item.get('account') or '').strip(),
+                            'payee': str(item.get('payee') or '').strip(),
+                            'tx_id': '',
+                            'utr': str(item.get('utr') or '').strip(),
+                            'tx_type': str(item.get('tx_type') or 'Need').strip(),
+                            'member': str(item.get('member') or '').strip(),
+                            'notes': str(item.get('notes') or '').strip(),
+                        })
+                cat_budgets = {}
+                for b in (ai_data.get('category_budgets') or []):
+                    cname = str(b.get('category') or '').strip()
+                    bval = parse_book_amount_value(b.get('monthly_budget'))
+                    if cname and bval is not None and bval >= 0:
+                        cat_budgets[cname] = bval
+                return {
+                    'transactions': txs,
+                    'category_budgets': cat_budgets,
+                    'settings_categories': list(cat_budgets.keys()),
+                    'settings_members': [],
+                }
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            last_error = str(e)
+            continue
+    raise ValueError(last_error)
+
+
+def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=True, sync_members=True, skip_transfers=True):
+    """
+    Takes extracted book structure (transactions, category_budgets, settings_categories, settings_members)
+    and implements everything in the database:
+    - Auto-creates/updates Categories and their monthly_limit
+    - Updates MonthlyFinanceSetting & Family.monthly_budget if category_budgets are present and apply_budgets=True
+    - Auto-matches or creates Family Member profiles (e.g., Arish, Nahid, Shakir)
+    - Inserts Expenses (skipping internal Transfers if skip_transfers=True, and deduplicating against existing rows)
+    """
+    from werkzeug.security import generate_password_hash
+    from collections import Counter
+
+    family = Family.query.get(family_id)
+    transactions = parsed_data.get('transactions') or []
+    category_budgets = parsed_data.get('category_budgets') or {}
+    settings_categories = parsed_data.get('settings_categories') or []
+    settings_members = parsed_data.get('settings_members') or []
+
+    # 1. Sync Categories & Monthly Budgets
+    existing_categories = Category.query.filter_by(family_id=family_id).all()
+    cat_by_lower = {c.name.strip().lower(): c for c in existing_categories}
+
+    categories_created = []
+    budgets_updated = []
+
+    all_cat_names = list(category_budgets.keys()) + [c for c in settings_categories if c not in category_budgets]
+    for tx in transactions:
+        c_name = (tx.get('category') or '').strip()
+        tx_type = (tx.get('tx_type') or '').strip().lower()
+        if c_name and tx_type != 'transfer' and 'transfer' not in c_name.lower() and c_name not in all_cat_names:
+            all_cat_names.append(c_name)
+
+    for raw_cname in all_cat_names:
+        cname = raw_cname.strip()
+        if not cname or 'transfer' in cname.lower():
+            continue
+        key = cname.lower()
+        cat_obj = cat_by_lower.get(key)
+        if not cat_obj:
+            cat_obj = Category(
+                name=cname[:100],
+                color=get_next_auto_color(family_id),
+                is_color_auto=True,
+                is_fixed=True,
+                family_id=family_id,
+                monthly_limit=float(category_budgets.get(raw_cname, 0.0)) if apply_budgets else 0.0
+            )
+            db.session.add(cat_obj)
+            db.session.flush()
+            cat_by_lower[key] = cat_obj
+            categories_created.append(cat_obj.name)
+            if apply_budgets and raw_cname in category_budgets:
+                budgets_updated.append(f"{cat_obj.name} (₹{category_budgets[raw_cname]:,.0f})")
+        else:
+            if apply_budgets and raw_cname in category_budgets:
+                new_limit = float(category_budgets[raw_cname])
+                if round(float(cat_obj.monthly_limit or 0), 2) != round(new_limit, 2):
+                    cat_obj.monthly_limit = new_limit
+                    budgets_updated.append(f"{cat_obj.name} (₹{new_limit:,.0f})")
+
+    # Determine primary month/year of the book from transaction dates
+    month_year_counts = Counter((tx['date'].month, tx['date'].year) for tx in transactions if tx.get('date'))
+    if month_year_counts:
+        (book_month, book_year), _ = month_year_counts.most_common(1)[0]
+    else:
+        now_d = datetime.now().date()
+        book_month, book_year = now_d.month, now_d.year
+
+    total_book_budget = round(sum(float(v) for v in category_budgets.values()), 2) if category_budgets else 0.0
+    if apply_budgets and total_book_budget > 0 and family:
+        setting = MonthlyFinanceSetting.query.filter_by(
+            family_id=family_id,
+            month=book_month,
+            year=book_year
+        ).first()
+        if not setting:
+            setting = MonthlyFinanceSetting(
+                family_id=family_id,
+                month=book_month,
+                year=book_year,
+                monthly_budget=total_book_budget,
+                monthly_income=max(float(family.monthly_income or 0), total_book_budget),
+                notes=f'Auto-configured from Expense Book ({calendar.month_name[book_month]} {book_year})'
+            )
+            db.session.add(setting)
+        else:
+            setting.monthly_budget = total_book_budget
+        family.monthly_budget = total_book_budget
+
+    # 2. Sync Family Members
+    family_users = User.query.filter_by(family_id=family_id).all()
+    user_by_lower = {}
+    for u in family_users:
+        user_by_lower[u.username.strip().lower()] = u
+        # Also index prefix before '_' in case username was suffixed
+        if '_' in u.username:
+            user_by_lower[u.username.split('_')[0].strip().lower()] = u
+
+    members_created = []
+    all_member_names = list(settings_members)
+    for tx in transactions:
+        m_name = (tx.get('member') or '').strip()
+        if m_name and m_name.lower() not in ('family', 'all', '--', '-') and m_name not in all_member_names:
+            all_member_names.append(m_name)
+
+    if sync_members:
+        for m_name in all_member_names:
+            m_clean = m_name.strip()
+            if not m_clean or m_clean.lower() in ('family', 'all', '--', '-'):
+                continue
+            m_key = m_clean.lower()
+            if m_key not in user_by_lower:
+                candidate_username = m_clean[:45]
+                if User.query.filter(db.func.lower(User.username) == candidate_username.lower()).first():
+                    candidate_username = f"{m_clean[:35]}_{family_id}"
+                candidate_email = f"{re.sub(r'[^a-z0-9]', '', candidate_username.lower())}_{family_id}@vaultsync.local"
+                new_member = User(
+                    username=candidate_username,
+                    email=candidate_email,
+                    password_hash=generate_password_hash('vaultsync123'),
+                    user_type='family_member',
+                    family_id=family_id
+                )
+                db.session.add(new_member)
+                db.session.flush()
+                user_by_lower[m_key] = new_member
+                members_created.append(m_clean)
+
+    # 3. Insert Transactions & Deduplicate
+    existing_expenses = Expense.query.filter_by(family_id=family_id).all()
+    existing_signatures = set()
+    for exp in existing_expenses:
+        existing_signatures.add((exp.date, exp.item_name.strip().lower(), round(float(exp.amount), 2)))
+
+    imported_expenses = []
+    skipped_transfers = []
+    skipped_duplicates = 0
+
+    for tx in transactions:
+        tx_type = (tx.get('tx_type') or 'Need').strip()
+        raw_cat = (tx.get('category') or 'Other').strip()
+
+        is_transfer = (tx_type.lower() == 'transfer') or ('transfer' in raw_cat.lower()) or ('conversion' in raw_cat.lower())
+        if is_transfer and skip_transfers:
+            skipped_transfers.append(tx)
+            continue
+
+        tx_date = tx['date']
+        item_name = tx['item_name'].strip()[:150]
+        amount = round(float(tx['amount']), 2)
+
+        sig = (tx_date, item_name.lower(), amount)
+        if sig in existing_signatures:
+            skipped_duplicates += 1
+            continue
+
+        # Resolve category
+        cat_obj = cat_by_lower.get(raw_cat.lower())
+        if not cat_obj:
+            cat_obj = cat_by_lower.get('other') or next(iter(cat_by_lower.values()), None)
+            if not cat_obj:
+                cat_obj = Category(
+                    name=raw_cat[:100] or 'Other',
+                    color=get_next_auto_color(family_id),
+                    is_color_auto=True,
+                    is_fixed=True,
+                    family_id=family_id,
+                    monthly_limit=0.0
+                )
+                db.session.add(cat_obj)
+                db.session.flush()
+                cat_by_lower[cat_obj.name.lower()] = cat_obj
+
+        # Resolve member -> user_id
+        raw_member = (tx.get('member') or '').strip()
+        target_user = default_user
+        if raw_member and raw_member.lower() not in ('family', 'all', '--', '-'):
+            target_user = user_by_lower.get(raw_member.lower(), default_user)
+
+        # Build rich structured description
+        meta_tags = []
+        if tx_type:
+            meta_tags.append(tx_type)
+        if tx.get('payment_method'):
+            meta_tags.append(tx['payment_method'])
+        if tx.get('account'):
+            meta_tags.append(tx['account'])
+        if tx.get('payee'):
+            meta_tags.append(f"Payee: {tx['payee']}")
+        if tx.get('utr'):
+            meta_tags.append(f"UTR: {tx['utr']}")
+        elif tx.get('tx_id'):
+            meta_tags.append(f"Txn: {tx['tx_id']}")
+        if raw_member.lower() == 'family':
+            meta_tags.append('Shared Family')
+        if tx.get('time'):
+            meta_tags.append(tx['time'])
+
+        prefix = f"[{' · '.join(meta_tags)}] " if meta_tags else ''
+        full_desc = (prefix + (tx.get('notes') or '')).strip()[:500]
+
+        bucket = find_budget_bucket(family_id, cat_obj.id, tx_date)
+        new_exp = Expense(
+            date=tx_date,
+            item_name=item_name,
+            description=full_desc,
+            amount=amount,
+            category_id=cat_obj.id,
+            user_id=target_user.id,
+            family_id=family_id,
+            bucket_id=bucket.id if bucket else None,
+        )
+        db.session.add(new_exp)
+        existing_signatures.add(sig)
+        imported_expenses.append(new_exp)
+
+    db.session.commit()
+
+    total_imported_amt = round(sum(float(e.amount) for e in imported_expenses), 2)
+    total_transfer_amt = round(sum(float(t['amount']) for t in skipped_transfers), 2)
+
+    summary_parts = [f"Imported {len(imported_expenses)} expenses (₹{total_imported_amt:,.2f})"]
+    if skipped_transfers:
+        summary_parts.append(f"filtered out {len(skipped_transfers)} internal transfers/conversions (₹{total_transfer_amt:,.2f})")
+    if skipped_duplicates:
+        summary_parts.append(f"skipped {skipped_duplicates} existing duplicates")
+    if budgets_updated:
+        summary_parts.append(f"synced {len(budgets_updated)} category budgets (Total Cap: ₹{total_book_budget:,.0f})")
+    if members_created:
+        summary_parts.append(f"added family members: {', '.join(members_created)}")
+
+    return {
+        'success': True,
+        'count': len(imported_expenses),
+        'total_amount': total_imported_amt,
+        'skipped_transfers_count': len(skipped_transfers),
+        'skipped_transfers_amount': total_transfer_amt,
+        'skipped_duplicates': skipped_duplicates,
+        'categories_created': categories_created,
+        'budgets_updated': budgets_updated,
+        'total_book_budget': total_book_budget,
+        'members_created': members_created,
+        'book_month': f"{calendar.month_name[book_month]} {book_year}",
+        'message': ' · '.join(summary_parts) + '.'
+    }
+
+
+@app.route('/api/import-book', methods=['POST'])
+@login_required
+def import_expense_book():
+    """
+    Smart Book & Ledger Importer endpoint.
+    Supports .xlsx, .csv, .tsv, .txt, .pdf, images, OR raw pasted spreadsheet/CSV text.
+    """
+    file = request.files.get('book_file') or request.files.get('statement')
+    pasted_text = (request.form.get('book_text') or '').strip()
+    instruction = (request.form.get('instruction') or '').strip()
+
+    apply_budgets = str(request.form.get('apply_budgets', 'true')).lower() in ('true', '1', 'yes', 'on')
+    sync_members = str(request.form.get('sync_members', 'true')).lower() in ('true', '1', 'yes', 'on')
+    skip_transfers = str(request.form.get('skip_transfers', 'true')).lower() in ('true', '1', 'yes', 'on')
+
+    if (not file or file.filename == '') and not pasted_text:
+        return jsonify({'error': 'Please upload an Expense Book (.xlsx, .csv, .pdf, image) or paste spreadsheet data.'}), 400
+
+    try:
+        import csv
+        import io
+        rows = []
+        raw_text_for_ai = None
+        base64_file = None
+        mime_type = None
+
+        if file and file.filename:
+            fname = file.filename.lower()
+            file_bytes = file.read()
+            mime_type = file.mimetype or ''
+
+            if fname.endswith('.xlsx') or file_bytes[:4] == b'PK\x03\x04':
+                rows = parse_xlsx_rows(file_bytes)
+            elif fname.endswith(('.csv', '.tsv', '.txt')) or 'csv' in mime_type or 'text' in mime_type:
+                text_content = file_bytes.decode('utf-8-sig', errors='replace')
+                raw_text_for_ai = text_content
+                delimiter = '\t' if (fname.endswith('.tsv') or text_content.count('\t') > text_content.count(',')) else ','
+                rows = list(csv.reader(io.StringIO(text_content), delimiter=delimiter))
+            elif fname.endswith('.pdf') or mime_type == 'application/pdf':
+                import PyPDF2
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                raw_text_for_ai = "\n".join((page.extract_text() or '') for page in pdf_reader.pages)
+                mime_type = 'application/pdf'
+            else:
+                base64_file = base64.b64encode(file_bytes).decode('utf-8')
+                if not mime_type:
+                    mime_type = 'image/jpeg'
+
+        elif pasted_text:
+            raw_text_for_ai = pasted_text
+            first_line = pasted_text.splitlines()[0] if pasted_text.splitlines() else ''
+            delimiter = '\t' if first_line.count('\t') > first_line.count(',') else ','
+            rows = list(csv.reader(io.StringIO(pasted_text), delimiter=delimiter))
+
+        parsed_data = extract_structured_book_data(rows) if rows else {'transactions': [], 'category_budgets': {}}
+
+        # If structured parser found neither transactions nor category budgets, use Gemini AI extraction
+        if not parsed_data.get('transactions') and not parsed_data.get('category_budgets'):
+            parsed_data = extract_ai_book_data(
+                raw_text_for_ai,
+                base64_file,
+                mime_type,
+                instruction,
+                current_user.family_id
+            )
+
+        if not parsed_data.get('transactions') and not parsed_data.get('category_budgets'):
+            return jsonify({'success': False, 'message': 'No valid transactions or budget rows were found in the provided book.'})
+
+        result = implement_parsed_book(
+            parsed_data,
+            family_id=current_user.family_id,
+            default_user=current_user,
+            apply_budgets=apply_budgets,
+            sync_members=sync_members,
+            skip_transfers=skip_transfers,
+        )
+        return jsonify(result)
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception('Smart Book Import failed')
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/scan-statement', methods=['POST'])
 @login_required
 def scan_statement():
-    if 'statement' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['statement']
-    instruction = request.form.get('instruction', '')
-    
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-        
-    extracted_text = None
-    base64_file = None
-    mime_type = file.mimetype
-    
-    if file:
-        file_data = file.read()
-        
-        if not mime_type:
-            if file.filename.lower().endswith('.pdf'):
-                mime_type = 'application/pdf'
-            else:
-                mime_type = 'image/jpeg'
-                
-        if mime_type == 'application/pdf':
-            try:
-                import PyPDF2
-                import io
-                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_data))
-                text_parts = []
-                for page in pdf_reader.pages:
-                    text_parts.append(page.extract_text() or '')
-                extracted_text = "\n".join(text_parts)
-            except ImportError:
-                return jsonify({'error': 'PyPDF2 is not installed. Please run `pip install PyPDF2` in your server console.'}), 500
-            except Exception as e:
-                return jsonify({'error': f'Failed to parse PDF locally: {str(e)}'}), 500
-        else:
-            base64_file = base64.b64encode(file_data).decode('utf-8')
+    """Delegates to the unified Smart Book & Statement Importer so CSV, XLSX, PDF, and Images all work seamlessly."""
+    return import_expense_book()
 
-        context_payload = chatbot_context_payload(current_user)
-        base_prompt = "You are a bulk statement importer. Extract all valid expenses from the provided document and return standard VaultSync AI actions (e.g., 'create_expense'). Do NOT return a reply, only return actions."
-        if instruction:
-            base_prompt += f"\n\nUSER INSTRUCTIONS (Must follow closely): {instruction}"
-            
-        if extracted_text:
-            base_prompt += f"\n\nDOCUMENT TEXT:\n{extracted_text}"
-            
-        full_prompt = build_chatbot_prompt(base_prompt, context_payload)
-        
-        api_key = os.environ.get('GEMINI_API_KEY')
-        if not api_key:
-            return jsonify({'error': 'Gemini API key not configured'}), 500
-            
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
-        
-        parts = [{"text": full_prompt}]
-        if base64_file:
-            parts.append({"inlineData": {"mimeType": mime_type, "data": base64_file}})
-            
-        schema = chatbot_response_schema()
-        
-        payload = {
-            "contents": [{"parts": parts}],
-            "generationConfig": {
-                "temperature": 0.1,
-                "responseMimeType": "application/json",
-                "responseSchema": schema
-            }
-        }
-        
-        try:
-            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=45) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                text_response = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '{}')
-                ai_payload = json.loads(text_response)
-                
-                proposed_actions = ai_payload.get('actions') or []
-                if not isinstance(proposed_actions, list):
-                    proposed_actions = []
-                    
-                if not proposed_actions:
-                    return jsonify({'success': False, 'message': ai_payload.get('reply', 'No valid expenses or actions found.')})
-                    
-                # Execute actions
-                results = []
-                for act in proposed_actions:
-                    results.append(execute_chatbot_action(act))
-                
-                db.session.commit()
-                
-                return jsonify({'success': True, 'count': len(proposed_actions), 'message': f'Executed {len(proposed_actions)} actions: ' + ', '.join(results)})
-                
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

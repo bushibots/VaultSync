@@ -1,1546 +1,813 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync | Family Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
+{% extends "_layout.html" %}
+{% block title %}Overview · {{ month_name }} {{ selected_year }} · VaultSync{% endblock %}
 
-    <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#3b82f6">
-</head>
-<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
-    <a href="#main-content" class="skip-link">Skip to main content</a>
-
-    <!-- Desktop Sidebar -->
-    <aside id="sidebar" class="sidebar dashboard-desktop-sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
-        <div class="mb-8 mt-8 md:mt-0">
-            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+{% block content %}
+<!-- Top Workspace Bar -->
+<div class="vs-page-header">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
+            <i class="fas fa-sparkles text-[11px]"></i>
+            <span>{% if family %}{{ family.name }}{% else %}Personal Workspace{% endif %} · Monthly Overview</span>
         </div>
-        <nav class="flex-1 space-y-2 sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
-            </a>
-            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
-            </a>
-            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
-            </a>
-            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
-            </a>
-            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Reports</span>
-            </a>
-            <a href="{{ url_for('financial_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-chart-line mr-3" aria-hidden="true"></i><span>Reports & Planning</span>
-            </a>
-            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
-            </a>
-            {% if is_family_manager %}
-            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
-                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
-            </a>
-            {% endif %}
-        </nav>
-        <div class="mt-auto space-y-4">
-            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
-                <button type="button" id="dark-mode-toggle" data-theme-toggle class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
-                </button>
-                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
-                <select id="language-select" data-language-select class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                </select>
-            </div>
-            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
-                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
-                <p class="text-xs text-blue-300 mt-1">
-                    <i class="fas fa-user-tag mr-1" aria-hidden="true"></i>{{ user.user_type.replace('_', ' ').title() }}
-                </p>
-                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
-            </div>
-            <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
-                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i>Logout
-            </a>
-        </div>
-    </aside>
+        <h1 class="vs-page-title">{{ month_name }} {{ selected_year }}</h1>
+        <p class="vs-page-subtitle">
+            Track daily spending, protected budget buckets, and monthly commitments in one place.
+        </p>
+    </div>
 
-    {% set active_page = 'dashboard' %}
-    {% include '_mobile_nav.html' %}
+    <div class="vs-page-actions">
+        <!-- Compact Period Selector -->
+        <form method="GET" action="{{ url_for('dashboard') }}" class="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-xs">
+            <select name="month" aria-label="Select month" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg focus:outline-none cursor-pointer">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
+                    {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="year" aria-label="Select year" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2 py-1.5 rounded-lg focus:outline-none cursor-pointer">
+                {% for y in year_range %}
+                <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="vs-btn vs-btn-sm vs-btn-primary">Go</button></noscript>
+        </form>
 
-    <!-- Main Content -->
-    <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
-        <div class="dashboard-page min-h-screen premium-bg p-3 sm:p-4 md:p-8">
+        <button type="button" data-modal-open="manageCategoriesModal" class="vs-btn vs-btn-secondary">
+            <i class="fas fa-tags text-indigo-500"></i>
+            <span>Categories ({{ categories|length }})</span>
+        </button>
 
-            <!-- Welcome Screen for Users Without Family -->
-            {% if not user.family_id %}
-            <div class="flex items-center justify-center min-h-[calc(100vh-120px)]">
-                <div class="w-full max-w-md">
-                    <div class="bg-white rounded-2xl shadow-2xl p-8 md:p-10 border border-blue-100">
-                        <div class="text-center mb-8">
-                            <div class="inline-block bg-gradient-to-r from-blue-400 to-indigo-600 rounded-full p-4 mb-4">
-                                <i class="fas fa-users text-white text-3xl"></i>
-                            </div>
-                            <h1 class="text-3xl font-bold text-slate-800">Join Your Family</h1>
-                            <p class="text-gray-600 text-sm mt-2">Enter your family's invite code to get started</p>
-                        </div>
+        {% if is_manager %}
+        <button type="button" data-modal-open="monthFinanceModal" class="vs-btn vs-btn-secondary">
+            <i class="fas fa-sliders text-emerald-500"></i>
+            <span>Month Budget</span>
+        </button>
+        {% endif %}
 
-                        <!-- Flash Messages -->
-                        {% with messages = get_flashed_messages(with_categories=true) %}
-                            {% if messages %}
-                                {% for category, message in messages %}
-                                    <div class="mb-4 p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
-                                        <div class="flex items-center">
-                                            <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} mr-3"></i>
-                                            <span>{{ message }}</span>
-                                        </div>
-                                    </div>
-                                {% endfor %}
-                            {% endif %}
-                        {% endwith %}
+        <button type="button" data-modal-open="statementModal" class="vs-btn vs-btn-primary">
+            <i class="fas fa-book-sparkles"></i>
+            <span>Import Book / Statement</span>
+        </button>
+    </div>
+</div>
 
-                        <form method="POST" action="{{ url_for('join_family') }}" class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-key mr-2 text-blue-500"></i>Family Invite Code
-                                </label>
-                                <input
-                                    type="text"
-                                    name="invite_code"
-                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition"
-                                    placeholder="Enter your family invite code"
-                                    required
-                                >
-                                <p class="text-xs text-gray-500 mt-2">Ask your family admin for the invite code</p>
-                            </div>
-                            <button
-                                type="submit"
-                                class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:shadow-lg transition flex items-center justify-center gap-2"
-                            >
-                                <i class="fas fa-sign-in-alt"></i>Join Family
-                            </button>
-                        </form>
-
-                        <div class="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-                            <p class="text-sm text-gray-700">
-                                <i class="fas fa-info-circle text-blue-500 mr-2"></i>
-                                <strong>Don't have a code yet?</strong> Your family admin can find it in the Admin Panel.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% else %}
-
-            <!-- Page Header -->
-            <header class="mb-6 md:mb-8 animate-fade-in">
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                    <div>
-                        <p class="text-xs md:text-sm text-blue-600 font-semibold mb-2">
-                            <i class="fas fa-calendar-alt mr-2"></i>{{ month_name }} {{ selected_year }} Overview
-                        </p>
-                        <h1 class="text-2xl md:text-4xl font-bold text-slate-800">Welcome back, {{ user.username }}!</h1>
-                    </div>
-                    <form action="{{ url_for('dashboard') }}" method="GET" class="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                        <select name="month" class="w-full text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 shadow-sm" onchange="this.form.submit()">
-                            {% set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
-                            {% for m in range(1, 13) %}
-                                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ months[m-1] }}</option>
-                            {% endfor %}
-                        </select>
-                        <select name="year" class="w-full text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 shadow-sm" onchange="this.form.submit()">
-                            {% for y in year_range %}
-                                <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                </div>
-            </header>
-
-            <!-- Top Stat Cards - Full Width Responsive Grid -->
-            <div class="dashboard-stat-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-blue-100 hover:shadow-lg transition">
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Family Income</h3>
-                        <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
-                    </div>
-                    <p class="text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">This month{% if finance.has_override %} | custom{% endif %}</p>
-                </div>
-
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-red-100 hover:shadow-lg transition">
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Total Spent</h3>
-                        <i class="fas fa-credit-card text-red-400 text-lg" aria-hidden="true"></i>
-                    </div>
-                    <p class="text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">
-                        {% if monthly_budget and total_spent > 0 %}{{ "{:.1f}".format((total_spent/monthly_budget)*100) }}% of budget{% else %}No expenses{% endif %}
-                    </p>
-                </div>
-
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-green-100 hover:shadow-lg transition sm:col-span-2 lg:col-span-1">
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-slate-600 text-xs md:text-sm font-semibold">Available Balance</h3>
-                        <i class="fas fa-piggy-bank text-green-400 text-lg" aria-hidden="true"></i>
-                    </div>
-                    <p class="text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-green-600">{{ "{:,.0f}".format(projected) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">
-                        {% if projected >= 0 %}
-                        Excludes &#8377;{{ "{:,.0f}".format(bucket_unspent_total) }} in buckets
-                        {% else %}
-                        Overspent after protected buckets
-                        {% endif %}
-                    </p>
-                </div>
-            </div>
-
-            {% if is_family_manager %}
-            <!-- Monthly Finance Settings -->
-            <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-blue-100 mb-8">
-                <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <i class="fas fa-sliders-h text-blue-600"></i>Monthly Settings
-                </h3>
-                <form method="POST" action="{{ url_for('update_monthly_finance_setting') }}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <input type="hidden" name="month" value="{{ selected_month }}">
-                    <input type="hidden" name="year" value="{{ selected_year }}">
-                    <input type="hidden" name="next" value="{{ url_for('dashboard', month=selected_month, year=selected_year) }}">
-                    <div class="min-w-0">
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Income</label>
-                        <input type="number" name="monthly_income" value="{{ '%.0f'|format(income) }}" min="0" step="500" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none">
-                    </div>
-                    <div class="min-w-0">
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Budget</label>
-                        <input type="number" name="monthly_budget" value="{{ '%.0f'|format(monthly_budget) }}" min="0" step="500" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none">
-                    </div>
-                    <div class="min-w-0">
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Note</label>
-                        <input type="text" name="notes" value="{{ finance.notes }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., bonus this month">
-                    </div>
-                    <div class="flex items-end min-w-0">
-                        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2.5 px-4 rounded-lg hover:bg-blue-700 duration-200 flex items-center justify-center gap-2 text-sm">
-                            <i class="fas fa-save" aria-hidden="true"></i>Save
-                        </button>
-                    </div>
-                </form>
-            </div>
-            {% endif %}
-
-            <!-- Main Content Grid -->
-            <div class="dashboard-workspace grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8 mb-6 md:mb-8">
-                <!-- Left Column: Forms & Management -->
-                <div class="lg:col-span-1 space-y-6 min-w-0">
-                    <!-- Add Expense Form -->
-                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                        
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                <i class="fas fa-plus text-blue-600 bg-blue-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
-                                Log Expense
-                            </h2>
-                            <button type="button" onclick="document.getElementById('statementModal').classList.remove('hidden')" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-semibold py-1.5 px-3 rounded-lg text-xs transition border border-indigo-200">
-                                <i class="fas fa-file-invoice-dollar mr-1"></i> Bulk Import
-                            </button>
-                        </div>
-
-                        <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-3" data-loading>
-                            <div class="mb-3">
-                                <label class="flex items-center justify-center w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg border-2 border-dashed border-slate-300 cursor-pointer transition">
-                                    <i class="fas fa-camera mr-2"></i> <span id="receipt-upload-text">Upload Receipt to Auto-fill</span>
-                                    <input type="file" id="receipt-input" class="hidden" accept="image/*" capture="environment">
-                                </label>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Name</label>
-                                <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., Groceries" required>
-                            </div>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Description</label>
-                                <textarea name="description" rows="2" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional"></textarea>
-                            </div>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Category</label>
-                                <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none" required>
-                                    {% for cat in categories %}
-                                    <option value="{{ cat.id }}">{{ cat.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Date</label>
-                                    <input type="date" name="expense_date" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none" required>
-                                </div>
-                                <div>
-                                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-1">Amount</label>
-                                    <input type="number" name="amount" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-base md:text-sm focus:border-blue-500 focus:outline-none" step="0.01" required>
-                                </div>
-                            </div>
-                            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2.5 px-4 rounded-lg hover:bg-blue-700 duration-200 text-sm flex items-center justify-center gap-2">
-                                <i class="fas fa-check" aria-hidden="true"></i>Add Expense
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- Categories Section -->
-                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                        <h2 class="text-lg font-bold text-slate-800 mb-4">Categories</h2>
-                        <form action="{{ url_for('apply_category_presets') }}" method="POST" class="mb-3" data-loading>
-                            <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700 duration-200 text-xs md:text-sm flex items-center justify-center gap-2">
-                                <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>Add Presets
-                            </button>
-                        </form>
-                        <form action="{{ url_for('add_category') }}" method="POST" class="space-y-2 mb-4" data-loading>
-                            <input type="text" name="name" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-xs md:text-sm focus:border-slate-800 focus:outline-none" placeholder="Category name" required>
-                            <div class="flex gap-2">
-                                <input type="color" name="color" class="h-10 w-16 border-2 border-gray-200 rounded-lg cursor-pointer" value="#0ea5e9" required>
-                                <input type="number" name="monthly_limit" min="0" step="0.01" value="0" class="flex-1 form-input border-2 border-gray-200 rounded-lg p-2.5 text-xs md:text-sm" placeholder="Limit">
-                                <button type="submit" class="bg-slate-800 text-white font-bold py-2 px-3 rounded-lg hover:bg-slate-700 duration-200 text-xs md:text-sm">Add</button>
-                            </div>
-                        </form>
-                        <div class="space-y-1 max-h-48 overflow-y-auto">
-                            {% for cat in categories %}
-                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition text-sm">
-                                <div class="flex items-center gap-2 flex-1 min-w-0">
-                                    <span class="inline-block w-3 h-3 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}"></span>
-                                    <span class="font-medium truncate">{{ cat.name }}</span>
-                                    {% if cat.is_fixed %}
-                                    <span class="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">Preset</span>
-                                    {% endif %}
-                                </div>
-                                <a href="{{ url_for('edit_category', id=cat.id) }}" class="text-blue-500 hover:text-blue-700 text-xs font-semibold px-1">
-                                    <i class="fas fa-edit" aria-hidden="true"></i>
-                                </a>
-                            </div>
-                            {% else %}
-                            <p class="text-xs text-gray-400">No categories yet</p>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Middle & Right Columns: Charts & Insights -->
-                <div class="lg:col-span-2 space-y-6 min-w-0">
-                    <!-- Spending Chart -->
-                    <div class="dashboard-card spending-chart-card bg-white rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                        <div class="flex items-start justify-between mb-4">
-                            <div>
-                                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                    <i class="fas fa-chart-pie text-indigo-600"></i>Spending Breakdown
-                                </h2>
-                                <p class="text-xs text-slate-500 mt-1">{{ month_name }} {{ selected_year }} category mix</p>
-                            </div>
-                            <div class="chart-mode-toggle" role="group" aria-label="Chart label mode">
-                                <button type="button" class="active" data-chart-mode="amount">Amount</button>
-                                <button type="button" data-chart-mode="share">Share</button>
-                            </div>
-                        </div>
-                        <div class="spending-chart-layout">
-                            <div class="chart-stage">
-                                <div class="chart-container-responsive"><canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas></div>
-                                <div class="chart-center">
-                                    <span id="chartCenterLabel">Total spent</span>
-                                    <strong id="chartCenterTotal">&#8377;0</strong>
-                                    <small id="chartCenterHint">All categories</small>
-                                </div>
-                            </div>
-                            <div class="chart-details space-y-3">
-                                <div class="chart-stat-grid">
-                                    <div>
-                                        <span>Spent</span>
-                                        <strong id="chartTotalMetric">&#8377;0</strong>
-                                    </div>
-                                    <div>
-                                        <span>Top</span>
-                                        <strong id="chartTopMetric">-</strong>
-                                    </div>
-                                    <div>
-                                        <span>Categories</span>
-                                        <strong id="chartCategoryCountMetric">0</strong>
-                                    </div>
-                                    <div>
-                                        <span>Budget Left</span>
-                                        <strong class="text-green-600">&#8377;{{ "{:,.0f}".format(budget_remaining) }}</strong>
-                                    </div>
-                                </div>
-                                <div id="expenseLegend" class="chart-legend-list" aria-label="Spending by category"></div>
-                                <div id="expenseChartEmpty" class="chart-empty-state hidden">
-                                    <i class="fas fa-receipt text-2xl mb-2"></i>
-                                    <p>No spending recorded</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Quick Metrics -->
-                    <div class="dashboard-mini-grid grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div class="dashboard-mini-card bg-orange-50 rounded-xl p-5 border border-orange-200">
-                            <div class="flex items-start justify-between">
-                                <div>
-                                    <p class="text-xs text-orange-700 font-semibold">Daily Burn</p>
-                                    <p class="text-2xl font-bold text-orange-900 mt-1">&#8377;{{ "{:,.0f}".format(daily_rate) }}</p>
-                                    <p class="text-xs text-orange-700 mt-2">Target: &#8377;{{ "{:,.0f}".format(daily_budget_target) }}</p>
-                                </div>
-                                <i class="fas fa-fire text-orange-600 text-2xl opacity-30"></i>
-                            </div>
-                        </div>
-
-                        <div class="dashboard-mini-card bg-green-50 rounded-xl p-5 border border-green-200">
-                            <div class="flex items-start justify-between">
-                                <div>
-                                    <p class="text-xs text-green-700 font-semibold">Budget Health</p>
-                                    <p class="text-2xl font-bold {% if budget_percentage > 100 %}text-red-700{% elif budget_percentage > 75 %}text-yellow-700{% else %}text-green-700{% endif %} mt-1">{{ "{:.0f}".format(budget_percentage) }}%</p>
-                                    <p class="text-xs text-green-700 mt-2">Left: &#8377;{{ "{:,.0f}".format(budget_remaining) }}</p>
-                                </div>
-                                <i class="fas fa-coins text-green-600 text-2xl opacity-30"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Budget Planning & Buckets Section -->
-            <div class="dashboard-section-grid grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <!-- Budget Plan -->
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <i class="fas fa-calendar-check text-teal-600 bg-teal-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
-                        Budget Plan
-                    </h2>
-                    <div class="grid grid-cols-2 gap-3 mb-4">
-                        <div class="budget-plan-metric-card bg-teal-50 border border-teal-100 rounded-lg p-3">
-                            <p class="text-xs text-teal-700 font-semibold">Planned</p>
-                            <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(expected_total) }}</p>
-                        </div>
-                        <div class="budget-plan-metric-card bg-green-50 border border-green-100 rounded-lg p-3">
-                            <p class="text-xs text-green-700 font-semibold">Posted</p>
-                            <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(expected_paid_total) }}</p>
-                        </div>
-                        <div class="budget-plan-metric-card bg-yellow-50 border border-yellow-100 rounded-lg p-3">
-                            <p class="text-xs text-yellow-700 font-semibold">Unpaid Bills</p>
-                            <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(expected_unpaid_total) }}</p>
-                        </div>
-                        <div class="budget-plan-metric-card {% if planned_after_budget >= 0 %}bg-blue-50 border-blue-100{% else %}bg-red-50 border-red-100{% endif %} border rounded-lg p-3">
-                            <p class="text-xs {% if planned_after_budget >= 0 %}text-blue-700{% else %}text-red-700{% endif %} font-semibold">After Plan</p>
-                            <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(planned_after_budget) }}</p>
-                        </div>
-                    </div>
-                    <div class="mb-4">
-                        <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
-                            <span>Progress</span>
-                            <span>{{ "{:.0f}".format(plan_paid_percentage) }}%</span>
-                        </div>
-                        <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div class="h-full bg-teal-500" style="width: {{ plan_paid_percentage }}%"></div>
-                        </div>
-                    </div>
-
-                    {% if is_family_manager %}
-                    <form action="{{ url_for('add_expected') }}" method="POST" class="space-y-2 mb-4">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <input type="text" name="name" placeholder="Bill name" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-xs" list="budget-plan-suggestions" required>
-                            <input type="number" name="amount" placeholder="Amount" step="0.01" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-xs" required>
-                        </div>
-                        <datalist id="budget-plan-suggestions">
-                            <option value="Rent / EMI">
-                            <option value="Electricity Bill">
-                            <option value="Water Bill">
-                            <option value="Internet">
-                            <option value="School Fees">
-                        </datalist>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                            <select name="category_id" class="form-input border-2 border-gray-200 rounded-lg p-1.5 text-xs" required>
-                                {% for cat in categories %}
-                                <option value="{{ cat.id }}">{{ cat.name[:10] }}</option>
-                                {% endfor %}
-                            </select>
-                            <input type="number" name="due_day" min="1" max="31" value="1" class="form-input border-2 border-gray-200 rounded-lg p-1.5 text-xs" placeholder="Day">
-                            <select name="month" class="form-input border-2 border-gray-200 rounded-lg p-1.5 text-xs" required>
-                                {% for m in range(1,13) %}
-                                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>M{{ m }}</option>
-                                {% endfor %}
-                            </select>
-                            <select name="year" class="form-input border-2 border-gray-200 rounded-lg p-1.5 text-xs" required>
-                                {% for y in year_range %}
-                                <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <label class="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
-                            <input type="checkbox" name="is_bucket" class="h-4 w-4 rounded">
-                            <span><strong>Reserved Bucket</strong> - Protected daily allowance</span>
-                        </label>
-                        <button type="submit" class="w-full bg-teal-600 text-white font-bold py-2 rounded-lg hover:bg-teal-700 duration-200 text-xs">Add Plan</button>
-                    </form>
-                    <form action="{{ url_for('copy_expected_plan') }}" method="POST">
-                        <input type="hidden" name="month" value="{{ selected_month }}">
-                        <input type="hidden" name="year" value="{{ selected_year }}">
-                        <button type="submit" class="w-full bg-slate-200 text-slate-700 font-bold py-2 rounded-lg hover:bg-slate-300 duration-200 text-xs">Copy Plan to Next Month</button>
-                    </form>
-                    {% endif %}
-
-                    <div class="space-y-2 max-h-72 overflow-y-auto mt-4">
-                        {% if expected_expenses %}
-                            {% for ee in expected_expenses %}
-                            <div class="expected-item flex items-start justify-between gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition text-sm">
-                                <div class="flex gap-2 flex-1 min-w-0">
-                                    {% if is_family_manager and not ee.is_bucket %}
-                                    <form action="{{ url_for('toggle_expected', id=ee.id) }}" method="POST" class="expected-status-form">
-                                        <button type="submit" class="expected-status-btn {% if ee.is_paid %}is-paid{% endif %}" title="{% if ee.is_paid %}Move back to unpaid{% else %}Mark paid{% endif %}" aria-label="{% if ee.is_paid %}Move {{ ee.name }} back to unpaid{% else %}Mark {{ ee.name }} paid{% endif %}">
-                                            <i class="fas {% if ee.is_paid %}fa-check-circle{% else %}fa-circle{% endif %}" aria-hidden="true"></i>
-                                        </button>
-                                    </form>
-                                    {% else %}
-                                    <span class="expected-status-icon {% if ee.is_paid %}is-paid{% endif %}">
-                                        <i class="fas {% if ee.is_bucket %}fa-bucket{% elif ee.is_paid %}fa-check-circle{% else %}fa-circle{% endif %}" aria-hidden="true"></i>
-                                    </span>
-                                    {% endif %}
-                                    <div class="min-w-0">
-                                        <p class="font-medium text-slate-800">{{ ee.name }}</p>
-                                        <p class="text-xs text-slate-500">{{ ee.category.name }} | {% if ee.is_bucket %}Reserved bucket{% else %}Due day {{ ee.due_day }}{% endif %}</p>
-                                    </div>
-                                </div>
-                                <div class="expected-actions flex items-center gap-2 flex-shrink-0">
-                                    <span class="font-semibold text-sm {% if ee.is_bucket %}text-slate-600{% else %}text-slate-800{% endif %}">&#8377;{{ "{:,.0f}".format((ee.allocated_amount or ee.amount) if ee.is_bucket else ee.amount) }}</span>
-                                    {% if is_family_manager %}
-                                    <a href="{{ url_for('edit_expected', id=ee.id) }}" class="expected-action-btn edit-btn" title="Edit planned expense" aria-label="Edit {{ ee.name }}">
-                                        <i class="fas fa-edit" aria-hidden="true"></i>
-                                    </a>
-                                    <form action="{{ url_for('delete_expected', id=ee.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete this planned expense?')">
-                                        <button type="submit" class="expected-action-btn delete-btn" title="Delete planned expense" aria-label="Delete {{ ee.name }}">
-                                            <i class="fas fa-trash-alt" aria-hidden="true"></i>
-                                        </button>
-                                    </form>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                        <p class="text-xs text-gray-400">No plans added yet</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <!-- Reserved Buckets -->
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <i class="fas fa-bucket text-slate-600 bg-slate-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
-                        Reserved Buckets
-                    </h2>
-                    <p class="text-xs text-slate-600 mb-4">&#8377;{{ "{:,.0f}".format(bucket_allocated_total) }} reserved this month
-                        {% if bucket_overflow_total > 0 %}
-                        | <span class="text-red-600 font-bold">&#8377;{{ "{:,.0f}".format(bucket_overflow_total) }} overflow</span>
-                        {% endif %}
-                    </p>
-
-                    {% if budget_buckets %}
-                    <div class="space-y-3">
-                        {% for item in budget_buckets %}
-                        <div class="rounded-lg border {% if item.is_overflow %}border-red-200 bg-red-50{% else %}border-slate-200 bg-slate-50{% endif %} p-3">
-                            <div class="flex items-start justify-between mb-2">
-                                <div>
-                                    <p class="font-bold text-slate-800 text-sm">{{ item.bucket.name }}</p>
-                                    <p class="text-xs text-slate-500">{{ item.bucket.category.name }} allowance</p>
-                                </div>
-                                <p class="text-xs font-bold {% if item.is_overflow %}text-red-700{% else %}text-slate-700{% endif %}">
-                                    &#8377;{{ "{:,.0f}".format(item.spent) }} / &#8377;{{ "{:,.0f}".format(item.allocated) }}
-                                </p>
-                            </div>
-                            <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                                <div class="h-full {% if item.is_overflow %}bg-red-600{% else %}bg-teal-500{% endif %}" style="width: {{ item.fill_percentage }}%"></div>
-                            </div>
-                            <p class="text-xs mt-1 {% if item.is_overflow %}text-red-700 font-bold{% else %}text-slate-500{% endif %}">
-                                {% if item.is_overflow %}
-                                &#8377;{{ "{:,.0f}".format(item.overflow) }} overflow
-                                {% else %}
-                                &#8377;{{ "{:,.0f}".format(item.remaining) }} remaining
-                                {% endif %}
-                            </p>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="text-xs text-gray-400">No reserved buckets</p>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Recent Activity Section -->
-            <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100 mb-8">
-                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <i class="fas fa-history text-purple-600 bg-purple-100 rounded-full p-2 w-8 h-8 flex items-center justify-center text-sm"></i>
-                    Recent Activity
-                </h2>
-
-                {% if expenses %}
-                <div class="space-y-2 max-h-96 overflow-y-auto">
-                    {% for exp in expenses %}
-                    <div class="activity-entry-card flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 p-4 rounded-lg border hover:shadow-md transition">
-                        <div class="flex gap-3 sm:gap-4 flex-1 min-w-0">
-                            <div class="text-center flex-shrink-0">
-                                <p class="text-lg font-bold text-slate-800">{{ exp.date.strftime('%d') }}</p>
-                                <p class="text-xs text-slate-500">{{ exp.date.strftime('%b') }}</p>
-                            </div>
-                            <div class="min-w-0 flex-1">
-                                <p class="font-bold text-slate-800">{{ exp.item_name }}</p>
-                                {% if exp.description %}
-                                <p class="text-xs text-slate-500 mt-0.5 line-clamp-2">{{ exp.description }}</p>
-                                {% endif %}
-                                <div class="flex gap-2 mt-2 flex-wrap">
-                                    <span class="category-badge px-2 py-1 rounded-full text-xs font-bold text-white" style="background-color: {{ exp.category.color }}">{{ exp.category.name }}</span>
-                                    <span class="text-xs text-slate-500">{{ exp.user.username }}</span>
-                                    {% if exp.bucket %}
-                                    <span class="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-full font-semibold">Reserved bucket</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0 sm:ml-4 border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0">
-                            <p class="font-bold text-red-600 text-right">&#8377;{{ "{:,.0f}".format(exp.amount) }}</p>
-                            <div class="flex gap-1">
-                                <a href="{{ url_for('edit_expense', id=exp.id) }}" class="text-blue-500 hover:text-blue-700 p-1" title="Edit">
-                                    <i class="fas fa-edit text-sm"></i>
-                                </a>
-                                <a href="{{ url_for('delete_expense', id=exp.id) }}" class="text-red-500 hover:text-red-700 p-1" title="Delete" onclick="return confirm('Delete this expense?')">
-                                    <i class="fas fa-trash-alt text-sm"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="text-center py-12">
-                    <i class="fas fa-receipt text-5xl text-gray-200 mb-4"></i>
-                    <p class="text-gray-600 font-semibold">No expenses logged yet</p>
-                    <p class="text-gray-400 text-sm mt-1">Start tracking expenses above!</p>
-                </div>
-                {% endif %}
-            </div>
-
-            {% endif %}
-        </div>
-    </main>
-
-    {#
-            <div class="flex items-center justify-center min-h-screen">
-                <div class="w-full max-w-md">
-                    <div class="bg-white rounded-2xl shadow-2xl p-8 md:p-10 border border-blue-100">
-                        <div class="text-center mb-8">
-                            <div class="inline-block bg-gradient-to-r from-blue-400 to-indigo-600 rounded-full p-4 mb-4">
-                                <i class="fas fa-users text-white text-3xl"></i>
-                            </div>
-                            <h1 class="text-3xl font-bold text-slate-800">Join Your Family</h1>
-                            <p class="text-gray-600 text-sm mt-2">Enter your family's invite code to get started</p>
-                        </div>
-
-                        <!-- Flash Messages -->
-                        {% with messages = get_flashed_messages(with_categories=true) %}
-                            {% if messages %}
-                                {% for category, message in messages %}
-                                    <div class="mb-4 p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
-                                        <div class="flex items-center">
-                                            <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} mr-3"></i>
-                                            <span>{{ message }}</span>
-                                        </div>
-                                    </div>
-                                {% endfor %}
-                            {% endif %}
-                        {% endwith %}
-
-                        <form method="POST" action="{{ url_for('join_family') }}" class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-key mr-2 text-blue-500"></i>Family Invite Code
-                                </label>
-                                <input
-                                    type="text"
-                                    name="invite_code"
-                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition"
-                                    placeholder="Enter your family invite code"
-                                    required
-                                >
-                                <p class="text-xs text-gray-500 mt-2">Ask your family admin for the invite code</p>
-                            </div>
-                            <button
-                                type="submit"
-                                class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:shadow-lg transition flex items-center justify-center gap-2"
-                            >
-                                <i class="fas fa-sign-in-alt"></i>Join Family
-                            </button>
-                        </form>
-
-                        <div class="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-                            <p class="text-sm text-gray-700">
-                                <i class="fas fa-info-circle text-blue-500 mr-2"></i>
-                                <strong>Don't have a code yet?</strong> Your family admin can find it in the Admin Panel.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Dashboard for Users With Family -->
-            {% if user.family_id %}
-            <header class="mb-6 md:mb-8 animate-slide-in">
-    <div class="flex flex-col gap-3 sm:gap-4">
+<!-- 4 Executive KPI Cards -->
+<div class="vs-kpi-grid mb-6">
+    <!-- 1. Monthly Spending Budget -->
+    <div class="vs-kpi-card">
         <div>
-            <!-- UPDATED: Dynamic Month/Year Header and Filter Form -->
-            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 mb-2">
-                <p class="text-xs md:text-sm text-blue-600 font-semibold whitespace-nowrap">
-                    <i class="fas fa-calendar-alt mr-2"></i><span class="hidden sm:inline">{{ month_name }} {{ selected_year }} Overview</span><span class="sm:hidden">{{ month_name }} {{ selected_year }}</span>
-                </p>
-                
-                <form action="{{ url_for('dashboard') }}" method="GET" class="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-                    <select name="month" class="text-xs w-full sm:w-auto bg-white border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer shadow-sm" onchange="this.form.submit()">
-                        {% set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
-                        {% for m in range(1, 13) %}
-                            <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
-                                {{ months[m-1] }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                    <select name="year" class="text-xs w-full sm:w-auto bg-white border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer shadow-sm" onchange="this.form.submit()">
-                        {% for y in year_range %}
-                            <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Monthly Budget</span>
+                <span class="vs-kpi-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
+                    <i class="fas fa-wallet"></i>
+                </span>
             </div>
-            
-            <h1 class="text-xl sm:text-2xl md:text-4xl font-bold text-slate-800">Welcome back, <span class="block sm:inline">{{ user.username }}!</span></h1>
+            <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(monthly_budget) }}</div>
+            <div class="vs-progress mt-3">
+                <div class="vs-progress-fill {% if budget_percentage >= 100 %}bg-rose-500{% elif budget_percentage >= 80 %}bg-amber-500{% else %}bg-indigo-600{% endif %}"
+                     style="width: {{ [budget_percentage, 100]|min }}%;"></div>
+            </div>
         </div>
-        <div class="text-left sm:text-right text-slate-600 text-xs sm:text-sm">
-            <p class="hidden sm:block">
-                <i class="fas fa-clock mr-1"></i><span id="current-time"></span>
+        <div class="vs-kpi-meta">
+            <span class="font-semibold {% if budget_remaining < 0 %}text-rose-500{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+                {% if budget_remaining >= 0 %}
+                    Rs. {{ "{:,.0f}".format(budget_remaining) }} left
+                {% else %}
+                    Rs. {{ "{:,.0f}".format(budget_remaining|abs) }} over
+                {% endif %}
+            </span>
+            <span>{{ "{:.1f}".format(budget_percentage) }}% used</span>
+        </div>
+    </div>
+
+    <!-- 2. Actual Spent & Daily Pace -->
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Spent This Month</span>
+                <span class="vs-kpi-icon bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+                    <i class="fas fa-receipt"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(total_spent) }}</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                Daily avg: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(daily_rate) }}</strong>/day
             </p>
         </div>
+        <div class="vs-kpi-meta">
+            <span>Safe limit: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(safe_daily_spend) }}/d</strong></span>
+            <span>{{ days_remaining }}d left</span>
+        </div>
     </div>
-</header>
 
-            <!-- Top Stat Cards -->
-            <div class="dashboard-stat-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-blue-100">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-slate-600 text-xs sm:text-sm font-semibold">Total Family Income</h3>
-                        <i class="fas fa-wallet text-blue-400 text-lg" aria-hidden="true"></i>
+    <!-- 3. Planned Bills & Reserved Buckets -->
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Planned &amp; Buckets</span>
+                <span class="vs-kpi-icon bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+                    <i class="fas fa-calendar-check"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(expected_total) }}</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                Unpaid bills: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(expected_unpaid_total) }}</strong>
+            </p>
+        </div>
+        <div class="vs-kpi-meta">
+            <span class="text-emerald-600 dark:text-emerald-400 font-semibold">Rs. {{ "{:,.0f}".format(expected_paid_total) }} posted</span>
+            <span>{{ budget_buckets|length }} bucket{% if budget_buckets|length != 1 %}s{% endif %}</span>
+        </div>
+    </div>
+
+    <!-- 4. Projected Savings -->
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Projected Savings</span>
+                <span class="vs-kpi-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                    <i class="fas fa-piggy-bank"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value {% if projected < 0 %}text-rose-500{% endif %}">
+                Rs. {{ "{:,.0f}".format(projected) }}
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                Month income: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(income) }}</strong>
+            </p>
+        </div>
+        <div class="vs-kpi-meta">
+            <span>Reserved: Rs. {{ "{:,.0f}".format(bucket_unspent_total) }}</span>
+            {% if top_category %}
+            <span class="truncate max-w-[120px]" title="Top Category: {{ top_category.name }}">Top: {{ top_category.name }}</span>
+            {% else %}
+            <span>No spend yet</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Main 2-Column Workspace -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+
+    <!-- LEFT COLUMN: Quick Expense Entry + Recent Transactions (7 cols on XL) -->
+    <div class="xl:col-span-7 space-y-6">
+
+        <!-- Quick Log Expense Card -->
+        <section class="vs-card" aria-labelledby="log-expense-heading">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                        <i class="fas fa-plus"></i>
                     </div>
-                    <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-blue-600">{{ "{:,.0f}".format(income) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">
-                        This month{% if finance.has_override %} | custom{% endif %} | Budget &#8377;{{ "{:,.0f}".format(monthly_budget) }}
-                    </p>
+                    <div>
+                        <h2 id="log-expense-heading" class="text-base font-bold text-slate-900 dark:text-white leading-tight">Log New Expense</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Record a purchase or scan a receipt with AI</p>
+                    </div>
                 </div>
-                <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-red-100">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-slate-600 text-xs sm:text-sm font-semibold">Total Spent</h3>
-                        <i class="fas fa-credit-card text-red-400 text-lg" aria-hidden="true"></i>
-                    </div>
-                    <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-red-500">{{ "{:,.0f}".format(total_spent) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">
-                        <i class="fas fa-arrow-up text-red-400 mr-1" aria-hidden="true"></i>
-                        {% if monthly_budget and total_spent > 0 %}{{ "{:.1f}".format((total_spent/monthly_budget)*100) }}% of budget{% else %}No expenses{% endif %}
-                    </p>
-                </div>
-                <div class="dashboard-card stat-card rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-green-100 sm:col-span-2 lg:col-span-1">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-slate-600 text-xs sm:text-sm font-semibold">Available General Balance</h3>
-                        <i class="fas fa-piggy-bank text-green-400 text-lg" aria-hidden="true"></i>
-                    </div>
-                    <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">&#8377;<span class="text-green-600">{{ "{:,.0f}".format(projected) }}</span></p>
-                    <p class="text-xs text-slate-400 mt-2">
-                        <i class="fas fa-arrow-up text-green-400 mr-1" aria-hidden="true"></i>
-                        {% if projected >= 0 %}
-                        Excludes &#8377;{{ "{:,.0f}".format(bucket_unspent_total) }} still protected in buckets
-                        {% else %}
-                        General pool overspent after protected buckets
-                        {% endif %}
-                    </p>
+
+                <div class="flex items-center gap-2">
+                    <input type="file" id="receipt-input" data-receipt-input accept="image/*,application/pdf" class="hidden">
+                    <button type="button" onclick="document.getElementById('receipt-input').click()" class="vs-btn vs-btn-sm vs-btn-secondary">
+                        <i class="fas fa-camera text-indigo-500"></i>
+                        <span id="receipt-upload-text" data-receipt-status>Scan Receipt</span>
+                    </button>
+                    <button type="button" data-modal-open="statementModal" class="vs-btn vs-btn-sm vs-btn-ghost" title="Import full PDF or image bank statement">
+                        <i class="fas fa-file-invoice text-purple-500"></i>
+                        <span class="hidden sm:inline">Statement</span>
+                    </button>
                 </div>
             </div>
 
-            {% if is_family_manager %}
-            <section class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-4 md:p-6 border border-blue-100 mb-6 md:mb-8">
-                <form method="POST" action="{{ url_for('update_monthly_finance_setting') }}" class="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.2fr_auto] gap-3 items-end">
-                    <input type="hidden" name="month" value="{{ selected_month }}">
-                    <input type="hidden" name="year" value="{{ selected_year }}">
-                    <input type="hidden" name="next" value="{{ url_for('dashboard', month=selected_month, year=selected_year) }}">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Income for {{ month_name }}</label>
-                        <input type="number" name="monthly_income" value="{{ '%.0f'|format(income) }}" min="0" step="500" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
+            <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-3.5">
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div class="sm:col-span-7">
+                        <label class="vs-label" for="dash-item-name">Item or Merchant</label>
+                        <input id="dash-item-name" type="text" name="item_name" placeholder="e.g., Fresh Mart Groceries, Electricity Bill" required class="vs-input">
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Spending Budget</label>
-                        <input type="number" name="monthly_budget" value="{{ '%.0f'|format(monthly_budget) }}" min="0" step="500" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">Note</label>
-                        <input type="text" name="notes" value="{{ finance.notes }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm" placeholder="e.g., two salaries received this month">
-                    </div>
-                    <button type="submit" class="bg-slate-900 text-white font-bold py-3 px-5 rounded-lg hover:bg-slate-700 duration-200 flex items-center justify-center gap-2">
-                        <i class="fas fa-save" aria-hidden="true"></i>Save Month
-                    </button>
-                </form>
-            </section>
-            {% endif %}
-
-            <div class="dashboard-workspace grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-6 md:mb-8">
-                
-                <div class="dashboard-flow dashboard-manage-column flex flex-col gap-4 sm:gap-6">
-                    <!-- Expense Entry Form -->
-                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
-                        <div class="flex items-center mb-6">
-                            <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-plus text-blue-600" aria-hidden="true"></i>
-                            </div>
-                            <h2 class="text-lg md:text-xl font-bold text-slate-800">Log New Expense</h2>
-                        </div>
-                        <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-4" data-loading>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-tag mr-1 text-blue-500" aria-hidden="true"></i>Expense Name
-                                </label>
-                                <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-base md:text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., Mattress, Train Tickets" required>
-                            </div>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-align-left mr-1 text-blue-500" aria-hidden="true"></i>Description
-                                </label>
-                                <textarea name="description" rows="2" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-base md:text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional details for AI organization, e.g., weekly vegetables from local market"></textarea>
-                            </div>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-list mr-1 text-blue-500" aria-hidden="true"></i>Temporary Category
-                                </label>
-                                <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-base md:text-sm focus:border-blue-500 focus:outline-none" required>
-                                    {% for cat in categories %}
-                                    <option value="{{ cat.id }}">{{ cat.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-calendar mr-1 text-blue-500" aria-hidden="true"></i>Date
-                                </label>
-                                <input type="date" name="expense_date" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-base md:text-sm focus:border-blue-500 focus:outline-none" required>
-                            </div>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-rupee-sign mr-1 text-blue-500" aria-hidden="true"></i>Amount
-                                </label>
-                                <input type="number" name="amount" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-base md:text-sm focus:border-blue-500 focus:outline-none" placeholder="e.g., 500" step="0.01" required>
-                            </div>
-                            <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 duration-200 mt-2 flex items-center justify-center gap-2 text-sm md:text-base">
-                                <i class="fas fa-check" aria-hidden="true"></i>Add to Tracker
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- Create Custom Category Form -->
-                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
-                        <div class="flex items-center mb-4">
-                            <div class="bg-slate-800 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-palette text-white" aria-hidden="true"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-lg md:text-lg font-bold text-slate-800">Organized Categories</h2>
-                                <p class="text-xs text-slate-500 mt-1">Use presets first, then add custom categories only when needed.</p>
-                            </div>
-                        </div>
-                        <form action="{{ url_for('apply_category_presets') }}" method="POST" class="mb-4" data-loading>
-                            <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-2.5 px-4 rounded-lg hover:bg-emerald-700 duration-200 flex items-center justify-center gap-2 text-sm">
-                                <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>Add Missing Recommended Categories
-                            </button>
-                        </form>
-                        <form action="{{ url_for('add_category') }}" method="POST" class="flex flex-col gap-3" data-loading>
-                            <div>
-                                <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-folder-plus mr-1 text-slate-600" aria-hidden="true"></i>Custom Category Name
-                                </label>
-                                <input type="text" name="name" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm focus:border-slate-800 focus:outline-none" placeholder="e.g., Family Events" required>
-                            </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                                <div>
-                                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Color</label>
-                                    <input type="color" name="color" class="h-10 w-full border-2 border-gray-200 rounded-lg cursor-pointer hover:border-slate-800 duration-200" value="#0ea5e9" required>
-                                </div>
-                                <div>
-                                    <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Monthly Limit</label>
-                                    <input type="number" name="monthly_limit" min="0" step="0.01" value="0" class="form-input h-10 w-full border-2 border-gray-200 rounded-lg p-2 text-sm">
-                                </div>
-                                <div class="flex items-end">
-                                    <button type="submit" class="bg-slate-800 text-white font-bold py-2.5 px-4 md:px-6 rounded-lg hover:bg-slate-700 duration-200 h-10 w-full flex items-center justify-center gap-2 text-sm">
-                                        <i class="fas fa-plus text-sm" aria-hidden="true"></i><span class="hidden sm:inline">Add</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-
-                    <!-- Categories Management -->
-                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
-                        <div class="flex items-center mb-4">
-                            <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-layer-group text-orange-600" aria-hidden="true"></i>
-                            </div>
-                            <h2 class="text-lg md:text-lg font-bold text-slate-800">Categories</h2>
-                        </div>
-                        <div class="space-y-2 max-h-64 overflow-y-auto">
-                            {% for cat in categories %}
-                            <div class="category-list-row flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
-                                <div class="flex items-center gap-3 flex-1 min-w-0">
-                                    <span class="inline-block w-4 h-4 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}" aria-hidden="true"></span>
-                                    <span class="font-medium text-slate-800 truncate text-sm md:text-base">{{ cat.name }}</span>
-                                    {% if cat.is_fixed %}
-                                    <span class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full font-semibold">Preset</span>
-                                    {% endif %}
-                                </div>
-                                <div class="flex gap-2 flex-shrink-0">
-                                    <a href="{{ url_for('edit_category', id=cat.id) }}" class="edit-btn text-blue-500 hover:text-blue-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-50 duration-200" title="Manage" aria-label="Manage {{ cat.name }} category">
-                                        <i class="fas fa-edit text-sm" aria-hidden="true"></i><span class="hidden sm:inline text-xs">Manage</span>
-                                    </a>
-                                </div>
-                            </div>
-                            {% else %}
-                            <div class="empty-state">
-                                <div class="empty-state-icon"><i class="fas fa-folder-open"></i></div>
-                                <p class="empty-state-title">No categories yet</p>
-                                <p class="empty-state-description">Create your first category above</p>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <!-- Monthly Budget Plan -->
-                    <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
-                        <div class="flex items-start mb-4">
-                            <div class="bg-teal-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-calendar-check text-teal-600" aria-hidden="true"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-lg md:text-lg font-bold text-slate-800">Expected Monthly Expenditure</h2>
-                                <p class="text-xs text-slate-500 mt-1">Plan bills or reserve allowances. Daily expenses in the same category draw down a reserved allowance.</p>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-3 mb-4">
-                            <div class="bg-teal-50 border border-teal-100 rounded-lg p-3">
-                                <p class="text-xs text-teal-700 font-semibold">Planned</p>
-                                <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(expected_total) }}</p>
-                            </div>
-                            <div class="bg-green-50 border border-green-100 rounded-lg p-3">
-                                <p class="text-xs text-green-700 font-semibold">Posted</p>
-                                <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(expected_paid_total) }}</p>
-                            </div>
-                            <div class="bg-yellow-50 border border-yellow-100 rounded-lg p-3">
-                                <p class="text-xs text-yellow-700 font-semibold">Unposted Bills</p>
-                                <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(expected_unpaid_total) }}</p>
-                            </div>
-                            <div class="{% if planned_after_budget >= 0 %}bg-blue-50 border-blue-100{% else %}bg-red-50 border-red-100{% endif %} border rounded-lg p-3">
-                                <p class="text-xs {% if planned_after_budget >= 0 %}text-blue-700{% else %}text-red-700{% endif %} font-semibold">Budget After Plan</p>
-                                <p class="text-lg font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(planned_after_budget) }}</p>
-                            </div>
-                        </div>
-
-                        <div class="mb-4">
-                            <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
-                                <span>Plan paid progress</span>
-                                <span>{{ "{:.0f}".format(plan_paid_percentage) }}%</span>
-                            </div>
-                            <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
-                                <div class="h-full bg-teal-500 rounded-full" style="width: {{ plan_paid_percentage }}%"></div>
-                            </div>
-                        </div>
-
-                        {% if is_family_manager %}
-                        <form action="{{ url_for('add_expected') }}" method="POST" class="dashboard-compact-form space-y-2.5 mb-4">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <input type="text" name="name" placeholder="Expected item e.g., Electricity" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm" list="budget-plan-suggestions" required>
-                                <input type="number" name="amount" placeholder="Amount" step="0.01" class="form-input w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm" required>
-                            </div>
-                            <datalist id="budget-plan-suggestions">
-                                <option value="Rent / EMI">
-                                <option value="Electricity Bill">
-                                <option value="Water Bill">
-                                <option value="Internet Recharge">
-                                <option value="School Fees">
-                                <option value="Insurance Premium">
-                                <option value="SIP / Savings">
-                                <option value="Medicine">
-                                <option value="Household Allowance">
-                            </datalist>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                                <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-xs sm:text-sm" required>
-                                    {% for cat in categories %}
-                                    <option value="{{ cat.id }}">{{ cat.name }}</option>
-                                    {% endfor %}
-                                </select>
-                                <input type="number" name="due_day" min="1" max="31" value="1" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-xs sm:text-sm" aria-label="Due day" placeholder="Day">
-                                <select name="month" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-xs sm:text-sm" required>
-                                    {% for m in range(1,13) %}
-                                    <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>M{{ m }}</option>
-                                    {% endfor %}
-                                </select>
-                                <select name="year" class="form-input w-full border-2 border-gray-200 rounded-lg p-2 text-xs sm:text-sm" required>
-                                    {% for y in year_range %}
-                                    <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <label class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs sm:text-sm text-slate-700">
-                                <input type="checkbox" name="is_bucket" class="mt-1 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
-                                <span>
-                                    <span class="font-bold text-slate-800 block">Reserved Bucket</span>
-                                    <span class="text-xs text-slate-500 mt-1">Use for protected allowances like Household. Daily expenses in the same category draw it down.</span>
-                                </span>
-                            </label>
-                            <div class="text-center sm:text-right">
-                                <button type="submit" class="bg-teal-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-teal-700 duration-150 text-sm w-full sm:w-auto">Add Expected</button>
-                            </div>
-                        </form>
-                        <form action="{{ url_for('copy_expected_plan') }}" method="POST" class="mb-4">
-                            <input type="hidden" name="month" value="{{ selected_month }}">
-                            <input type="hidden" name="year" value="{{ selected_year }}">
-                            <button type="submit" class="w-full bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 duration-150 text-sm">
-                                Copy This Plan To Next Month
-                            </button>
-                        </form>
-                        {% endif %}
-
-                        <div class="space-y-2 max-h-72 overflow-y-auto">
-                            {% if expected_expenses %}
-                                {% for ee in expected_expenses %}
-                                <div class="expected-item flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
-                                    <div class="expected-main flex items-center gap-3">
-                                        {% if ee.is_bucket %}
-                                            <i class="fas fa-bucket text-2xl text-slate-500" aria-hidden="true"></i>
-                                        {% elif ee.is_paid %}
-                                            <i class="fas fa-check-circle text-2xl text-green-500" aria-hidden="true"></i>
-                                        {% else %}
-                                            <i class="far fa-circle text-xl text-gray-400" aria-hidden="true"></i>
-                                        {% endif %}
-                                        <div>
-                                            <div class="font-medium text-slate-800">{{ ee.name }}</div>
-                                            {% if ee.is_bucket %}
-                                            <div class="text-xs text-slate-600 font-semibold mt-1">Daily {{ ee.category.name }} expenses draw down this reserve</div>
-                                            {% endif %}
-                                            <div class="text-xs text-slate-500">{{ ee.category.name }} | {% if ee.is_bucket %}Reserved bucket{% else %}Due day {{ ee.due_day }}{% endif %}</div>
-                                            {% if ee.is_paid and ee.linked_expense_id %}
-                                            <div class="text-xs text-green-600 font-semibold mt-1">Posted to actual spending</div>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                    <div class="expected-actions flex items-center gap-3">
-                                        <span class="font-semibold text-sm {% if ee.is_bucket %}text-slate-600{% else %}text-red-500{% endif %}">&#8377;{{ "{:,.0f}".format((ee.allocated_amount or ee.amount) if ee.is_bucket else ee.amount) }}</span>
-                                        {% if is_family_manager %}
-                                        <a href="{{ url_for('edit_expected', id=ee.id) }}" class="text-sm text-indigo-500 hover:underline">Edit</a>
-                                        {% if not ee.is_bucket %}
-                                        <a href="{{ url_for('toggle_expected', id=ee.id) }}" class="text-sm {% if ee.is_paid %}text-yellow-600{% else %}text-blue-500{% endif %} hover:underline">{% if ee.is_paid %}Unpost{% else %}Mark Paid{% endif %}</a>
-                                        {% endif %}
-                                        <form action="{{ url_for('delete_expected', id=ee.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete this planned expense?')">
-                                            <button type="submit" class="text-sm text-red-500 hover:underline">Delete</button>
-                                        </form>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            {% else %}
-                                <div class="text-xs text-gray-400">No expected expenses for this month.</div>
-                            {% endif %}
-                        </div>
+                    <div class="sm:col-span-5">
+                        <label class="vs-label" for="dash-amount">Amount (Rs.)</label>
+                        <input id="dash-amount" type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" required class="vs-input tabular-nums font-semibold">
                     </div>
                 </div>
 
-                <div class="dashboard-flow dashboard-insight-column flex flex-col gap-4 sm:gap-6">
-                <!-- Reserved Buckets -->
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 sm:p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-start justify-between gap-3 mb-5">
-                        <div class="flex items-center">
-                            <div class="bg-slate-100 rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-bucket text-slate-600" aria-hidden="true"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-lg md:text-xl font-bold text-slate-800">Reserved Buckets</h2>
-                                <p class="text-xs text-slate-500 mt-1">&#8377;{{ "{:,.0f}".format(bucket_allocated_total) }} reserved this month</p>
-                            </div>
-                        </div>
-                        {% if bucket_overflow_total > 0 %}
-                        <span class="bg-red-50 text-red-700 border border-red-200 rounded-full px-3 py-1 text-xs font-bold">Overflow</span>
-                        {% endif %}
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div class="sm:col-span-5">
+                        <label class="vs-label" for="dash-category">Category</label>
+                        <select id="dash-category" name="category_id" required class="vs-select">
+                            <option value="" disabled selected>Choose category...</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
+                    <div class="sm:col-span-4">
+                        <label class="vs-label" for="dash-date">Date</label>
+                        <input id="dash-date" type="date" name="expense_date" required class="vs-input">
+                    </div>
+                    <div class="sm:col-span-3 flex items-end">
+                        <button type="submit" class="vs-btn vs-btn-primary w-full py-2.5">
+                            <i class="fas fa-check"></i>
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </div>
 
-                    {% if budget_buckets %}
-                    <div class="space-y-4">
-                        {% for item in budget_buckets %}
-                        <div class="bucket-row rounded-lg border {% if item.is_overflow %}border-red-200 bg-red-50{% else %}border-slate-200 bg-slate-50{% endif %} p-4">
-                            <div class="bucket-row-header flex items-center justify-between gap-3 mb-2">
-                                <div class="min-w-0">
-                                    <p class="font-bold text-slate-800 truncate">{{ item.bucket.name }}</p>
-                                    <p class="text-xs text-slate-500">{{ item.bucket.category.name }} reserved allowance</p>
-                                </div>
-                                <p class="text-sm font-bold {% if item.is_overflow %}text-red-700{% else %}text-slate-700{% endif %}">
-                                    &#8377;{{ "{:,.0f}".format(item.spent) }} / &#8377;{{ "{:,.0f}".format(item.allocated) }} Spent
-                                </p>
-                            </div>
-                            <div class="h-7 bg-gray-200 rounded-lg overflow-hidden border border-gray-300">
-                                <div class="h-full {% if item.is_overflow %}bg-red-600{% else %}bg-teal-500{% endif %} transition-all duration-300" style="width: {{ item.fill_percentage }}%"></div>
-                            </div>
-                            <div class="bucket-row-footer flex items-center justify-between text-xs mt-2 {% if item.is_overflow %}text-red-700 font-bold{% else %}text-slate-500{% endif %}">
-                                {% if item.is_overflow %}
-                                <span>&#8377;{{ "{:,.0f}".format(item.overflow) }} overflow from general pool</span>
-                                {% else %}
-                                <span>&#8377;{{ "{:,.0f}".format(item.remaining) }} still reserved</span>
-                                {% endif %}
-                                <span>{{ "{:.0f}".format(item.fill_percentage) }}%</span>
-                            </div>
-                        </div>
+                <div>
+                    <input type="text" name="description" placeholder="Optional note (e.g., paid via UPI, weekly restock)" class="vs-input text-xs py-2">
+                </div>
+            </form>
+        </section>
+
+        <!-- Recent Transactions Card -->
+        <section class="vs-card" aria-labelledby="recent-tx-heading">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                    <h2 id="recent-tx-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>{{ month_name }} Transactions</span>
+                        <span class="vs-badge vs-badge-neutral">{{ expenses|length }}</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">All recorded family expenses for {{ month_name }} {{ selected_year }}</p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <a href="{{ url_for('daily_diary') }}" class="vs-btn vs-btn-sm vs-btn-secondary">
+                        <i class="fas fa-calendar-day text-indigo-500"></i>
+                        <span>Daily View</span>
+                    </a>
+                    <a href="{{ url_for('export_ai_data') }}" class="vs-btn vs-btn-sm vs-btn-ghost" title="Download CSV">
+                        <i class="fas fa-download"></i>
+                        <span class="hidden sm:inline">CSV</span>
+                    </a>
+                </div>
+            </div>
+
+            {% if expenses %}
+            <!-- Quick Filter Bar -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 mb-4">
+                <div class="sm:col-span-7 relative">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input type="text" id="txSearchInput" placeholder="Search item, note, or member..." class="vs-input pl-8 py-2 text-xs">
+                </div>
+                <div class="sm:col-span-5">
+                    <select id="txCategoryFilter" aria-label="Filter by category" class="vs-select py-2 text-xs">
+                        <option value="">All Categories</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.name|lower }}">{{ cat.name }}</option>
                         {% endfor %}
-                    </div>
-                    {% else %}
-                    <div class="text-xs text-gray-400">No reserved buckets for this month.</div>
+                    </select>
+                </div>
+            </div>
+
+            <div class="vs-table-wrap -mx-4 sm:mx-0">
+                <table class="vs-table" id="transactionsTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item</th>
+                            <th>Category</th>
+                            <th class="text-right">Amount</th>
+                            <th class="text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for exp in expenses %}
+                        <tr data-tx-row
+                            data-search="{{ (exp.item_name ~ ' ' ~ (exp.description or '') ~ ' ' ~ exp.user.username ~ ' ' ~ exp.category.name)|lower }}"
+                            data-category="{{ exp.category.name|lower }}">
+                            <td class="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                {{ exp.date.strftime('%d %b') }}
+                            </td>
+                            <td>
+                                <div class="font-semibold text-slate-900 dark:text-slate-100 text-sm leading-snug">{{ exp.item_name }}</div>
+                                <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                                    <span><i class="fas fa-user text-[10px] mr-1 opacity-70"></i>{{ exp.user.username }}</span>
+                                    {% if exp.description %}
+                                    <span class="truncate max-w-[180px]" title="{{ exp.description }}">· {{ exp.description }}</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <span class="vs-badge" style="background-color: {{ exp.category.color }}1c; color: {{ exp.category.color }}; border: 1px solid {{ exp.category.color }}40;">
+                                    <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ exp.category.color }};"></span>
+                                    {{ exp.category.name }}
+                                </span>
+                                {% if exp.bucket_id %}
+                                <span class="vs-badge vs-badge-primary ml-1" title="Linked to reserved bucket">
+                                    <i class="fas fa-shield-halved text-[10px]"></i> Bucket
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-right whitespace-nowrap font-bold tabular-nums text-slate-900 dark:text-white">
+                                Rs. {{ "{:,.0f}".format(exp.amount) }}
+                            </td>
+                            <td class="text-right whitespace-nowrap">
+                                <div class="inline-flex items-center gap-1">
+                                    <a href="{{ url_for('edit_expense', id=exp.id) }}" class="vs-icon-btn" title="Edit expense">
+                                        <i class="fas fa-pen text-xs"></i>
+                                    </a>
+                                    <a href="{{ url_for('delete_expense', id=exp.id) }}" onclick="return confirm('Delete this expense ({{ exp.item_name }})?')" class="vs-icon-btn hover:text-rose-500" title="Delete expense">
+                                        <i class="fas fa-trash text-xs"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-10 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700">
+                <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-receipt text-lg"></i>
+                </div>
+                <p class="text-sm font-bold text-slate-800 dark:text-slate-200">No expenses logged for {{ month_name }} {{ selected_year }}</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+                    Use the form above to record your first expense or scan a receipt with AI.
+                </p>
+            </div>
+            {% endif %}
+        </section>
+    </div>
+
+    <!-- RIGHT COLUMN: Spending Breakdown Chart + Planned Bills & Buckets (5 cols on XL) -->
+    <div class="xl:col-span-5 space-y-6">
+
+        <!-- Spending Breakdown Chart Card -->
+        <section class="vs-card" aria-labelledby="chart-heading">
+            <div class="flex items-center justify-between gap-2 mb-4">
+                <div>
+                    <h2 id="chart-heading" class="text-base font-bold text-slate-900 dark:text-white">Category Breakdown</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Click any slice or category to inspect share</p>
+                </div>
+                <div class="chart-mode-toggle" role="group" aria-label="Chart display mode">
+                    <button type="button" class="chart-mode-btn active" data-chart-mode="amount">Rs.</button>
+                    <button type="button" class="chart-mode-btn" data-chart-mode="share">%</button>
+                </div>
+            </div>
+
+            <div class="chart-stage mb-4">
+                <canvas id="expenseChart" aria-label="Category spending doughnut chart" role="img"></canvas>
+                <div class="chart-center-summary">
+                    <span class="chart-center-label" id="chartCenterLabel">Total spent</span>
+                    <strong class="chart-center-total" id="chartCenterTotal">Rs. {{ "{:,.0f}".format(total_spent) }}</strong>
+                    <span class="chart-center-hint" id="chartCenterHint">{{ chart_labels|length }} active categories</span>
+                </div>
+                <div id="expenseChartEmpty" class="hidden text-center py-8">
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Add expenses to see your visual breakdown.</p>
+                </div>
+            </div>
+
+            <div id="expenseLegend" class="chart-legend-list"></div>
+        </section>
+
+        <!-- Monthly Plan & Reserved Buckets Card -->
+        <section class="vs-card" aria-labelledby="monthly-plan-heading">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                    <h2 id="monthly-plan-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>Planned Bills &amp; Buckets</span>
+                        <span class="vs-badge vs-badge-neutral">{{ expected_expenses|length }}</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                        Rs. {{ "{:,.0f}".format(expected_total) }} planned · Rs. {{ "{:,.0f}".format(planned_after_budget) }} unallocated
+                    </p>
+                </div>
+
+                {% if is_manager %}
+                <div class="flex items-center gap-1.5">
+                    <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-primary">
+                        <i class="fas fa-plus"></i>
+                        <span>Add Plan</span>
+                    </button>
+                    {% if expected_expenses %}
+                    <form action="{{ url_for('copy_expected_plan') }}" method="POST" class="inline">
+                        <input type="hidden" name="month" value="{{ selected_month }}">
+                        <input type="hidden" name="year" value="{{ selected_year }}">
+                        <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary" title="Copy this month's plan into next month">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </form>
                     {% endif %}
                 </div>
-
-                <!-- Interactive Chart -->
-                <div class="dashboard-card spending-chart-card bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                        <div class="flex items-center min-w-0">
-                            <div class="chart-icon-wrap rounded-full p-3 mr-3 flex-shrink-0">
-                                <i class="fas fa-chart-pie" aria-hidden="true"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <h2 class="text-lg md:text-xl font-bold text-slate-800">Spending Breakdown</h2>
-                                <p class="text-xs text-slate-500 mt-1">{{ month_name }} {{ selected_year }} category mix</p>
-                            </div>
-                        </div>
-                        <div class="chart-mode-toggle" role="group" aria-label="Chart label mode">
-                            <button type="button" class="active" data-chart-mode="amount">Amount</button>
-                            <button type="button" data-chart-mode="share">Share</button>
-                        </div>
-                    </div>
-                    <div class="spending-chart-layout">
-                        <div class="chart-stage">
-                            <div class="chart-container-responsive"><canvas id="expenseChart" role="img" aria-label="Doughnut chart showing spending breakdown by category"></canvas></div>
-                            <div class="chart-center" aria-hidden="true">
-                                <span id="chartCenterLabel">Total spent</span>
-                                <strong id="chartCenterTotal">&#8377;0</strong>
-                                <small id="chartCenterHint">All categories</small>
-                            </div>
-                        </div>
-                        <div class="chart-details">
-                            <div class="chart-stat-grid">
-                                <div>
-                                    <span>Spent</span>
-                                    <strong id="chartTotalMetric">&#8377;0</strong>
-                                </div>
-                                <div>
-                                    <span>Budget Left</span>
-                                    <strong id="chartBudgetLeftMetric">&#8377;{{ "{:,.0f}".format(budget_remaining) }}</strong>
-                                </div>
-                                <div>
-                                    <span>Top</span>
-                                    <strong id="chartTopMetric">-</strong>
-                                </div>
-                                <div>
-                                    <span>Categories</span>
-                                    <strong id="chartCategoryCountMetric">0</strong>
-                                </div>
-                            </div>
-                            <div id="expenseLegend" class="chart-legend-list" aria-label="Spending by category"></div>
-                            <div id="expenseChartEmpty" class="chart-empty-state hidden">
-                                <i class="fas fa-receipt" aria-hidden="true"></i>
-                                <span>No spending recorded for this month.</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                </div>
-            </div>
-
-            <!-- Recent Activity Table -->
-            <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-8">
-                <div class="flex items-center mb-6">
-                    <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
-                        <i class="fas fa-history text-purple-600"></i>
-                    </div>
-                    <h2 class="text-lg md:text-xl font-bold text-slate-800">Recent Activity</h2>
-                </div>
-                {% if expenses %}
-                <div class="activity-desktop-list hidden sm:grid gap-3">
-                    {% for exp in expenses %}
-                    <article class="activity-desktop-row">
-                        <div class="activity-date-pill">
-                            <span>{{ exp.date.strftime('%d') }}</span>
-                            <small>{{ exp.date.strftime('%b') }}</small>
-                        </div>
-                        <div class="activity-main">
-                            <div class="activity-title-line">
-                                <h3>{{ exp.item_name }}</h3>
-                                <span class="category-badge px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
-                                    <i class="fas fa-folder-open text-xs" aria-hidden="true"></i>{{ exp.category.name }}
-                                </span>
-                                {% if exp.bucket %}
-                                <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Reserved bucket</span>
-                                {% endif %}
-                            </div>
-                            <p class="activity-subline">
-                                <i class="fas fa-user-circle text-blue-500" aria-hidden="true"></i>{{ exp.user.username }}
-                                {% if exp.description %}<span>{{ exp.description }}</span>{% endif %}
-                            </p>
-                        </div>
-                        <div class="activity-amount">&#8377;{{ "{:,.0f}".format(exp.amount) }}</div>
-                        <div class="activity-row-actions">
-                            <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn" title="Edit expense">
-                                <i class="fas fa-edit" aria-hidden="true"></i>
-                            </a>
-                            <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn" title="Delete expense" onclick="return confirm('Delete this expense?')">
-                                <i class="fas fa-trash-alt" aria-hidden="true"></i>
-                            </a>
-                        </div>
-                    </article>
-                    {% endfor %}
-                </div>
-                <div class="hidden overflow-x-auto">
-                    <table class="dashboard-activity-table min-w-full text-left text-xs md:text-sm text-gray-600">
-                        <thead>
-                            <tr class="border-b-2 border-gray-200">
-                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
-                                    <i class="fas fa-calendar-alt mr-1 md:mr-2 text-blue-500"></i><span class="hidden sm:inline">Date</span>
-                                </th>
-                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
-                                    <i class="fas fa-user mr-1 md:mr-2 text-green-500"></i><span class="hidden sm:inline">Spender</span>
-                                </th>
-                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
-                                    <i class="fas fa-shopping-cart mr-1 md:mr-2 text-orange-500"></i><span class="hidden sm:inline">Item</span>
-                                </th>
-                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
-                                    <i class="fas fa-folder mr-1 md:mr-2 text-indigo-500"></i><span class="hidden sm:inline">Category</span>
-                                </th>
-                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
-                                    <i class="fas fa-rupee-sign mr-1 md:mr-2 text-red-500"></i><span class="hidden sm:inline">Amount</span>
-                                </th>
-                                <th class="px-3 md:px-6 py-3 md:py-4 font-bold text-slate-800">
-                                    <i class="fas fa-cog mr-1 md:mr-2 text-gray-500"></i><span class="hidden sm:inline">Action</span>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for exp in expenses %}
-                            <tr class="table-row border-b border-gray-100 hover:shadow-sm duration-200">
-                                <td data-label="Date" class="px-3 md:px-6 py-3 md:py-4 text-slate-700">
-                                    <span class="inline-flex items-center gap-1 md:gap-2">
-                                        <i class="fas fa-calendar text-blue-400 text-xs hidden sm:inline"></i>
-                                        <span class="text-xs md:text-sm">{{ exp.date.strftime('%b %d') }}</span>
-                                    </span>
-                                </td>
-                                <td data-label="Spender" class="px-3 md:px-6 py-3 md:py-4 font-semibold text-slate-800 text-xs md:text-sm">
-                                    <span class="inline-flex items-center gap-1 md:gap-2 bg-blue-50 px-2 md:px-3 py-1 rounded-full">
-                                        <i class="fas fa-user-circle text-blue-500 text-xs hidden sm:inline"></i>
-                                        {{ exp.user.username|truncate(8, True) }}
-                                    </span>
-                                </td>
-                                <td data-label="Item" class="px-3 md:px-6 py-3 md:py-4 font-bold text-blue-600 text-xs md:text-sm truncate">
-                                    {{ exp.item_name|truncate(15, True) }}
-                                    {% if exp.description %}
-                                    <div class="text-xs text-slate-500 font-normal mt-1">{{ exp.description|truncate(45, True) }}</div>
-                                    {% endif %}
-                                </td>
-                                <td data-label="Category" class="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
-                                    <span class="category-badge px-2 md:px-3 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
-                                        <i class="fas fa-folder-open text-xs hidden sm:inline"></i>
-                                        <span class="hidden md:inline">{{ exp.category.name|truncate(12, True) }}</span>
-                                        <span class="md:hidden">{{ exp.category.name|truncate(8, True) }}</span>
-                                    </span>
-                                    {% if exp.bucket %}
-                                    <span class="ml-1 px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Uses reserved bucket</span>
-                                    {% endif %}
-                                </td>
-                                <td data-label="Amount" class="px-3 md:px-6 py-3 md:py-4 text-red-500 font-bold text-xs md:text-sm">&#8377;{{ "{:,.0f}".format(exp.amount)|truncate(10, True) }}</td>
-                                <td data-label="Action" class="activity-actions px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm">
-                                    <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn text-blue-500 hover:text-blue-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-50 duration-200">
-                                        <i class="fas fa-edit text-xs"></i><span class="hidden sm:inline">Edit</span>
-                                    </a>
-                                    <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn text-red-500 hover:text-red-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 duration-200" onclick="return confirm('Delete this expense?')">
-                                        <i class="fas fa-trash-alt text-xs"></i><span class="hidden sm:inline">Delete</span>
-                                    </a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="dashboard-activity-mobile sm:hidden space-y-3">
-                    {% for exp in expenses %}
-                    <article class="activity-mobile-card">
-                        <div class="activity-mobile-top">
-                            <div class="min-w-0">
-                                <p class="activity-mobile-item">{{ exp.item_name }}</p>
-                                {% if exp.description %}
-                                <p class="activity-mobile-desc">{{ exp.description|truncate(80, True) }}</p>
-                                {% endif %}
-                            </div>
-                            <p class="activity-mobile-amount">&#8377;{{ "{:,.0f}".format(exp.amount) }}</p>
-                        </div>
-                        <div class="activity-mobile-meta">
-                            <span><i class="fas fa-calendar text-blue-400" aria-hidden="true"></i>{{ exp.date.strftime('%b %d') }}</span>
-                            <span><i class="fas fa-user-circle text-blue-500" aria-hidden="true"></i>{{ exp.user.username|truncate(12, True) }}</span>
-                        </div>
-                        <div class="activity-mobile-bottom">
-                            <span class="category-badge px-2 py-1 rounded-full text-xs font-bold text-white inline-flex items-center gap-1" style="background-color: {{ exp.category.color }}">
-                                <i class="fas fa-folder-open text-xs" aria-hidden="true"></i>
-                                {{ exp.category.name|truncate(18, True) }}
-                            </span>
-                            {% if exp.bucket %}
-                            <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Reserved bucket</span>
-                            {% endif %}
-                        </div>
-                        <div class="activity-mobile-actions">
-                            <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn">
-                                <i class="fas fa-edit text-xs" aria-hidden="true"></i>Edit
-                            </a>
-                            <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn" onclick="return confirm('Delete this expense?')">
-                                <i class="fas fa-trash-alt text-xs" aria-hidden="true"></i>Delete
-                            </a>
-                        </div>
-                    </article>
-                    {% endfor %}
-                </div>
-                {% else %}
-                    <div class="text-center py-12">
-                        <div class="text-5xl md:text-6xl mb-4"><i class="fas fa-receipt text-gray-300" aria-hidden="true"></i></div>
-                        <p class="text-gray-500 text-base md:text-lg font-semibold">No expenses logged yet</p>
-                        <p class="text-gray-400 text-xs md:text-sm mt-1">Start tracking your family expenses above!</p>
-                    </div>
                 {% endif %}
             </div>
 
-            <!-- Budget Tools & Analysis Section -->
-            <div class="dashboard-tools-grid grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-fire text-orange-600" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-800">Daily Burn</h3>
-                    </div>
-                    <p class="text-sm text-slate-600 mb-1">Average per day</p>
-                    <p class="text-2xl font-bold text-orange-600">&#8377;{{ "{:,.0f}".format(daily_rate) }}</p>
-                    <div class="mt-4 pt-4 border-t border-gray-200">
-                        <div class="flex items-center justify-between text-sm mb-2">
-                            <span class="text-slate-600">Daily target</span>
-                            <span class="font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(daily_budget_target) }}</span>
-                        </div>
-                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div class="h-full {% if burn_percentage > 120 %}bg-red-500{% elif burn_percentage > 100 %}bg-yellow-500{% else %}bg-green-500{% endif %}" style="width: {{ min(burn_percentage, 100) }}%"></div>
-                        </div>
-                    </div>
+            <!-- Reserved Buckets Sub-section -->
+            {% if budget_buckets %}
+            <div class="mb-5">
+                <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                    <span><i class="fas fa-shield-halved text-indigo-500 mr-1"></i>Protected Buckets</span>
+                    <span>Rs. {{ "{:,.0f}".format(bucket_unspent_total) }} reserved</span>
                 </div>
-
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-coins text-green-600" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-800">Budget Health</h3>
-                    </div>
-                    <p class="text-sm text-slate-600 mb-1">Spent from budget</p>
-                    <p class="text-2xl font-bold {% if budget_percentage > 100 %}text-red-600{% elif budget_percentage > 75 %}text-yellow-600{% else %}text-green-600{% endif %}">{{ "{:.1f}".format(budget_percentage) }}%</p>
-                    <div class="mt-4 pt-4 border-t border-gray-200">
-                        <div class="flex items-center justify-between text-sm mb-2">
-                            <span class="text-slate-600">Remaining</span>
-                            <span class="font-bold {% if budget_remaining < 0 %}text-red-600{% else %}text-slate-800{% endif %}">&#8377;{{ "{:,.0f}".format(budget_remaining) }}</span>
-                        </div>
-                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div class="h-full bg-blue-600" style="width: {{ min(budget_percentage, 100) }}%"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-cyan-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-calendar-day text-cyan-700" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-800">Safe Daily Spend</h3>
-                    </div>
-                    <p class="text-sm text-slate-600 mb-1">{% if days_remaining %}For {{ days_remaining }} days left{% else %}Month complete{% endif %}</p>
-                    <p class="text-2xl font-bold {% if safe_daily_spend < daily_budget_target * 0.5 %}text-red-600{% else %}text-cyan-700{% endif %}">&#8377;{{ "{:,.0f}".format(safe_daily_spend) }}</p>
-                    <p class="text-xs text-slate-500 mt-4">Projected month total: <span class="{% if projected_month_total > income %}text-red-600{% else %}text-green-600{% endif %} font-bold">&#8377;{{ "{:,.0f}".format(projected_month_total) }}</span></p>
-                </div>
-
-                <div class="dashboard-card glass-card hover-lift rounded-xl md:rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-lightbulb text-purple-600" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-800">Quick Read</h3>
-                    </div>
-                    <div class="space-y-3">
-                        <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                            <p class="text-xs text-blue-700 font-semibold">Top category</p>
-                            <p class="text-sm font-bold text-blue-900 mt-1">{% if top_category %}{{ top_category.name }}{% else %}No spending yet{% endif %}</p>
-                        </div>
-                        <div class="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                            <p class="text-xs text-indigo-700 font-semibold">Daily AI report</p>
-                            <p class="text-sm font-bold text-indigo-900 mt-1">Runs at 11:58 PM</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 mb-6 md:mb-8">
-                <!-- Daily Burn Rate -->
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-orange-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-fire text-orange-600" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">Daily Burn Rate</h3>
-                    </div>
-                    <script>
-                        (function() {
-                            const total = {{ total_spent }};
-                            const currentDate = new Date();
-                            const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-                            const daysElapsed = currentDate.getDate();
-                            const dailyRate = daysElapsed > 0 ? total / daysElapsed : 0;
-                            const projectedTotal = dailyRate * daysInMonth;
-                            const budget = {{ monthly_budget }};
-                            const burnPercentage = budget > 0 ? (dailyRate / (budget / daysInMonth)) * 100 : 0;
-                            
-                            document.write(`
-                                <div class="space-y-4">
-                                    <div>
-                                        <p class="text-sm text-slate-600 mb-1">Average per day</p>
-                                        <p class="text-2xl font-bold text-orange-600">â‚¹${ Math.round(dailyRate).toLocaleString('en-IN') }</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-sm text-slate-600 mb-1">Projected month total</p>
-                                        <p class="text-xl font-bold ${ projectedTotal > budget ? 'text-red-600' : 'text-green-600' }">â‚¹${ Math.round(projectedTotal).toLocaleString('en-IN') }</p>
-                                    </div>
-                                    <div class="pt-3 border-t border-gray-200">
-                                        <div class="flex items-center justify-between text-sm mb-2">
-                                            <span class="text-slate-600">Burn Health</span>
-                                            <span class="font-bold ${ burnPercentage > 120 ? 'text-red-600' : burnPercentage > 100 ? 'text-yellow-600' : 'text-green-600' }">${ Math.round(burnPercentage) }%</span>
-                                        </div>
-                                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                                            <div class="h-full ${ burnPercentage > 120 ? 'bg-red-500' : burnPercentage > 100 ? 'bg-yellow-500' : 'bg-green-500' }" style="width: ${ Math.min(burnPercentage, 100) }%"></div>
-                                        </div>
-                                    </div>
+                <div class="space-y-2.5">
+                    {% for b in budget_buckets %}
+                    <div class="vs-card-muted p-3">
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <div class="min-w-0">
+                                <div class="font-semibold text-sm text-slate-900 dark:text-white truncate">{{ b.bucket.name }}</div>
+                                <div class="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {{ b.bucket.category.name }} · Spent Rs. {{ "{:,.0f}".format(b.spent) }} of Rs. {{ "{:,.0f}".format(b.allocated) }}
                                 </div>
-                            `);
-                        })();
-                    </script>
-                </div>
-
-                <!-- Budget Summary -->
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-green-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-coins text-green-600" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">Budget Summary</h3>
-                    </div>
-                    <div class="space-y-4">
-                        <div>
-                            <p class="text-sm text-slate-600 mb-1">Total Budget</p>
-                            <p class="text-2xl font-bold text-blue-600">â‚¹{{ "{:,.0f}".format(monthly_budget) }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-slate-600 mb-1">Spent</p>
-                            <p class="text-xl font-bold text-red-500">â‚¹{{ "{:,.0f}".format(total_spent) }}</p>
-                        </div>
-                        <div class="pt-3 border-t border-gray-200">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm text-slate-600">Progress</span>
-                                <span class="text-sm font-bold text-slate-800">{{ "{:.1f}".format(budget_percentage) }}%</span>
                             </div>
-                            <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
-                                <div class="h-full bg-gradient-to-r from-blue-500 to-blue-600" style="width: {{ min(budget_percentage, 100) }}%"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Category Insights -->
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-center mb-4">
-                        <div class="bg-purple-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-lightbulb text-purple-600" aria-hidden="true"></i>
-                        </div>
-                        <h3 class="text-lg md:text-xl font-bold text-slate-800">Quick Insights</h3>
-                    </div>
-                    <div class="space-y-3">
-                        <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                            <p class="text-xs text-blue-700 font-semibold">ðŸ“Š Top Category</p>
-                            <p class="text-sm font-bold text-blue-900 mt-1">
-                                {% if top_category %}{{ top_category.name }}{% else %}N/A{% endif %}
-                            </p>
-                        </div>
-                        <div class="p-3 bg-green-50 rounded-lg border border-green-100">
-                            <p class="text-xs text-green-700 font-semibold">âœ… Budget Status</p>
-                            <p class="text-sm font-bold mt-1">
-                                {% if total_spent < monthly_budget * 0.5 %}
-                                    <span class="text-green-900">On Track âœ“</span>
-                                {% elif total_spent < monthly_budget %}
-                                    <span class="text-yellow-900">Approaching Limit âš </span>
+                            <div class="flex items-center gap-1 flex-shrink-0">
+                                {% if b.is_overflow %}
+                                <span class="vs-badge vs-badge-danger">+Rs. {{ "{:,.0f}".format(b.overflow) }} over</span>
                                 {% else %}
-                                    <span class="text-red-900">Over Budget â›”</span>
+                                <span class="vs-badge vs-badge-success">Rs. {{ "{:,.0f}".format(b.remaining) }} left</span>
                                 {% endif %}
-                            </p>
+                                {% if is_manager %}
+                                <a href="{{ url_for('edit_expected', id=b.bucket.id) }}" class="vs-icon-btn" title="Edit bucket">
+                                    <i class="fas fa-pen text-[11px]"></i>
+                                </a>
+                                {% endif %}
+                            </div>
                         </div>
-                        <div class="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                            <p class="text-xs text-indigo-700 font-semibold">ðŸ’¡ Days Remaining</p>
-                            <p class="text-sm font-bold text-indigo-900 mt-1">
-                                <span id="daysRemaining">--</span> days
-                            </p>
+                        <div class="vs-progress h-1.5">
+                            <div class="vs-progress-fill {% if b.is_overflow %}bg-rose-500{% elif b.usage_pct >= 80 %}bg-amber-500{% else %}bg-emerald-500{% endif %}"
+                                 style="width: {{ [b.usage_pct, 100]|min }}%;"></div>
                         </div>
                     </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Standard Planned Bills Sub-section -->
+            {% set standard_bills = expected_expenses | rejectattr('is_bucket') | list %}
+            {% if standard_bills %}
+            <div>
+                <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                    <span><i class="fas fa-file-invoice-dollar text-amber-500 mr-1"></i>Scheduled Bills</span>
+                    <span>{{ "{:.0f}".format(plan_paid_percentage) }}% paid</span>
+                </div>
+                <div class="space-y-2">
+                    {% for item in standard_bills %}
+                    <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold text-slate-900 dark:text-white truncate {% if item.is_paid %}line-through opacity-60{% endif %}">
+                                    {{ item.name }}
+                                </span>
+                                {% if item.is_paid %}
+                                <span class="vs-badge vs-badge-success">Paid</span>
+                                {% else %}
+                                <span class="vs-badge vs-badge-warning">Due {{ item.due_day }} {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][item.month-1] }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
+                                <span>{{ item.category.name if item.category else 'Uncategorized' }}</span>
+                                <span>·</span>
+                                <strong class="text-slate-700 dark:text-slate-200 tabular-nums">Rs. {{ "{:,.0f}".format(item.amount) }}</strong>
+                            </div>
+                        </div>
+
+                        {% if is_manager %}
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <form action="{{ url_for('toggle_expected', id=item.id) }}" method="POST" class="inline">
+                                <button type="submit" class="vs-btn vs-btn-sm {% if item.is_paid %}vs-btn-ghost{% else %}vs-btn-secondary{% endif %}" title="{% if item.is_paid %}Move back to unpaid{% else %}Mark paid &amp; post to expenses{% endif %}">
+                                    <i class="fas {% if item.is_paid %}fa-rotate-left text-slate-400{% else %}fa-check text-emerald-500{% endif %}"></i>
+                                    <span>{% if item.is_paid %}Undo{% else %}Pay{% endif %}</span>
+                                </button>
+                            </form>
+                            <a href="{{ url_for('edit_expected', id=item.id) }}" class="vs-icon-btn" title="Edit planned item">
+                                <i class="fas fa-pen text-xs"></i>
+                            </a>
+                            <form action="{{ url_for('delete_expected', id=item.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete planned item {{ item.name }}?');">
+                                <button type="submit" class="vs-icon-btn hover:text-rose-500" title="Delete planned item">
+                                    <i class="fas fa-trash text-xs"></i>
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% elif not budget_buckets %}
+            <div class="text-center py-8 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">No bills or buckets scheduled yet</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Add recurring bills (rent, EMI, utilities) or protected spending buckets to forecast month-end savings.
+                </p>
+                {% if is_manager %}
+                <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-primary mt-3">
+                    <i class="fas fa-plus"></i>
+                    <span>Add First Planned Item</span>
+                </button>
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- 1. Smart Expense Book & Statement Import Modal (#statementModal) -->
+<div id="statementModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="statement-modal-title">
+    <div class="vs-modal-panel max-w-2xl">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <i class="fas fa-book-open text-lg"></i>
+                </div>
+                <div>
+                    <h3 id="statement-modal-title" class="text-base font-bold text-slate-900 dark:text-white">Smart Expense Book &amp; Statement Importer</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Upload an Excel Book (.xlsx), CSV, PDF, or Image — or paste spreadsheet rows directly</p>
+                </div>
+            </div>
+            <button type="button" data-modal-close="statementModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <form id="statement-upload-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/50">
+                    <label class="vs-label" for="statement-file">
+                        <i class="fas fa-file-excel text-emerald-500 mr-1"></i> Upload Book or Statement File
+                    </label>
+                    <input id="statement-file" type="file" name="statement" accept=".xlsx,.xls,.csv,.tsv,.txt,application/pdf,image/*" class="vs-input text-xs file:mr-2.5 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold">
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 mb-0">
+                        Supports multi-sheet Excel (<code>.xlsx</code>), <code>.csv</code>, <code>.pdf</code>, or receipt/statement images.
+                    </p>
+                </div>
+
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/50">
+                    <label class="vs-label" for="statement-book-text">
+                        <i class="fas fa-paste text-indigo-500 mr-1"></i> Or Paste Spreadsheet / CSV Book
+                    </label>
+                    <textarea id="statement-book-text" name="book_text" rows="3" placeholder="Paste rows from Excel, Google Sheets, or CSV (including transactions &amp; category budgets)..." class="vs-textarea text-xs font-mono"></textarea>
                 </div>
             </div>
 
-            <script>
-                const today = new Date();
-                const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-                const daysRemaining = daysInMonth - today.getDate();
-                document.getElementById('daysRemaining').textContent = daysRemaining;
-            </script>
+            <!-- Smart Implementation Toggles -->
+            <div class="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-500/20 space-y-2">
+                <div class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <i class="fas fa-wand-magic-sparkles text-indigo-500"></i>
+                    <span>Auto-Capture &amp; Implementation Rules</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                    <label class="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="apply_budgets" value="true" checked class="mt-0.5 rounded text-indigo-600">
+                        <span><strong>Sync Budgets &amp; Categories</strong><br><span class="text-[11px] text-slate-500">Auto-set category caps &amp; month budget from book</span></span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="sync_members" value="true" checked class="mt-0.5 rounded text-indigo-600">
+                        <span><strong>Sync Family Members</strong><br><span class="text-[11px] text-slate-500">Attribute spend to members (e.g. Arish, Nahid, Shakir)</span></span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="skip_transfers" value="true" checked class="mt-0.5 rounded text-indigo-600">
+                        <span><strong>Skip Internal Transfers</strong><br><span class="text-[11px] text-slate-500">Exclude ATM cashouts &amp; settled friend splits</span></span>
+                    </label>
+                </div>
             </div>
 
-            <!-- Footer -->
-            <div class="text-center text-slate-500 text-xs md:text-sm">
-                <p><i class="fas fa-shield-alt mr-1"></i>VaultSync &copy; 2026 - Your Family's Financial Hub</p>
+            <div>
+                <label class="vs-label" for="statement-instruction">Optional AI Instructions (for unstructured PDFs/images)</label>
+                <input id="statement-instruction" type="text" name="instruction" placeholder="e.g., Ignore salary credits, or map 'Medical' to Health" class="vs-input text-xs">
             </div>
-        </div>
-    </main>
 
-            {% endif %}
+            <div id="statement-scan-status" class="hidden"></div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button type="button" data-modal-close="statementModal" class="vs-btn vs-btn-secondary">Cancel</button>
+                <button type="submit" class="vs-btn vs-btn-primary">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <span>Auto-Capture &amp; Implement Book</span>
+                </button>
+            </div>
+        </form>
     </div>
-    #}
+</div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
-    <!-- Chart.js Configuration -->
-    <script>
-        document.querySelectorAll('input[name="expense_date"]').forEach((input) => {
-            if (!input.value) input.value = new Date().toISOString().split('T')[0];
-        });
+<!-- 2. Month Income & Budget Settings Modal (#monthFinanceModal) -->
+{% if is_manager %}
+<div id="monthFinanceModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="month-finance-title">
+    <div class="vs-modal-panel">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+                <h3 id="month-finance-title" class="text-base font-bold text-slate-900 dark:text-white">
+                    {{ month_name }} {{ selected_year }} Income &amp; Budget
+                </h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Customize this specific month's income and spending cap
+                </p>
+            </div>
+            <button type="button" data-modal-close="monthFinanceModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
 
+        <form action="{{ url_for('update_monthly_finance_setting') }}" method="POST" class="space-y-4">
+            <input type="hidden" name="month" value="{{ selected_month }}">
+            <input type="hidden" name="year" value="{{ selected_year }}">
+            <input type="hidden" name="next" value="{{ url_for('dashboard', month=selected_month, year=selected_year) }}">
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="vs-label" for="modal-monthly-income">Monthly Income (Rs.)</label>
+                    <input id="modal-monthly-income" type="number" step="0.01" min="0" name="monthly_income" value="{{ income|round(2) }}" required class="vs-input tabular-nums font-semibold">
+                </div>
+                <div>
+                    <label class="vs-label" for="modal-monthly-budget">Spending Budget (Rs.)</label>
+                    <input id="modal-monthly-budget" type="number" step="0.01" min="0" name="monthly_budget" value="{{ monthly_budget|round(2) }}" required class="vs-input tabular-nums font-semibold">
+                </div>
+            </div>
+
+            <div>
+                <label class="vs-label" for="modal-finance-notes">Month Note (Optional)</label>
+                <input id="modal-finance-notes" type="text" name="notes" value="{{ finance.notes or '' }}" placeholder="e.g., Festival bonus month, travel reserve included" class="vs-input text-xs">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button type="button" data-modal-close="monthFinanceModal" class="vs-btn vs-btn-secondary">Cancel</button>
+                <button type="submit" class="vs-btn vs-btn-primary">
+                    <i class="fas fa-check"></i>
+                    <span>Save Month Settings</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 3. Add Planned Bill / Reserved Bucket Modal (#addExpectedModal) -->
+<div id="addExpectedModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="add-expected-title">
+    <div class="vs-modal-panel">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+                <h3 id="add-expected-title" class="text-base font-bold text-slate-900 dark:text-white">Add Planned Bill or Bucket</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Schedule an upcoming bill or reserve a category spending bucket</p>
+            </div>
+            <button type="button" data-modal-close="addExpectedModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <form action="{{ url_for('add_expected') }}" method="POST" class="space-y-3.5">
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div class="sm:col-span-7">
+                    <label class="vs-label" for="exp-plan-name">Name</label>
+                    <input id="exp-plan-name" type="text" name="name" placeholder="e.g., House Rent, Grocery Reserve" required class="vs-input">
+                </div>
+                <div class="sm:col-span-5">
+                    <label class="vs-label" for="exp-plan-amount">Amount (Rs.)</label>
+                    <input id="exp-plan-amount" type="number" step="0.01" min="1" name="amount" placeholder="0.00" required class="vs-input tabular-nums font-semibold">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div class="sm:col-span-6">
+                    <label class="vs-label" for="exp-plan-category">Category</label>
+                    <select id="exp-plan-category" name="category_id" required class="vs-select">
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="vs-label" for="exp-plan-day">Due Day</label>
+                    <input id="exp-plan-day" type="number" min="1" max="31" name="due_day" value="5" required class="vs-input">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="vs-label" for="exp-plan-month">Month</label>
+                    <input id="exp-plan-month" type="number" min="1" max="12" name="month" value="{{ selected_month }}" required class="vs-input">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="vs-label" for="exp-plan-year">Year</label>
+                    <input id="exp-plan-year" type="number" min="2024" max="2035" name="year" value="{{ selected_year }}" required class="vs-input">
+                </div>
+            </div>
+
+            <label class="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                <input type="checkbox" name="is_bucket" class="mt-1 rounded text-indigo-600">
+                <span class="text-xs">
+                    <strong class="block text-slate-800 dark:text-slate-100">Treat as Protected Spending Bucket</strong>
+                    <span class="text-slate-500 dark:text-slate-400">Reserves this amount for the selected category and automatically draws down as daily expenses are logged.</span>
+                </span>
+            </label>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button type="button" data-modal-close="addExpectedModal" class="vs-btn vs-btn-secondary">Cancel</button>
+                <button type="submit" class="vs-btn vs-btn-primary">
+                    <i class="fas fa-plus"></i>
+                    <span>Save to Plan</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- 4. Manage Categories Modal (#manageCategoriesModal) -->
+<div id="manageCategoriesModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="manage-cat-title">
+    <div class="vs-modal-panel vs-modal-lg">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+                <h3 id="manage-cat-title" class="text-base font-bold text-slate-900 dark:text-white">Family Categories</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Create custom categories, set monthly limits, or edit existing ones</p>
+            </div>
+            <button type="button" data-modal-close="manageCategoriesModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- Add Category Form -->
+        <form action="{{ url_for('add_category') }}" method="POST" class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mb-4">
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                <div class="sm:col-span-5">
+                    <label class="vs-label" for="new-cat-name">New Category Name</label>
+                    <input id="new-cat-name" type="text" name="name" placeholder="e.g., Pet Care, Subscriptions" required class="vs-input py-2 text-xs">
+                </div>
+                <div class="sm:col-span-3">
+                    <label class="vs-label" for="new-cat-limit">Monthly Limit (Optional)</label>
+                    <input id="new-cat-limit" type="number" step="1" min="0" name="monthly_limit" placeholder="Rs. 0" class="vs-input py-2 text-xs">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="vs-label" for="new-cat-color">Color</label>
+                    <input id="new-cat-color" type="color" name="color" value="#4f46e5" class="h-9 w-full rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer p-1 bg-white dark:bg-slate-900">
+                </div>
+                <div class="sm:col-span-2">
+                    <button type="submit" class="vs-btn vs-btn-primary w-full py-2 text-xs">
+                        <i class="fas fa-plus"></i> Add
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- Existing Categories Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+            {% for cat in categories %}
+            {% set cat_spend = category_spent.get(cat.id, 0) %}
+            <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="w-3.5 h-3.5 rounded-full flex-shrink-0" style="background-color: {{ cat.color }};"></span>
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-900 dark:text-white truncate">{{ cat.name }}</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                            Spent: Rs. {{ "{:,.0f}".format(cat_spend) }}
+                            {% if cat.monthly_limit and cat.monthly_limit > 0 %}
+                            / Limit: Rs. {{ "{:,.0f}".format(cat.monthly_limit) }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <a href="{{ url_for('edit_category', id=cat.id) }}" class="vs-btn vs-btn-sm vs-btn-ghost flex-shrink-0">
+                    <i class="fas fa-pen text-[11px]"></i> Edit
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="flex items-center justify-between pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
+            <form action="{{ url_for('apply_category_presets') }}" method="POST">
+                <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary">
+                    <i class="fas fa-wand-magic-sparkles text-indigo-500"></i>
+                    <span>Restore Default Presets</span>
+                </button>
+            </form>
+            <button type="button" data-modal-close="manageCategoriesModal" class="vs-btn vs-btn-sm vs-btn-secondary">Done</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Default today's date in expense form
+    document.querySelectorAll('input[name="expense_date"]').forEach((input) => {
+        if (!input.value) input.value = new Date().toISOString().split('T')[0];
+    });
+
+    // Live Transaction Search & Category Filter
+    (function() {
+        const searchInput = document.getElementById('txSearchInput');
+        const categorySelect = document.getElementById('txCategoryFilter');
+        const rows = document.querySelectorAll('[data-tx-row]');
+        if (!rows.length) return;
+
+        function filterTransactions() {
+            const q = (searchInput ? searchInput.value : '').trim().toLowerCase();
+            const cat = (categorySelect ? categorySelect.value : '').trim().toLowerCase();
+            rows.forEach((row) => {
+                const textMatch = !q || (row.dataset.search || '').includes(q);
+                const catMatch = !cat || (row.dataset.category || '') === cat;
+                row.style.display = (textMatch && catMatch) ? '' : 'none';
+            });
+        }
+
+        if (searchInput) searchInput.addEventListener('input', filterTransactions);
+        if (categorySelect) categorySelect.addEventListener('change', filterTransactions);
+    })();
+
+    // Interactive Doughnut Chart
+    (function() {
         const dynamicLabels = {{ chart_labels | tojson | safe }};
-        const dynamicData = {{ chart_data | safe }};
+        const dynamicData = {{ chart_data | tojson | safe }};
         const dynamicColors = {{ chart_colors | tojson | safe }};
 
         const formatCurrency = (value) => `Rs. ${Math.round(value || 0).toLocaleString('en-IN')}`;
@@ -1548,7 +815,7 @@
             .map((label, index) => ({
                 label,
                 value: Number(dynamicData[index]) || 0,
-                color: dynamicColors[index] || '#3b82f6'
+                color: dynamicColors[index] || '#4f46e5'
             }))
             .filter((row) => row.value > 0)
             .sort((a, b) => b.value - a.value);
@@ -1556,9 +823,6 @@
         const chartCanvas = document.getElementById('expenseChart');
         const legendEl = document.getElementById('expenseLegend');
         const emptyEl = document.getElementById('expenseChartEmpty');
-        const totalMetricEl = document.getElementById('chartTotalMetric');
-        const topMetricEl = document.getElementById('chartTopMetric');
-        const categoryCountMetricEl = document.getElementById('chartCategoryCountMetric');
         const centerLabelEl = document.getElementById('chartCenterLabel');
         const centerTotalEl = document.getElementById('chartCenterTotal');
         const centerHintEl = document.getElementById('chartCenterHint');
@@ -1566,262 +830,115 @@
         let chartMode = 'amount';
         let selectedIndex = null;
 
-        if (chartCanvas && window.Chart) {
-            const total = chartRows.reduce((sum, row) => sum + row.value, 0);
-            const topRow = chartRows[0];
+        if (!chartCanvas || !window.Chart) return;
+        const total = chartRows.reduce((sum, row) => sum + row.value, 0);
 
-            if (totalMetricEl) totalMetricEl.textContent = formatCurrency(total);
-            if (topMetricEl) topMetricEl.textContent = topRow ? topRow.label : '-';
-            if (categoryCountMetricEl) categoryCountMetricEl.textContent = chartRows.length.toString();
-            if (centerTotalEl) centerTotalEl.textContent = formatCurrency(total);
-
-            const getTheme = () => {
-                const isDark = document.body.classList.contains('dark-mode');
-                return {
-                    isDark,
-                    border: isDark ? '#111827' : '#ffffff',
-                    tooltipBg: isDark ? 'rgba(15, 23, 42, 0.96)' : 'rgba(255, 255, 255, 0.98)',
-                    tooltipText: isDark ? '#e5e7eb' : '#111827',
-                    tooltipBorder: isDark ? 'rgba(148, 163, 184, 0.28)' : 'rgba(15, 23, 42, 0.12)'
-                };
-            };
-
-            const updateCenter = (index = null) => {
-                if (!centerLabelEl || !centerTotalEl || !centerHintEl) return;
-                const row = index === null ? null : chartRows[index];
-                if (!row) {
-                    centerLabelEl.textContent = 'Total spent';
-                    centerTotalEl.textContent = formatCurrency(total);
-                    centerHintEl.textContent = chartRows.length ? `${chartRows.length} categories` : 'No categories';
-                    return;
-                }
-                const share = total ? ((row.value / total) * 100).toFixed(1) : '0.0';
-                centerLabelEl.textContent = row.label;
-                centerTotalEl.textContent = formatCurrency(row.value);
-                centerHintEl.textContent = `${share}% of spend`;
-            };
-
-            const updateDatasetFocus = (chart) => {
-                const dataset = chart.data.datasets[0];
-                dataset.backgroundColor = chartRows.map((row, index) => (
-                    selectedIndex === null || selectedIndex === index ? row.color : `${row.color}55`
-                ));
-                dataset.offset = chartRows.map((_, index) => selectedIndex === index ? 10 : 1);
-                chart.update();
-            };
-
-            const renderLegend = (chart) => {
-                if (!legendEl) return;
-                legendEl.innerHTML = '';
-                chartRows.forEach((row, index) => {
-                    const share = total ? (row.value / total) * 100 : 0;
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.className = `chart-legend-row${selectedIndex === index ? ' active' : ''}`;
-                    button.setAttribute('aria-pressed', selectedIndex === index ? 'true' : 'false');
-
-                    const colorSwatch = document.createElement('span');
-                    colorSwatch.className = 'legend-color';
-                    colorSwatch.style.backgroundColor = row.color;
-
-                    const main = document.createElement('span');
-                    main.className = 'legend-main';
-
-                    const name = document.createElement('span');
-                    name.className = 'legend-name';
-                    name.textContent = row.label;
-
-                    const track = document.createElement('span');
-                    track.className = 'legend-track';
-
-                    const fill = document.createElement('span');
-                    fill.style.width = `${Math.max(share, 3)}%`;
-                    fill.style.backgroundColor = row.color;
-
-                    const value = document.createElement('span');
-                    value.className = 'legend-value';
-                    value.textContent = chartMode === 'amount' ? formatCurrency(row.value) : `${share.toFixed(1)}%`;
-
-                    track.appendChild(fill);
-                    main.appendChild(name);
-                    main.appendChild(track);
-                    button.appendChild(colorSwatch);
-                    button.appendChild(main);
-                    button.appendChild(value);
-                    button.addEventListener('click', () => {
-                        selectedIndex = selectedIndex === index ? null : index;
-                        updateCenter(selectedIndex);
-                        updateDatasetFocus(chart);
-                        renderLegend(chart);
-                    });
-                    legendEl.appendChild(button);
-                });
-            };
-
-            if (!chartRows.length) {
-                chartCanvas.hidden = true;
-                if (emptyEl) emptyEl.classList.remove('hidden');
-                updateCenter();
-            } else {
-                const chart = new Chart(chartCanvas.getContext('2d'), {
-                    type: 'doughnut',
-                    data: {
-                        labels: chartRows.map((row) => row.label),
-                        datasets: [{
-                            data: chartRows.map((row) => row.value),
-                            backgroundColor: chartRows.map((row) => row.color),
-                            borderColor: getTheme().border,
-                            borderWidth: 4,
-                            borderRadius: 10,
-                            hoverBorderWidth: 5,
-                            hoverOffset: 12,
-                            offset: chartRows.map(() => 1),
-                            spacing: 2
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        animation: {
-                            animateRotate: true,
-                            duration: 850,
-                            easing: 'easeOutQuart'
-                        },
-                        layout: {
-                            padding: 8
-                        },
-                        onHover: (event, elements) => {
-                            if (selectedIndex !== null) return;
-                            updateCenter(elements.length ? elements[0].index : null);
-                        },
-                        onClick: (event, elements, chart) => {
-                            if (!elements.length) {
-                                selectedIndex = null;
-                            } else {
-                                const index = elements[0].index;
-                                selectedIndex = selectedIndex === index ? null : index;
-                            }
-                            updateCenter(selectedIndex);
-                            updateDatasetFocus(chart);
-                            renderLegend(chart);
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            tooltip: {
-                                enabled: true,
-                                backgroundColor: getTheme().tooltipBg,
-                                titleColor: getTheme().tooltipText,
-                                bodyColor: getTheme().tooltipText,
-                                padding: 14,
-                                cornerRadius: 10,
-                                titleFont: { size: 13, weight: '700', family: "'Inter', sans-serif" },
-                                bodyFont: { size: 12, family: "'Inter', sans-serif" },
-                                borderColor: getTheme().tooltipBorder,
-                                borderWidth: 1,
-                                displayColors: true,
-                                boxPadding: 8,
-                                callbacks: {
-                                    label: (context) => {
-                                        const value = context.raw;
-                                        const share = total ? ((value / total) * 100).toFixed(1) : '0.0';
-                                        return `${formatCurrency(value)} (${share}%)`;
-                                    },
-                                    afterLabel: () => `Month total: ${formatCurrency(total)}`
-                                }
-                            }
-                        },
-                        cutout: '72%'
-                    }
-                });
-
-                updateCenter();
-                renderLegend(chart);
-
-                modeButtons.forEach((button) => {
-                    button.addEventListener('click', () => {
-                        chartMode = button.dataset.chartMode;
-                        modeButtons.forEach((item) => item.classList.toggle('active', item === button));
-                        renderLegend(chart);
-                    });
-                });
-
-                const refreshChartTheme = () => {
-                    const theme = getTheme();
-                    chart.data.datasets[0].borderColor = theme.border;
-                    chart.options.plugins.tooltip.backgroundColor = theme.tooltipBg;
-                    chart.options.plugins.tooltip.titleColor = theme.tooltipText;
-                    chart.options.plugins.tooltip.bodyColor = theme.tooltipText;
-                    chart.options.plugins.tooltip.borderColor = theme.tooltipBorder;
-                    chart.update();
-                };
-
-                new MutationObserver(refreshChartTheme).observe(document.body, {
-                    attributes: true,
-                    attributeFilter: ['class']
-                });
+        const updateCenter = (index = null) => {
+            if (!centerLabelEl || !centerTotalEl || !centerHintEl) return;
+            const row = index === null ? null : chartRows[index];
+            if (!row) {
+                centerLabelEl.textContent = 'Total spent';
+                centerTotalEl.textContent = formatCurrency(total);
+                centerHintEl.textContent = chartRows.length ? `${chartRows.length} categories` : 'No spend yet';
+                return;
             }
-        }
-    </script>
+            const share = total ? ((row.value / total) * 100).toFixed(1) : '0.0';
+            centerLabelEl.textContent = row.label;
+            centerTotalEl.textContent = formatCurrency(row.value);
+            centerHintEl.textContent = `${share}% of month spend`;
+        };
 
-    <script>
-        document.getElementById('receipt-input')?.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            const btnText = document.getElementById('receipt-upload-text');
-            const originalText = btnText.innerText;
-            btnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
-            
-            const formData = new FormData();
-            formData.append('receipt', file);
-            
-            try {
-                const response = await fetch('/api/scan-receipt', {
-                    method: 'POST',
-                    body: formData
+        const renderLegend = (chart) => {
+            if (!legendEl) return;
+            legendEl.innerHTML = '';
+            chartRows.forEach((row, index) => {
+                const share = total ? (row.value / total) * 100 : 0;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `chart-legend-row${selectedIndex === index ? ' active' : ''}`;
+                button.innerHTML = `
+                    <span class="legend-color" style="background-color: ${row.color}"></span>
+                    <span class="legend-main">
+                        <span class="legend-name">${row.label}</span>
+                        <span class="legend-track"><span style="width: ${Math.max(share, 3)}%; background-color: ${row.color}"></span></span>
+                    </span>
+                    <span class="legend-value">${chartMode === 'amount' ? formatCurrency(row.value) : share.toFixed(1) + '%'}</span>
+                `;
+                button.addEventListener('click', () => {
+                    selectedIndex = selectedIndex === index ? null : index;
+                    updateCenter(selectedIndex);
+                    if (chart) {
+                        chart.data.datasets[0].backgroundColor = chartRows.map((r, i) =>
+                            selectedIndex === null || selectedIndex === i ? r.color : `${r.color}44`
+                        );
+                        chart.update();
+                    }
+                    renderLegend(chart);
                 });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.item_name) document.querySelector('input[name="item_name"]').value = data.item_name;
-                    if (data.amount) document.querySelector('input[name="amount"]').value = data.amount;
-                    if (data.category) {
-                        const select = document.querySelector('select[name="category_id"]');
-                        for (let i = 0; i < select.options.length; i++) {
-                            if (select.options[i].text.toLowerCase().includes(data.category.toLowerCase())) {
-                                select.selectedIndex = i;
-                                break;
+                legendEl.appendChild(button);
+            });
+        };
+
+        if (!chartRows.length) {
+            chartCanvas.style.display = 'none';
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            updateCenter();
+            return;
+        }
+
+        const isDark = () => document.body.classList.contains('dark-mode');
+        const chart = new Chart(chartCanvas.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: chartRows.map((r) => r.label),
+                datasets: [{
+                    data: chartRows.map((r) => r.value),
+                    backgroundColor: chartRows.map((r) => r.color),
+                    borderColor: isDark() ? '#111827' : '#ffffff',
+                    borderWidth: 3,
+                    borderRadius: 6,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '72%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const val = ctx.raw;
+                                const pct = total ? ((val / total) * 100).toFixed(1) : '0.0';
+                                return ` ${formatCurrency(val)} (${pct}%)`;
                             }
                         }
                     }
-                    btnText.innerText = 'Success! Added ' + (data.item_name || 'receipt');
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    alert('AI Error: ' + (errorData.error || 'Failed to analyze'));
-                    btnText.innerText = 'Failed';
+                },
+                onClick: (evt, elements) => {
+                    selectedIndex = elements.length ? (selectedIndex === elements[0].index ? null : elements[0].index) : null;
+                    updateCenter(selectedIndex);
+                    renderLegend(chart);
                 }
-            } catch (err) {
-                console.error(err);
-                btnText.innerText = 'Error occurred';
             }
-            
-            setTimeout(() => {
-                if(btnText) btnText.innerText = originalText;
-            }, 3000);
         });
-    </script>
 
+        updateCenter();
+        renderLegend(chart);
 
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/service-worker.js');
+        modeButtons.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                chartMode = btn.dataset.chartMode;
+                modeButtons.forEach((b) => b.classList.toggle('active', b === btn));
+                renderLegend(chart);
             });
-        }
-    </script>
+        });
 
-</body>
-</html>
-
+        new MutationObserver(() => {
+            chart.data.datasets[0].borderColor = isDark() ? '#111827' : '#ffffff';
+            chart.update();
+        }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    })();
+</script>
+{% endblock %}

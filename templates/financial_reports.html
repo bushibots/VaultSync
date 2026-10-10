@@ -1,396 +1,381 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync | Reports & Planning</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
-</head>
-<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+{% extends "_layout.html" %}
+{% block title %}Financial Analytics · {{ month_name }} {{ selected_year }} · VaultSync{% endblock %}
 
-    <aside id="sidebar" class="sidebar dashboard-desktop-sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
-        <div class="mb-8 mt-8 md:mt-0">
-            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+{% block content %}
+<!-- Top Header & Suite Switcher -->
+<div class="vs-page-header">
+    <div>
+        <div class="vs-tabs mb-3">
+            <a href="{{ url_for('financial_reports', month=selected_month, year=selected_year) }}" class="vs-tab active">
+                <i class="fas fa-chart-line"></i>
+                <span>Financial Analytics</span>
+            </a>
+            <a href="{{ url_for('daily_reports') }}" class="vs-tab">
+                <i class="fas fa-bolt"></i>
+                <span>Daily AI Briefings</span>
+                {% if unread_reports_count > 0 %}
+                <span class="vs-badge vs-badge-danger ml-1">{{ unread_reports_count }}</span>
+                {% endif %}
+            </a>
         </div>
+        <h1 class="vs-page-title">{{ month_name }} {{ selected_year }} Financial Analytics</h1>
+        <p class="vs-page-subtitle">Cash flow trends, category variance vs. plan, and household P&amp;L statement.</p>
+    </div>
 
-        <nav class="flex-1 space-y-2 sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
-            </a>
-            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
-            </a>
-            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
-            </a>
-            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
-            </a>
-            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Daily Reports</span>
-            </a>
-            <a href="{{ url_for('financial_reports') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-chart-line mr-3" aria-hidden="true"></i><span>Reports & Planning</span>
-            </a>
-            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
-            </a>
-            {% if is_family_manager %}
-            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
-                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
-            </a>
-            {% endif %}
-        </nav>
-
-        <div class="mt-auto space-y-4">
-            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
-                <button type="button" id="dark-mode-toggle" data-theme-toggle class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
-                </button>
-                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
-                <select id="language-select" data-language-select class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                </select>
-            </div>
-            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
-                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
-                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
-            </div>
-        </div>
-    </aside>
-
-    {% set active_page = 'planning' %}
-    {% include '_mobile_nav.html' %}
-
-    <main id="main-content" class="dashboard-main reports-main flex-1 overflow-y-auto" role="main">
-        <div class="dashboard-page reports-page min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
-            <header class="reports-header mb-6">
-                <div>
-                    <p class="text-xs md:text-sm text-blue-600 font-semibold">YNAB-inspired gaps, built for VaultSync</p>
-                    <h1 class="text-2xl md:text-4xl font-bold text-slate-800 mt-2">Reports & Planning</h1>
-                    <p class="text-slate-500 text-sm mt-2 max-w-4xl">This page focuses on features VaultSync did not already cover directly: planning, forecasting, variance, budget, cash flow, expense, and household P&L reports.</p>
-                </div>
-                <div class="reports-actions">
-                    <form action="{{ url_for('financial_reports') }}" method="GET" class="reports-filter">
-                        <select name="month" onchange="this.form.submit()" class="form-input border-2 border-gray-200 rounded-lg p-2 text-sm">
-                            {% set months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] %}
-                            {% for m in range(1, 13) %}
-                            <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ months[m-1] }}</option>
-                            {% endfor %}
-                        </select>
-                        <select name="year" onchange="this.form.submit()" class="form-input border-2 border-gray-200 rounded-lg p-2 text-sm">
-                            {% for y in year_range %}
-                            <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                    {% if is_family_manager %}
-                    <form action="{{ url_for('generate_ai_suggested_plan_now') }}" method="POST" data-loading>
-                        <input type="hidden" name="month" value="{{ selected_month }}">
-                        <input type="hidden" name="year" value="{{ selected_year }}">
-                        <button type="submit" class="reports-ai-button">
-                            <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
-                            Generate AI Plan
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-            </header>
-
-            <section class="reports-feature-grid mb-6">
-                {% for card in missing_feature_cards %}
-                <article class="report-card feature-gap-card">
-                    <div class="flex items-start justify-between gap-3">
-                        <h2 class="text-base font-bold text-slate-800">{{ card.title }}</h2>
-                        <span class="report-tier">{{ card.tier }}</span>
-                    </div>
-                    <p class="text-sm text-slate-500 mt-2 leading-6">{{ card.body }}</p>
-                    <p class="text-sm font-bold text-blue-700 mt-4">{{ card.metric }}</p>
-                </article>
+    <div class="vs-page-actions">
+        <!-- Period Selector -->
+        <form method="GET" action="{{ url_for('financial_reports') }}" class="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-xs">
+            <select name="month" aria-label="Select month" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg focus:outline-none cursor-pointer">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
+                    {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}
+                </option>
                 {% endfor %}
-            </section>
+            </select>
+            <select name="year" aria-label="Select year" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2 py-1.5 rounded-lg focus:outline-none cursor-pointer">
+                {% for y in year_range %}
+                <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </form>
 
-            <section class="reports-kpi-grid mb-6">
-                <article class="report-card">
-                    <p class="report-label">Budget</p>
-                    <p class="report-value text-blue-600">Rs. {{ "{:,.0f}".format(monthly_budget) }}</p>
-                    <p class="report-note">Income Rs. {{ "{:,.0f}".format(monthly_income) }}{% if finance.has_override %} | custom month{% endif %}</p>
-                </article>
-                <article class="report-card">
-                    <p class="report-label">Actual Spent</p>
-                    <p class="report-value text-red-500">Rs. {{ "{:,.0f}".format(total_spent) }}</p>
-                    <p class="report-note">{{ "{:.1f}".format(budget_used_percentage) }}% of budget</p>
-                </article>
-                <article class="report-card">
-                    <p class="report-label">Forecast</p>
-                    <p class="report-value {% if forecast_total > monthly_budget %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(forecast_total) }}</p>
-                    <p class="report-note">{{ forecast_status }} pace</p>
-                </article>
-                <article class="report-card">
-                    <p class="report-label">AI Suggested Plan</p>
-                    <p class="report-value text-purple-600">Rs. {{ "{:,.0f}".format(ai_suggested_total) }}</p>
-                    <p class="report-note">{% if ai_suggested_plan %}Updated {{ ai_suggested_plan.created_at.strftime('%b %d, %I:%M %p') }}{% else %}Generate from report data{% endif %}</p>
-                </article>
-                <article class="report-card">
-                    <p class="report-label">Net Position</p>
-                    <p class="report-value {% if pnl_net < 0 %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(pnl_net) }}</p>
-                    <p class="report-note">Monthly income less expenses</p>
-                </article>
-            </section>
+        {% if is_manager %}
+        <form action="{{ url_for('generate_ai_suggested_plan_now') }}" method="POST" class="inline">
+            <input type="hidden" name="month" value="{{ selected_month }}">
+            <input type="hidden" name="year" value="{{ selected_year }}">
+            <button type="submit" class="vs-btn vs-btn-primary">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                <span>Refresh AI Benchmark</span>
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
 
-            <section class="reports-two-col mb-6">
-                <article class="report-card">
-                    <div class="report-section-head">
-                        <div>
-                            <p class="report-label">Budget Planning</p>
-                            <h2 class="text-xl font-bold text-slate-800">Month Plan</h2>
-                        </div>
-                        <i class="fas fa-calendar-check text-teal-600 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <div class="report-metric-list mt-4">
-                        <div><span>Planned total</span><strong>Rs. {{ "{:,.0f}".format(planned_total) }}</strong></div>
-                        <div><span>Posted bills</span><strong>Rs. {{ "{:,.0f}".format(posted_total) }}</strong></div>
-                        <div><span>Unposted bills</span><strong>Rs. {{ "{:,.0f}".format(unposted_total) }}</strong></div>
-                        <div><span>Reserved buckets</span><strong>Rs. {{ "{:,.0f}".format(bucket_total) }}</strong></div>
-                    </div>
-                    <div class="report-progress mt-5">
-                        <div class="flex justify-between text-xs font-bold text-slate-500 mb-2">
-                            <span>Budget used</span>
-                            <span>{{ "{:.1f}".format(budget_used_percentage) }}%</span>
-                        </div>
-                        <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
-                            <div class="h-full bg-blue-600" style="width: {{ min(budget_used_percentage, 100) }}%"></div>
-                        </div>
-                    </div>
-                </article>
-
-                <article class="report-card">
-                    <div class="report-section-head">
-                        <div>
-                            <p class="report-label">Forecasting</p>
-                            <h2 class="text-xl font-bold text-slate-800">Month-End Projection</h2>
-                        </div>
-                        <i class="fas fa-chart-simple text-orange-500 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <div class="report-metric-list mt-4">
-                        <div><span>Current daily burn</span><strong>Rs. {{ "{:,.0f}".format(daily_rate) }}</strong></div>
-                        <div><span>Safe daily spend</span><strong>Rs. {{ "{:,.0f}".format(safe_daily_spend) }}</strong></div>
-                        <div><span>Days remaining</span><strong>{{ days_remaining }}</strong></div>
-                        <div><span>Projected remaining</span><strong class="{% if forecast_remaining < 0 %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(forecast_remaining) }}</strong></div>
-                    </div>
-                </article>
-            </section>
-
-            <section class="reports-two-col mb-6">
-                <article class="report-card">
-                    <div class="report-section-head">
-                        <div>
-                            <p class="report-label">Expense Report</p>
-                            <h2 class="text-xl font-bold text-slate-800">Category Breakdown</h2>
-                        </div>
-                        <i class="fas fa-chart-pie text-indigo-600 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <div class="reports-chart-wrap mt-4">
-                        <canvas id="expenseReportChart" aria-label="Expense report category chart"></canvas>
-                    </div>
-                </article>
-
-                <article class="report-card">
-                    <div class="report-section-head">
-                        <div>
-                            <p class="report-label">Cash Flow Report</p>
-                            <h2 class="text-xl font-bold text-slate-800">Six-Month Flow</h2>
-                        </div>
-                        <i class="fas fa-water text-cyan-700 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <div class="reports-chart-wrap mt-4">
-                        <canvas id="cashFlowChart" aria-label="Cash flow chart"></canvas>
-                    </div>
-                </article>
-            </section>
-
-            <section class="reports-two-col mb-6">
-                <article class="report-card">
-                    <div class="report-section-head">
-                        <div>
-                            <p class="report-label">Variance Analysis</p>
-                            <h2 class="text-xl font-bold text-slate-800">Actual vs Plan</h2>
-                        </div>
-                        <i class="fas fa-scale-balanced text-purple-600 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <div class="report-table-wrap mt-4">
-                        <table class="report-table">
-                            <thead>
-                                <tr>
-                                    <th>Category</th>
-                                    <th>Plan</th>
-                                    <th>AI Plan</th>
-                                    <th>Actual</th>
-                                    <th>Vs Plan</th>
-                                    <th>Vs AI</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in variance_rows[:8] %}
-                                <tr>
-                                    <td><span class="report-dot" style="background-color: {{ row.color }}"></span>{{ row.name }}</td>
-                                    <td>Rs. {{ "{:,.0f}".format(row.planned) }}</td>
-                                    <td class="font-bold text-purple-700">Rs. {{ "{:,.0f}".format(row.ai_suggested) }}</td>
-                                    <td>Rs. {{ "{:,.0f}".format(row.actual) }}</td>
-                                    <td class="{% if row.variance > 0 %}text-red-600{% else %}text-green-600{% endif %} font-bold">Rs. {{ "{:,.0f}".format(row.variance) }}</td>
-                                    <td class="{% if row.ai_variance > 0 %}text-red-600{% else %}text-green-600{% endif %} font-bold">Rs. {{ "{:,.0f}".format(row.ai_variance) }}</td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="6" class="text-slate-400">No planned, AI suggested, or actual category data for this month.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="mt-4 rounded-lg border border-purple-100 bg-purple-50 p-3 text-sm text-purple-900">
-                        {% if ai_suggested_plan %}
-                        AI numbers come from <strong>{{ ai_suggested_plan.title }}</strong>. Review or apply it in <a href="{{ url_for('ai_budget', suggestion_id=ai_suggested_plan.id) }}" class="font-bold underline">AI Budget Planner</a>.
-                        {% else %}
-                        No AI suggested plan is saved for this month yet. Managers can generate one here; the daily scheduler also runs at 11:25 PM when Gemini is configured.
-                        {% endif %}
-                    </div>
-                </article>
-
-                <article class="report-card">
-                    <div class="report-section-head">
-                        <div>
-                            <p class="report-label">Profit & Loss Report</p>
-                            <h2 class="text-xl font-bold text-slate-800">Household P&L</h2>
-                        </div>
-                        <i class="fas fa-file-invoice-dollar text-emerald-600 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <div class="report-metric-list mt-4">
-                        {% for row in pnl_rows %}
-                        <div>
-                            <span>{{ row.label }}</span>
-                            <strong class="{% if row.amount < 0 %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(row.amount) }}</strong>
-                        </div>
-                        {% endfor %}
-                        <div><span>Actual net</span><strong class="{% if pnl_net < 0 %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(pnl_net) }}</strong></div>
-                        <div><span>Projected net</span><strong class="{% if pnl_projected_net < 0 %}text-red-600{% else %}text-green-600{% endif %}">Rs. {{ "{:,.0f}".format(pnl_projected_net) }}</strong></div>
-                    </div>
-                    <div class="mt-5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-600">
-                        {% if top_spender %}
-                        Top spender this month: <strong>{{ top_spender[0] }}</strong>, Rs. {{ "{:,.0f}".format(top_spender[1]) }}.
-                        {% else %}
-                        No spending has been recorded for this month yet.
-                        {% endif %}
-                    </div>
-                </article>
-            </section>
-
-            <section class="report-card mb-6">
-                <div class="report-section-head">
-                    <div>
-                        <p class="report-label">Expense Report</p>
-                        <h2 class="text-xl font-bold text-slate-800">Detailed Expense Lines</h2>
-                    </div>
-                    <i class="fas fa-receipt text-blue-600 text-xl" aria-hidden="true"></i>
-                </div>
-                <div class="report-table-wrap mt-4">
-                    <table class="report-table">
-                        <thead>
-                            <tr>
-                                <th>Category</th>
-                                <th>Transactions</th>
-                                <th>Average</th>
-                                <th>Share</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in expense_rows %}
-                            <tr>
-                                <td><span class="report-dot" style="background-color: {{ row.color }}"></span>{{ row.name }}</td>
-                                <td>{{ row.count }}</td>
-                                <td>Rs. {{ "{:,.0f}".format(row.average) }}</td>
-                                <td>{{ "{:.1f}".format(row.share) }}%</td>
-                                <td class="font-bold text-slate-800">Rs. {{ "{:,.0f}".format(row.amount) }}</td>
-                            </tr>
-                            {% else %}
-                            <tr><td colspan="5" class="text-slate-400">No expenses for this month yet.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+<!-- 4 Executive Analytics KPIs -->
+<div class="vs-kpi-grid mb-6">
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Budget Utilization</span>
+                <span class="vs-kpi-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
+                    <i class="fas fa-bullseye"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(total_spent) }}</div>
+            <div class="vs-progress mt-3">
+                <div class="vs-progress-fill {% if budget_used_percentage >= 100 %}bg-rose-500{% elif budget_used_percentage >= 80 %}bg-amber-500{% else %}bg-indigo-600{% endif %}"
+                     style="width: {{ [budget_used_percentage, 100]|min }}%;"></div>
+            </div>
         </div>
-    </main>
+        <div class="vs-kpi-meta">
+            <span>of Rs. {{ "{:,.0f}".format(monthly_budget) }} budget</span>
+            <span class="font-semibold">{{ "{:.1f}".format(budget_used_percentage) }}%</span>
+        </div>
+    </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
-    <script>
-        const expenseLabels = {{ chart_labels | tojson }};
-        const expenseValues = {{ chart_values | tojson }};
-        const expenseColors = {{ chart_colors | tojson }};
-        const cashLabels = {{ cash_flow_labels | tojson }};
-        const cashIncome = {{ cash_flow_income | tojson }};
-        const cashOutflow = {{ cash_flow_outflow | tojson }};
-        const cashNet = {{ cash_flow_net | tojson }};
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Month-End Forecast</span>
+                <span class="vs-kpi-icon {% if forecast_status == 'Healthy' %}bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400{% else %}bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400{% endif %}">
+                    <i class="fas fa-chart-line"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(forecast_total) }}</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                Burn rate: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(daily_rate) }}/day</strong>
+            </p>
+        </div>
+        <div class="vs-kpi-meta">
+            <span class="vs-badge {% if forecast_status == 'Healthy' %}vs-badge-success{% else %}vs-badge-danger{% endif %}">{{ forecast_status }}</span>
+            <span>Safe: Rs. {{ "{:,.0f}".format(safe_daily_spend) }}/d</span>
+        </div>
+    </div>
 
-        const moneyTick = (value) => `Rs. ${Math.round(value || 0).toLocaleString('en-IN')}`;
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Planned Commitments</span>
+                <span class="vs-kpi-icon bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+                    <i class="fas fa-calendar-check"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(planned_total) }}</div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                Buckets: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(bucket_total) }}</strong>
+            </p>
+        </div>
+        <div class="vs-kpi-meta">
+            <span class="text-emerald-600 dark:text-emerald-400 font-semibold">Rs. {{ "{:,.0f}".format(posted_total) }} paid</span>
+            <span>Rs. {{ "{:,.0f}".format(unposted_total) }} due</span>
+        </div>
+    </div>
 
-        if (window.Chart && document.getElementById('expenseReportChart')) {
-            new Chart(document.getElementById('expenseReportChart'), {
-                type: 'doughnut',
-                data: {
-                    labels: expenseLabels,
-                    datasets: [{
-                        data: expenseValues,
-                        backgroundColor: expenseColors,
-                        borderWidth: 3,
-                        borderColor: '#fff'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
-                        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${moneyTick(ctx.raw)}` } }
-                    },
-                    cutout: '62%'
-                }
-            });
-        }
+    <div class="vs-kpi-card">
+        <div>
+            <div class="vs-kpi-top">
+                <span class="vs-kpi-label">Net Cash Flow (P&amp;L)</span>
+                <span class="vs-kpi-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                    <i class="fas fa-scale-balanced"></i>
+                </span>
+            </div>
+            <div class="vs-kpi-value {% if pnl_net < 0 %}text-rose-500{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+                Rs. {{ "{:,.0f}".format(pnl_net) }}
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                Income: <strong class="text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(monthly_income) }}</strong>
+            </p>
+        </div>
+        <div class="vs-kpi-meta">
+            <span>Proj. EOM Net: Rs. {{ "{:,.0f}".format(pnl_projected_net) }}</span>
+        </div>
+    </div>
+</div>
 
-        if (window.Chart && document.getElementById('cashFlowChart')) {
-            new Chart(document.getElementById('cashFlowChart'), {
+<!-- Charts Row: 6-Month Cash Flow + Category Spend Mix -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+    <section class="vs-card lg:col-span-7">
+        <div class="flex items-center justify-between gap-2 mb-4">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">6-Month Cash Flow Trend</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Monthly Income vs. Actual Outflow &amp; Net Position</p>
+            </div>
+        </div>
+        <div class="h-64 w-full">
+            <canvas id="cashFlowChart"></canvas>
+        </div>
+    </section>
+
+    <section class="vs-card lg:col-span-5">
+        <div class="flex items-center justify-between gap-2 mb-4">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 dark:text-white">Category Spend Share</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Distribution of actual spending in {{ month_name }}</p>
+            </div>
+        </div>
+        <div class="h-64 w-full flex items-center justify-center">
+            {% if expense_rows %}
+            <canvas id="reportExpenseChart"></canvas>
+            {% else %}
+            <p class="text-xs text-slate-500 dark:text-slate-400">No expenses recorded in {{ month_name }} {{ selected_year }}.</p>
+            {% endif %}
+        </div>
+    </section>
+</div>
+
+<!-- Variance Analysis Table -->
+<section class="vs-card mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div>
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">Category Variance Analysis (Plan vs. AI vs. Actual)</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+                Positive variance means actual spending exceeded the target; negative means you stayed under target.
+            </p>
+        </div>
+        {% if ai_suggested_plan %}
+        <span class="vs-badge vs-badge-primary">
+            <i class="fas fa-robot"></i> AI Benchmark: Rs. {{ "{:,.0f}".format(ai_suggested_total) }}
+        </span>
+        {% endif %}
+    </div>
+
+    {% if variance_rows %}
+    <div class="vs-table-wrap -mx-4 sm:mx-0">
+        <table class="vs-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th class="text-right">Your Plan / Limit</th>
+                    <th class="text-right">AI Suggested</th>
+                    <th class="text-right">Actual Spent</th>
+                    <th class="text-right">Plan Variance</th>
+                    <th class="text-right">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in variance_rows %}
+                <tr>
+                    <td>
+                        <div class="flex items-center gap-2.5 font-semibold">
+                            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: {{ row.color }};"></span>
+                            <span>{{ row.name }}</span>
+                        </div>
+                    </td>
+                    <td class="text-right tabular-nums text-slate-600 dark:text-slate-300">Rs. {{ "{:,.0f}".format(row.planned) }}</td>
+                    <td class="text-right tabular-nums text-indigo-600 dark:text-indigo-400 font-medium">Rs. {{ "{:,.0f}".format(row.ai_suggested) }}</td>
+                    <td class="text-right tabular-nums font-bold text-slate-900 dark:text-white">Rs. {{ "{:,.0f}".format(row.actual) }}</td>
+                    <td class="text-right tabular-nums font-semibold {% if row.variance > 0 %}text-rose-500{% elif row.variance < 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-slate-500{% endif %}">
+                        {% if row.variance > 0 %}+{% endif %}Rs. {{ "{:,.0f}".format(row.variance) }}
+                    </td>
+                    <td class="text-right">
+                        <span class="vs-badge {% if row.status == 'Over' %}vs-badge-danger{% elif row.status == 'Under' %}vs-badge-success{% else %}vs-badge-neutral{% endif %}">
+                            {{ row.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-xs text-slate-500 dark:text-slate-400 py-6 text-center">No planned limits or actual expenses for {{ month_name }} {{ selected_year }}.</p>
+    {% endif %}
+</section>
+
+<!-- Bottom Row: Expense Breakdown Table + Household P&L Statement -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- Category Expense Details -->
+    <section class="vs-card lg:col-span-7">
+        <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1">Category Spend Metrics</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Transaction volume, average ticket size, and share of total spend</p>
+
+        {% if expense_rows %}
+        <div class="vs-table-wrap -mx-4 sm:mx-0">
+            <table class="vs-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th class="text-right">Entries</th>
+                        <th class="text-right">Avg Ticket</th>
+                        <th class="text-right">Total</th>
+                        <th class="text-right">Share</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in expense_rows %}
+                    <tr>
+                        <td>
+                            <div class="flex items-center gap-2 font-semibold">
+                                <span class="w-2.5 h-2.5 rounded-full" style="background-color: {{ row.color }};"></span>
+                                <span>{{ row.name }}</span>
+                            </div>
+                        </td>
+                        <td class="text-right tabular-nums">{{ row.count }}</td>
+                        <td class="text-right tabular-nums text-slate-500 dark:text-slate-400">Rs. {{ "{:,.0f}".format(row.average) }}</td>
+                        <td class="text-right tabular-nums font-bold">Rs. {{ "{:,.0f}".format(row.amount) }}</td>
+                        <td class="text-right tabular-nums font-semibold text-indigo-600 dark:text-indigo-400">{{ "{:.1f}".format(row.share) }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-xs text-slate-500 py-6 text-center">No expenses logged this month.</p>
+        {% endif %}
+    </section>
+
+    <!-- Household P&L Statement + Cash Flow Table -->
+    <section class="vs-card lg:col-span-5 space-y-5">
+        <div>
+            <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1">Household P&amp;L Summary</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Income vs. spending and remaining commitments</p>
+
+            <div class="space-y-2">
+                {% for row in pnl_rows %}
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+                    <span class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ row.label }}</span>
+                    <strong class="text-sm tabular-nums {% if row.amount < 0 %}text-rose-500{% else %}text-slate-900 dark:text-white{% endif %}">
+                        {% if row.amount < 0 %}-{% endif %}Rs. {{ "{:,.0f}".format(row.amount|abs) }}
+                    </strong>
+                </div>
+                {% endfor %}
+                <div class="flex items-center justify-between p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
+                    <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200">Current Net Surplus / Deficit</span>
+                    <strong class="text-base font-extrabold tabular-nums {% if pnl_net < 0 %}text-rose-500{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+                        Rs. {{ "{:,.0f}".format(pnl_net) }}
+                    </strong>
+                </div>
+            </div>
+        </div>
+
+        {% if top_spender %}
+        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span class="text-xs text-slate-500 dark:text-slate-400">Top Spender in {{ month_name }}</span>
+            <span class="text-xs font-bold text-slate-900 dark:text-white">{{ top_spender[0] }} (Rs. {{ "{:,.0f}".format(top_spender[1]) }})</span>
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    (function() {
+        const cfCanvas = document.getElementById('cashFlowChart');
+        if (cfCanvas && window.Chart) {
+            new Chart(cfCanvas.getContext('2d'), {
                 type: 'bar',
                 data: {
-                    labels: cashLabels,
+                    labels: {{ cash_flow_labels | tojson | safe }},
                     datasets: [
-                        { label: 'Budget', data: cashIncome, backgroundColor: '#93c5fd', borderRadius: 6 },
-                        { label: 'Outflow', data: cashOutflow, backgroundColor: '#fb7185', borderRadius: 6 },
-                        { label: 'Net', data: cashNet, type: 'line', borderColor: '#059669', backgroundColor: '#059669', tension: 0.35 }
+                        {
+                            label: 'Income',
+                            data: {{ cash_flow_income | tojson | safe }},
+                            backgroundColor: 'rgba(79, 70, 229, 0.78)',
+                            borderRadius: 6
+                        },
+                        {
+                            label: 'Actual Spend',
+                            data: {{ cash_flow_outflow | tojson | safe }},
+                            backgroundColor: 'rgba(239, 68, 68, 0.78)',
+                            borderRadius: 6
+                        },
+                        {
+                            label: 'Net Savings',
+                            data: {{ cash_flow_net | tojson | safe }},
+                            type: 'line',
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            pointRadius: 4
+                        }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } },
                     scales: {
-                        y: { ticks: { callback: moneyTick } }
-                    },
-                    plugins: {
-                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
-                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${moneyTick(ctx.raw)}` } }
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: (v) => 'Rs. ' + Number(v).toLocaleString('en-IN')
+                            }
+                        }
                     }
                 }
             });
         }
-    </script>
-</body>
-</html>
 
+        const expCanvas = document.getElementById('reportExpenseChart');
+        const expLabels = {{ chart_labels | tojson | safe }};
+        const expValues = {{ chart_values | tojson | safe }};
+        const expColors = {{ chart_colors | tojson | safe }};
+        if (expCanvas && expLabels.length && window.Chart) {
+            new Chart(expCanvas.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: expLabels,
+                    datasets: [{
+                        data: expValues,
+                        backgroundColor: expColors,
+                        borderWidth: 2,
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+    })();
+</script>
+{% endblock %}

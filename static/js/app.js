@@ -1,751 +1,564 @@
 /**
- * VaultSync - Main Application JavaScript
+ * VaultSync Core Application Script v3.0
+ * Unified Theme, Drawer Navigation, Modals, Receipt/Statement AI Scanners, & Chatbot Widget
  */
 
-// ============================================
-// Toast Notification System
-// ============================================
-
-const Toast = {
-    container: null,
-
-    init() {
-        // Create toast container if it doesn't exist
-        if (!this.container) {
-            this.container = document.createElement('div');
-            this.container.className = 'toast-container';
-            document.body.appendChild(this.container);
-        }
-    },
-
-    show(message, type = 'info', duration = 5000) {
+// ============================================================================
+// 1. Theme Manager (Synchronizes body.dark-mode and html.dark)
+// ============================================================================
+class ThemeManager {
+    constructor() {
+        this.storageKey = 'vaultsync-dark-mode';
         this.init();
-
-        const icons = {
-            success: 'fa-check-circle',
-            error: 'fa-exclamation-circle',
-            info: 'fa-info-circle',
-            warning: 'fa-exclamation-triangle'
-        };
-
-        const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
-        toast.innerHTML = `
-            <i class="fas ${icons[type]} toast-icon" aria-hidden="true"></i>
-            <span class="toast-message">${this.escapeHtml(message)}</span>
-            <button class="toast-close" aria-label="Close notification">
-                <i class="fas fa-times"></i>
-            </button>
-        `;
-
-        this.container.appendChild(toast);
-
-        // Trigger animation
-        requestAnimationFrame(() => {
-            toast.classList.add('show');
-        });
-
-        // Close button handler
-        const closeBtn = toast.querySelector('.toast-close');
-        closeBtn.addEventListener('click', () => this.remove(toast));
-
-        // Auto-remove after duration
-        if (duration > 0) {
-            setTimeout(() => this.remove(toast), duration);
-        }
-
-        return toast;
-    },
-
-    remove(toast) {
-        toast.classList.add('hiding');
-        toast.addEventListener('animationend', () => {
-            toast.remove();
-        });
-    },
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    },
-
-    success(message) { this.show(message, 'success'); },
-    error(message) { this.show(message, 'error'); },
-    info(message) { this.show(message, 'info'); },
-    warning(message) { this.show(message, 'warning'); }
-};
-
-// ============================================
-// Confirmation Dialog System
-// ============================================
-
-const ConfirmDialog = {
-    modal: null,
-    resolvePromise: null,
-
-    init() {
-        if (this.modal) return;
-
-        this.modal = document.createElement('div');
-        this.modal.className = 'modal-backdrop hidden';
-        this.modal.setAttribute('role', 'dialog');
-        this.modal.setAttribute('aria-modal', 'true');
-        this.modal.setAttribute('aria-labelledby', 'confirm-title');
-        this.modal.innerHTML = `
-            <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 m-4 animate-fade-in">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                        <i class="fas fa-exclamation-triangle text-red-600 text-xl" aria-hidden="true"></i>
-                    </div>
-                    <h3 id="confirm-title" class="text-lg font-bold text-gray-800">Confirm Action</h3>
-                </div>
-                <p id="confirm-message" class="text-gray-600 mb-6"></p>
-                <div class="flex gap-3">
-                    <button id="confirm-cancel" class="flex-1 bg-gray-200 text-gray-800 font-semibold py-2.5 px-4 rounded-lg hover:bg-gray-300 transition">
-                        Cancel
-                    </button>
-                    <button id="confirm-ok" class="flex-1 bg-red-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-red-700 transition">
-                        Delete
-                    </button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(this.modal);
-
-        // Event handlers
-        this.modal.querySelector('#confirm-cancel').addEventListener('click', () => this.resolve(false));
-        this.modal.querySelector('#confirm-ok').addEventListener('click', () => this.resolve(true));
-
-        // Close on backdrop click
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) this.resolve(false);
-        });
-
-        // Close on Escape key
-        this.escHandler = (e) => {
-            if (e.key === 'Escape') this.resolve(false);
-        };
-    },
-
-    async ask(message, options = {}) {
-        return new Promise((resolve) => {
-            this.resolvePromise = resolve;
-
-            if (!this.modal) this.init();
-
-            const title = options.title || 'Confirm Action';
-            const okText = options.okText || 'Confirm';
-            const cancelText = options.cancelText || 'Cancel';
-
-            this.modal.querySelector('#confirm-title').textContent = title;
-            this.modal.querySelector('#confirm-message').textContent = message;
-            this.modal.querySelector('#confirm-ok').textContent = okText;
-            this.modal.querySelector('#confirm-cancel').textContent = cancelText;
-
-            this.modal.classList.remove('hidden');
-
-            // Focus trap
-            this.modal.querySelector('#confirm-cancel').focus();
-
-            // Add escape key handler
-            document.addEventListener('keydown', this.escHandler);
-        });
-    },
-
-    resolve(confirmed) {
-        this.modal.classList.add('hidden');
-        document.removeEventListener('keydown', this.escHandler);
-
-        if (this.resolvePromise) {
-            this.resolvePromise(confirmed);
-            this.resolvePromise = null;
-        }
     }
-};
-
-// ============================================
-// Form Loading State Handler
-// ============================================
-
-const FormLoader = {
-    init() {
-        // Handle all forms with data-loading attribute
-        document.querySelectorAll('form[data-loading]').forEach(form => {
-            form.addEventListener('submit', (e) => {
-                const submitBtn = form.querySelector('button[type="submit"]');
-                if (submitBtn) {
-                    submitBtn.classList.add('btn-loading');
-                    submitBtn.disabled = true;
-
-                    // Re-enable after 3 seconds as fallback
-                    setTimeout(() => {
-                        submitBtn.classList.remove('btn-loading');
-                        submitBtn.disabled = false;
-                    }, 3000);
-                }
-            });
-        });
-    }
-};
-
-// ============================================
-// Password Visibility Toggle
-// ============================================
-
-const PasswordToggle = {
-    init() {
-        document.querySelectorAll('.password-wrapper').forEach(wrapper => {
-            const input = wrapper.querySelector('input[type="password"], input[type="text"]');
-            const toggleBtn = wrapper.querySelector('.password-toggle');
-
-            if (!input || !toggleBtn) return;
-
-            toggleBtn.addEventListener('click', () => {
-                const isPassword = input.type === 'password';
-                input.type = isPassword ? 'text' : 'password';
-                toggleBtn.innerHTML = isPassword
-                    ? '<i class="fas fa-eye-slash"></i>'
-                    : '<i class="fas fa-eye"></i>';
-            });
-        });
-    }
-};
-
-// ============================================
-// Mobile Menu Handler
-// ============================================
-
-const MobileMenu = {
-    isOpen: false,
 
     init() {
-        const menuToggle = document.getElementById('menu-toggle');
-        const closeMenu = document.getElementById('close-menu');
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebar-overlay');
+        const saved = localStorage.getItem(this.storageKey);
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDark = saved !== null ? saved === 'true' : prefersDark;
+        this.applyTheme(isDark, false);
 
-        if (!menuToggle || !sidebar) return;
-
-        const self = this;
-
-        const openMenu = (e) => {
-            if (e) {
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-theme-toggle], #theme-toggle-desktop, #theme-toggle-mobile');
+            if (btn) {
                 e.preventDefault();
-                e.stopPropagation();
-            }
-            
-            if (self.isOpen) return;
-            
-            self.isOpen = true;
-            sidebar.classList.add('active');
-            document.body.classList.add('menu-open');
-            menuToggle.classList.add('active');
-            menuToggle.setAttribute('aria-expanded', 'true');
-            menuToggle.querySelector('i')?.classList.replace('fa-bars', 'fa-times');
-            if (overlay) {
-                overlay.classList.remove('fading');
-                overlay.classList.add('active');
-                overlay.setAttribute('aria-hidden', 'false');
-            }
-        };
-
-        const closeMenuPanel = (e) => {
-            if (e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            
-            if (!self.isOpen) return;
-            
-            self.isOpen = false;
-            sidebar.classList.remove('active');
-            document.body.classList.remove('menu-open');
-            menuToggle.classList.remove('active');
-            menuToggle.setAttribute('aria-expanded', 'false');
-            menuToggle.querySelector('i')?.classList.replace('fa-times', 'fa-bars');
-            
-            if (overlay) {
-                overlay.classList.remove('active');
-                overlay.classList.remove('fading');
-                overlay.setAttribute('aria-hidden', 'true');
-            }
-        };
-
-        menuToggle.addEventListener('click', () => {
-            if (self.isOpen) {
-                closeMenuPanel();
-            } else {
-                openMenu();
-            }
-        });
-
-        if (closeMenu) closeMenu.addEventListener('click', closeMenuPanel);
-
-        if (overlay) {
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) {
-                    closeMenuPanel(e);
-                }
-            }, true);
-        }
-
-        // Close menu when clicking on nav links
-        const navLinks = sidebar.querySelectorAll('.sidebar-nav a');
-        navLinks.forEach(link => {
-            link.addEventListener('click', () => {
-                setTimeout(() => closeMenuPanel(), 150);
-            });
-        });
-
-        // Escape key to close
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && self.isOpen) {
-                closeMenuPanel();
+                this.toggle();
             }
         });
     }
-};
 
-// ============================================
-// Mobile Top Navigation
-// ============================================
-
-const MobileTopNav = {
-    init() {
-        const shell = document.querySelector('.dashboard-mobile-shell');
-        const toggle = document.querySelector('[data-mobile-nav-toggle]');
-        const nav = document.getElementById('dashboard-mobile-nav');
-
-        if (!shell || !toggle || !nav) return;
-
-        const setOpen = (isOpen) => {
-            shell.classList.toggle('mobile-nav-expanded', isOpen);
-            document.body.classList.toggle('mobile-nav-open', isOpen);
-            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        };
-
-        toggle.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(!shell.classList.contains('mobile-nav-expanded'));
-        });
-
-        document.addEventListener('click', (event) => {
-            if (!shell.classList.contains('mobile-nav-expanded')) return;
-            if (!shell.contains(event.target)) setOpen(false);
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') setOpen(false);
-        });
-
-        nav.querySelectorAll('a').forEach((link) => {
-            link.addEventListener('click', () => setOpen(false));
-        });
-    }
-};
-
-// ============================================
-// Edit Modal Handler (for dashboard)
-// ============================================
-
-const EditModal = {
-    modal: null,
-    form: null,
-
-    init() {
-        this.modal = document.getElementById('editModal');
-        if (!this.modal) return;
-
-        this.form = document.getElementById('editForm');
-
-        // Close button handlers
-        const closeBtn = this.modal.querySelector('button[onclick="closeEditModal()"]');
-        if (closeBtn) closeBtn.addEventListener('click', () => this.close());
-
-        // Close on backdrop click
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) this.close();
-        });
-
-        // Close on Escape
-        this.modal.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') this.close();
-        });
-    },
-
-    open(id, name, color, monthlyLimit = 0, isFixed = false) {
-        if (!this.modal || !this.form) return;
-
-        document.getElementById('editName').value = name;
-        document.getElementById('editColor').value = color;
-        const monthlyLimitInput = document.getElementById('editMonthlyLimit');
-        const isFixedInput = document.getElementById('editIsFixed');
-        if (monthlyLimitInput) monthlyLimitInput.value = Number(monthlyLimit || 0).toFixed(2);
-        if (isFixedInput) isFixedInput.checked = Boolean(isFixed);
-        const actionTemplate = this.form.dataset.actionTemplate || '/edit_category/0';
-        this.form.action = actionTemplate.replace(/0$/, String(id));
-        this.modal.classList.remove('hidden');
-
-        // Focus first input
-        this.modal.querySelector('input').focus();
-    },
-
-    close() {
-        if (!this.modal) return;
-        this.modal.classList.add('hidden');
-    }
-};
-
-// Make openEditModal and closeEditModal globally available
-window.openEditModal = (id, name, color, monthlyLimit, isFixed) => EditModal.open(id, name, color, monthlyLimit, isFixed);
-window.closeEditModal = () => EditModal.close();
-
-// ============================================
-// Current Time Update
-// ============================================
-
-const CurrentTime = {
-    init() {
-        const timeEl = document.getElementById('current-time');
-        if (!timeEl) return;
-
-        const update = () => {
-            const now = new Date();
-            timeEl.textContent = now.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true
-            });
-        };
-
-        update();
-        setInterval(update, 1000);
-    }
-};
-
-// ============================================
-// Preferences: Theme and Language
-// ============================================
-
-const Preferences = {
-    translations: {
-        en: {
-            nav_dashboard: 'Dashboard',
-            nav_diary: 'Daily Diary',
-            nav_ai_budget: 'AI Budget Planner',
-            nav_archive: 'Archive',
-            nav_features: 'Feature Guide',
-            dark_mode: 'Dark Mode',
-            light_mode: 'Light Mode',
-            language: 'Language',
-            guide_title: 'VaultSync Feature Guide',
-            guide_subtitle: 'Every feature, what it does, and how to use it correctly.',
-            macro_title: 'Macro Dashboard',
-            macro_body: 'Use the dashboard to view monthly spending, reserved buckets, remaining budget, and the category chart.',
-            diary_title: 'Daily Expense Diary',
-            diary_body: 'Quickly add small everyday expenses. These are the same expenses that roll into the dashboard.',
-            plan_title: 'Expected Monthly Expenditure',
-            plan_body: 'Write monthly bills in advance. They appear in charts and Recent Activity only after you mark them paid.',
-            categories_title: 'Recommended Categories',
-            categories_body: 'Preset categories keep spending clean and organized. Add custom categories only when needed.',
-            archive_title: 'Monthly Archive',
-            archive_body: 'Open Archive to browse older months and click any month to review its dashboard.',
-            admin_title: 'Admin Panel',
-            admin_body: 'Family managers can update budget, members, and family settings.',
-            dark_title: 'Dark Mode and Hindi',
-            dark_body: 'Dark Mode and Language controls live at the bottom of the sidebar. Your choice is saved in this browser.',
-            ai_title: 'AI Budget Planner',
-            ai_subtitle: 'Export family spending as clean JSON, ask an AI for a budget, import the JSON answer, compare it, then apply the plan.',
-            ai_feature_title: 'AI Budget Planner',
-            ai_feature_body: 'Export a date or month window as AI-ready JSON, ask an AI to create the next budget, import the JSON answer, compare it with your current plan, then apply it.'
-        },
-        hi: {
-            nav_dashboard: 'डैशबोर्ड',
-            nav_diary: 'डेली डायरी',
-            nav_ai_budget: 'AI बजट प्लानर',
-            nav_archive: 'आर्काइव',
-            nav_features: 'फीचर गाइड',
-            dark_mode: 'डार्क मोड',
-            light_mode: 'लाइट मोड',
-            language: 'भाषा',
-            guide_title: 'VaultSync फीचर गाइड',
-            guide_subtitle: 'हर फीचर क्या करता है और उसे सही तरीके से कैसे इस्तेमाल करना है।',
-            macro_title: 'मैक्रो डैशबोर्ड',
-            macro_body: 'महीने का कुल खर्च, बजट, बचत और कैटेगरी चार्ट देखने के लिए डैशबोर्ड इस्तेमाल करें।',
-            diary_title: 'डेली एक्सपेंस डायरी',
-            diary_body: 'छोटे रोज़ाना खर्च जल्दी जोड़ें। ये वही खर्च हैं जो डैशबोर्ड में भी जुड़ते हैं।',
-            plan_title: 'Expected Monthly Expenditure',
-            plan_body: 'महीने के बिल पहले से लिखें। Mark Paid करने पर ही वे असली खर्च बनकर चार्ट और Recent Activity में दिखते हैं।',
-            categories_title: 'Recommended Categories',
-            categories_body: 'Preset categories खर्चों को साफ और व्यवस्थित रखते हैं। Custom category सिर्फ तब बनाएं जब सच में ज़रूरत हो।',
-            archive_title: 'Monthly Archive',
-            archive_body: 'पुराने महीनों का खर्च देखने के लिए Archive खोलें और महीने पर क्लिक करें।',
-            admin_title: 'Admin Panel',
-            admin_body: 'Family manager बजट, members और family settings संभाल सकता है।',
-            dark_title: 'Dark Mode and Hindi',
-            dark_body: 'Sidebar के नीचे Dark Mode और Language controls हैं। आपकी पसंद browser में save रहती है।',
-            ai_title: 'AI बजट प्लानर',
-            ai_subtitle: 'खर्च को JSON में export करें, AI से budget बनवाएं, JSON answer import करें, compare करें और plan apply करें।',
-            ai_feature_title: 'AI बजट प्लानर',
-            ai_feature_body: 'किसी date या month window को AI-ready JSON में export करें, AI से अगला budget बनवाएं, answer import करें, current plan से compare करें और apply करें।'
-        }
-    },
-
-    init() {
-        this.themeButtons = Array.from(document.querySelectorAll('[data-theme-toggle]'));
-        this.languageSelects = Array.from(document.querySelectorAll('[data-language-select]'));
-        this.themeButton = this.themeButtons[0] || document.getElementById('dark-mode-toggle');
-        this.languageSelect = this.languageSelects[0] || document.getElementById('language-select');
-
-        document.querySelectorAll('[data-i18n]').forEach((el) => {
-            if (!el.dataset.en) el.dataset.en = el.textContent;
-        });
-
-        this.applyTheme(localStorage.getItem('vaultsync-theme') || 'light');
-        this.applyLanguage(localStorage.getItem('vaultsync-language') || 'en');
-
-        this.themeButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-                const next = document.body.classList.contains('dark-mode') ? 'light' : 'dark';
-                localStorage.setItem('vaultsync-theme', next);
-                this.applyTheme(next);
-            });
-        });
-
-        this.languageSelects.forEach((select) => {
-            select.addEventListener('change', () => {
-                localStorage.setItem('vaultsync-language', select.value);
-                this.applyLanguage(select.value);
-            });
-        });
-    },
-
-    applyTheme(theme) {
-        const isDark = theme === 'dark';
+    applyTheme(isDark, persist = true) {
         document.body.classList.toggle('dark-mode', isDark);
+        document.documentElement.classList.toggle('dark', isDark);
+        if (persist) {
+            localStorage.setItem(this.storageKey, isDark ? 'true' : 'false');
+        }
+        this.updateButtons(isDark);
+    }
 
-        this.themeButtons.forEach((button) => {
-            const label = button.querySelector('[data-i18n]');
-            const icon = button.querySelector('i');
-            if (label) label.dataset.i18n = isDark ? 'light_mode' : 'dark_mode';
-            if (icon) icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
-        });
+    toggle() {
+        const isDark = !document.body.classList.contains('dark-mode');
+        this.applyTheme(isDark, true);
+    }
 
-        this.applyLanguage(localStorage.getItem('vaultsync-language') || 'en');
-    },
-
-    applyLanguage(language) {
-        this.languageSelects.forEach((select) => {
-            select.value = language;
-        });
-
-        document.documentElement.lang = language === 'hi' ? 'hi' : 'en';
-        const dictionary = this.translations[language] || {};
-
-        document.querySelectorAll('[data-i18n]').forEach((el) => {
-            const key = el.dataset.i18n;
-            if (dictionary[key]) el.textContent = dictionary[key];
-            else if (el.dataset.en) el.textContent = el.dataset.en;
+    updateButtons(isDark) {
+        const buttons = document.querySelectorAll('[data-theme-toggle], #theme-toggle-desktop, #theme-toggle-mobile');
+        buttons.forEach((btn) => {
+            btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+            const icon = btn.querySelector('i');
+            if (icon) {
+                icon.className = isDark ? 'fas fa-sun text-amber-400' : 'fas fa-moon';
+            }
+            const label = btn.querySelector('[data-theme-label]');
+            if (label) {
+                label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+            }
         });
     }
-};
+}
 
-// ============================================
-// VaultSync Assistant
-// ============================================
-
-const VaultSyncAssistant = {
-    panel: null,
-    messages: null,
-    form: null,
-    input: null,
-    pendingActions: [],
+// ============================================================================
+// 2. Responsive Drawer & Navigation Manager
+// ============================================================================
+class DrawerManager {
+    constructor() {
+        this.sidebar = document.getElementById('vs-sidebar') || document.getElementById('sidebar');
+        this.backdrop = document.getElementById('vs-drawer-backdrop') || document.getElementById('mobile-nav-backdrop');
+        this.init();
+    }
 
     init() {
-        if (this.panel || !document.body || document.body.dataset.assistantDisabled === 'true') return;
+        document.addEventListener('click', (e) => {
+            const toggleBtn = e.target.closest('[data-drawer-toggle], #menu-toggle');
+            if (toggleBtn) {
+                e.preventDefault();
+                this.toggle();
+                return;
+            }
 
-        const root = document.createElement('div');
-        root.className = 'vs-assistant';
-        root.innerHTML = `
-            <button type="button" class="vs-assistant-toggle" aria-label="Open VaultSync Assistant">
-                <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
-            </button>
-            <section class="vs-assistant-panel" aria-label="VaultSync Assistant" aria-hidden="true">
-                <header class="vs-assistant-header">
-                    <div>
-                        <p>VaultSync Assistant</p>
-                        <span>Ask, review, then run</span>
-                    </div>
-                    <button type="button" class="vs-assistant-close" aria-label="Close assistant">
-                        <i class="fas fa-times" aria-hidden="true"></i>
-                    </button>
-                </header>
-                <div class="vs-assistant-messages" role="log" aria-live="polite"></div>
-                <form class="vs-assistant-form">
-                    <textarea rows="2" placeholder="Add groceries 250 today, make a Food category, or summarize this month"></textarea>
-                    <button type="submit" aria-label="Send message">
-                        <i class="fas fa-paper-plane" aria-hidden="true"></i>
-                    </button>
-                </form>
-            </section>
-        `;
+            const closeBtn = e.target.closest('[data-drawer-close]');
+            if (closeBtn) {
+                e.preventDefault();
+                this.close();
+                return;
+            }
 
-        document.body.appendChild(root);
-        this.panel = root.querySelector('.vs-assistant-panel');
-        this.messages = root.querySelector('.vs-assistant-messages');
-        this.form = root.querySelector('.vs-assistant-form');
-        this.input = root.querySelector('textarea');
+            if (this.backdrop && e.target === this.backdrop) {
+                this.close();
+            }
+        });
 
-        root.querySelector('.vs-assistant-toggle').addEventListener('click', () => this.open());
-        root.querySelector('.vs-assistant-close').addEventListener('click', () => this.close());
-        this.form.addEventListener('submit', (event) => this.submit(event));
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.close();
+            }
+        });
 
-        this.addMessage('assistant', 'I can answer questions and help change expenses, categories, planned items, and reports. I will not touch security, account, invite, member, role, or family deletion settings.');
-    },
+        window.addEventListener('resize', () => {
+            if (window.innerWidth >= 1024) {
+                this.close();
+            }
+        });
+    }
 
     open() {
-        this.panel.classList.add('is-open');
-        this.panel.setAttribute('aria-hidden', 'false');
-        this.input.focus();
-    },
+        if (!this.sidebar) return;
+        this.sidebar.classList.add('open');
+        this.sidebar.classList.remove('-translate-x-full');
+        if (this.backdrop) {
+            this.backdrop.classList.add('open');
+            this.backdrop.classList.remove('hidden');
+        }
+        document.body.style.overflow = 'hidden';
+    }
 
     close() {
-        this.panel.classList.remove('is-open');
-        this.panel.setAttribute('aria-hidden', 'true');
-    },
-
-    addMessage(role, text) {
-        const item = document.createElement('div');
-        item.className = `vs-assistant-message ${role}`;
-        item.textContent = text;
-        this.messages.appendChild(item);
-        this.messages.scrollTop = this.messages.scrollHeight;
-    },
-
-    actionSummary(action) {
-        const label = String(action.action || '').replace(/_/g, ' ');
-        const target = action.item_name || action.name || action.category || (action.id ? `#${action.id}` : '');
-        const amount = action.amount ? ` Rs. ${Number(action.amount).toLocaleString('en-IN')}` : '';
-        const date = action.date ? ` ${action.date}` : '';
-        return `${label}${target ? `: ${target}` : ''}${amount}${date}`;
-    },
-
-    renderActions(actions) {
-        if (!actions.length) return;
-        const box = document.createElement('div');
-        box.className = 'vs-assistant-actions';
-        box.innerHTML = `
-            <p>Review actions before I run them:</p>
-            <ul></ul>
-            <div class="vs-assistant-action-buttons">
-                <button type="button" class="vs-run-actions">Run actions</button>
-                <button type="button" class="vs-cancel-actions">Cancel</button>
-            </div>
-        `;
-
-        const list = box.querySelector('ul');
-        actions.forEach((action) => {
-            const li = document.createElement('li');
-            li.textContent = this.actionSummary(action);
-            list.appendChild(li);
-        });
-
-        box.querySelector('.vs-run-actions').addEventListener('click', () => this.executeActions(actions, box));
-        box.querySelector('.vs-cancel-actions').addEventListener('click', () => {
-            box.remove();
-            this.addMessage('assistant', 'Cancelled. Nothing was changed.');
-        });
-
-        this.messages.appendChild(box);
-        this.messages.scrollTop = this.messages.scrollHeight;
-    },
-
-    setBusy(isBusy) {
-        this.form.classList.toggle('is-busy', isBusy);
-        this.form.querySelector('button').disabled = isBusy;
-        this.input.disabled = isBusy;
-    },
-
-    async post(payload) {
-        const response = await fetch('/chatbot/message', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(data.reply || 'Assistant request failed.');
+        if (!this.sidebar) return;
+        this.sidebar.classList.remove('open');
+        if (this.backdrop) {
+            this.backdrop.classList.remove('open');
+            this.backdrop.classList.add('hidden');
         }
-        return data;
-    },
+        document.body.style.overflow = '';
+    }
 
-    async submit(event) {
-        event.preventDefault();
-        const message = this.input.value.trim();
-        if (!message) return;
-
-        this.input.value = '';
-        this.addMessage('user', message);
-        this.setBusy(true);
-
-        try {
-            const data = await this.post({message});
-            this.addMessage('assistant', data.reply || 'I am ready.');
-            this.pendingActions = Array.isArray(data.actions) ? data.actions : [];
-            this.renderActions(this.pendingActions);
-        } catch (error) {
-            this.addMessage('assistant', error.message);
-        } finally {
-            this.setBusy(false);
+    toggle() {
+        if (!this.sidebar) return;
+        if (this.sidebar.classList.contains('open')) {
+            this.close();
+        } else {
+            this.open();
         }
-    },
+    }
+}
 
-    async executeActions(actions, box) {
-        this.setBusy(true);
-        box.remove();
-        try {
-            const data = await this.post({execute: true, actions});
-            this.addMessage('assistant', data.reply || 'Done.');
-            Toast.success('Assistant updated VaultSync.');
-        } catch (error) {
-            this.addMessage('assistant', error.message);
-            Toast.error(error.message);
-        } finally {
-            this.setBusy(false);
-        }
+// ============================================================================
+// 3. Accessible Modal Manager
+// ============================================================================
+window.openModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    const firstInput = modal.querySelector('input:not([type="hidden"]), select, textarea');
+    if (firstInput) {
+        setTimeout(() => firstInput.focus(), 50);
     }
 };
 
-// ============================================
-// Initialize on DOM Ready
-// ============================================
+window.closeModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+};
 
-document.addEventListener('DOMContentLoaded', () => {
-    MobileMenu.init();
-    MobileTopNav.init();
-    FormLoader.init();
-    PasswordToggle.init();
-    CurrentTime.init();
-    EditModal.init();
-    Preferences.init();
-    VaultSyncAssistant.init();
+document.addEventListener('click', (e) => {
+    const openTrigger = e.target.closest('[data-modal-open]');
+    if (openTrigger) {
+        e.preventDefault();
+        window.openModal(openTrigger.getAttribute('data-modal-open'));
+        return;
+    }
 
-    // Process any flash messages from server
-    if (window.flashMessages && window.flashMessages.length > 0) {
-        window.flashMessages.forEach(msg => {
-            Toast.show(msg.message, msg.category);
+    const closeTrigger = e.target.closest('[data-modal-close]');
+    if (closeTrigger) {
+        e.preventDefault();
+        const modalId = closeTrigger.getAttribute('data-modal-close');
+        if (modalId) {
+            window.closeModal(modalId);
+        } else {
+            const parentModal = closeTrigger.closest('.vs-modal-backdrop');
+            if (parentModal && parentModal.id) window.closeModal(parentModal.id);
+        }
+        return;
+    }
+
+    if (e.target.classList.contains('vs-modal-backdrop')) {
+        window.closeModal(e.target.id);
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.vs-modal-backdrop:not(.hidden)').forEach((modal) => {
+            if (modal.id) window.closeModal(modal.id);
         });
     }
 });
 
-// ============================================
-// Helper: Confirm Dialog Replacement
-// ============================================
+// ============================================================================
+// 4. Copy Helper & Toast Notifications
+// ============================================================================
+window.copyToClipboard = function(text, btnElement) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+        if (btnElement) {
+            const originalHTML = btnElement.innerHTML;
+            btnElement.innerHTML = '<i class="fas fa-check text-emerald-400"></i> <span>Copied!</span>';
+            setTimeout(() => {
+                btnElement.innerHTML = originalHTML;
+            }, 1800);
+        }
+    });
+};
 
-// Override default confirm for progressive enhancement
-async function confirmDialog(message) {
-    return await ConfirmDialog.ask(message);
+// ============================================================================
+// 5. AI Receipt Scanner & Bulk Statement Importer
+// ============================================================================
+function initReceiptAndStatementScanners() {
+    // Single Receipt Scanner
+    document.querySelectorAll('[data-receipt-input], #receipt-input').forEach((input) => {
+        if (input.dataset.bound === 'true') return;
+        input.dataset.bound = 'true';
+
+        input.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const form = input.closest('form') || document;
+            const statusEl = document.getElementById('receipt-upload-text') || form.querySelector('[data-receipt-status]');
+            const originalText = statusEl ? statusEl.innerHTML : 'Scan Receipt';
+            if (statusEl) {
+                statusEl.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Reading receipt...';
+            }
+
+            const formData = new FormData();
+            formData.append('receipt', file);
+
+            try {
+                const response = await fetch('/api/scan-receipt', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && !data.error) {
+                    const itemInput = form.querySelector('input[name="item_name"]');
+                    const amountInput = form.querySelector('input[name="amount"]');
+                    const dateInput = form.querySelector('input[name="expense_date"]');
+                    const catSelect = form.querySelector('select[name="category_id"]');
+
+                    if (data.item_name && itemInput) itemInput.value = data.item_name;
+                    if (data.amount && amountInput) amountInput.value = data.amount;
+                    if (data.date && dateInput && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+                        dateInput.value = data.date;
+                    }
+                    if (data.category && catSelect) {
+                        const target = data.category.toLowerCase();
+                        for (let i = 0; i < catSelect.options.length; i++) {
+                            if (catSelect.options[i].text.toLowerCase().includes(target)) {
+                                catSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (statusEl) {
+                        statusEl.innerHTML = '<i class="fas fa-check text-emerald-500"></i> Autofilled!';
+                    }
+                } else {
+                    alert('Receipt Scan Error: ' + (data.error || 'Could not extract receipt details.'));
+                    if (statusEl) statusEl.innerHTML = '<i class="fas fa-exclamation-circle text-rose-500"></i> Scan failed';
+                }
+            } catch (err) {
+                console.error(err);
+                if (statusEl) statusEl.innerHTML = 'Scan error';
+            } finally {
+                input.value = '';
+                setTimeout(() => {
+                    if (statusEl) statusEl.innerHTML = originalText;
+                }, 3200);
+            }
+        });
+    });
+
+    // Smart Expense Book & Statement Importer Forms (#statement-upload-form & #book-upload-section-form)
+    const bookForms = [
+        { formId: 'statement-upload-form', statusId: 'statement-scan-status' },
+        { formId: 'book-upload-section-form', statusId: 'book-section-status' }
+    ];
+
+    bookForms.forEach(({ formId, statusId }) => {
+        const formEl = document.getElementById(formId);
+        if (!formEl || formEl.dataset.bound === 'true') return;
+        formEl.dataset.bound = 'true';
+
+        formEl.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = formEl.querySelector('input[type="file"]');
+            const textInput = formEl.querySelector('textarea[name="book_text"]');
+            const submitBtn = formEl.querySelector('button[type="submit"]');
+            const statusBox = document.getElementById(statusId);
+
+            const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+            const hasText = textInput && textInput.value.trim().length > 0;
+
+            if (!hasFile && !hasText) {
+                alert('Please select an Expense Book file (.xlsx, .csv, .pdf, image) or paste spreadsheet data first.');
+                return;
+            }
+
+            const originalBtnHTML = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Capturing & Implementing Book...';
+            if (statusBox) {
+                statusBox.className = 'mt-3 p-3.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-medium border border-indigo-200 dark:border-indigo-500/30';
+                statusBox.innerHTML = '<i class="fas fa-sparkles mr-1.5"></i> Parsing ledger transactions, category budgets, and family members...';
+                statusBox.classList.remove('hidden');
+            }
+
+            try {
+                const formData = new FormData(formEl);
+                ['apply_budgets', 'sync_members', 'skip_transfers'].forEach((field) => {
+                    const cb = formEl.querySelector(`input[name="${field}"]`);
+                    if (cb) {
+                        formData.set(field, cb.checked ? 'true' : 'false');
+                    }
+                });
+
+                const response = await fetch('/api/import-book', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.success) {
+                    if (statusBox) {
+                        statusBox.className = 'mt-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs border border-emerald-200 dark:border-emerald-500/30 space-y-1.5';
+                        let detailsHtml = `<div class="font-bold text-sm flex items-center gap-1.5"><i class="fas fa-check-circle text-emerald-600 dark:text-emerald-400"></i> <span>Expense Book Auto-Captured &amp; Implemented!</span></div>`;
+                        detailsHtml += `<div>${data.message || `Imported ${data.count} expenses.`}</div>`;
+                        if (data.budgets_updated && data.budgets_updated.length) {
+                            detailsHtml += `<div class="text-[11px] opacity-90"><strong>Budgets Set (${data.book_month || 'Current Month'}):</strong> ${data.budgets_updated.join(', ')}</div>`;
+                        }
+                        statusBox.innerHTML = detailsHtml;
+                    }
+                    setTimeout(() => window.location.reload(), 1600);
+                } else {
+                    const errMsg = data.error || data.message || 'No valid transactions or budgets found in document.';
+                    if (statusBox) {
+                        statusBox.className = 'mt-3 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-semibold border border-rose-200 dark:border-rose-500/30';
+                        statusBox.textContent = errMsg;
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHTML;
+                }
+            } catch (err) {
+                if (statusBox) {
+                    statusBox.className = 'mt-3 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-semibold border border-rose-200 dark:border-rose-500/30';
+                    statusBox.textContent = 'Network error while importing book: ' + err.message;
+                }
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHTML;
+            }
+        });
+    });
 }
+
+// ============================================================================
+// 6. VaultSync AI Assistant Floating Widget
+// ============================================================================
+class ChatbotWidget {
+    constructor() {
+        if (document.body.dataset.disableChatbot === 'true') return;
+        if (window.location.pathname === '/login' || window.location.pathname === '/register') return;
+        this.isOpen = false;
+        this.historyLoaded = false;
+        this.mount();
+    }
+
+    mount() {
+        const root = document.createElement('section');
+        root.className = 'vaultsync-chatbot-root';
+        root.setAttribute('aria-label', 'VaultSync AI Assistant');
+        root.innerHTML = `
+            <div class="vaultsync-chatbot-panel" id="vaultsyncChatbotPanel" hidden>
+                <header class="vaultsync-chatbot-header">
+                    <div>
+                        <h3><i class="fas fa-sparkles mr-1.5 text-indigo-400"></i>VaultSync Assistant</h3>
+                        <p>Log expenses, manage categories &amp; ask budget questions</p>
+                    </div>
+                    <button type="button" class="vaultsync-chatbot-icon-btn" id="vaultsyncChatbotClose" aria-label="Close assistant">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </header>
+                <div class="vaultsync-chatbot-messages" id="vaultsyncChatbotMessages">
+                    <div class="vaultsync-chat-msg assistant">
+                        Hi! Tell me an expense to log (e.g., <em>"Spent 450 on groceries today"</em>) or ask about your monthly budget.
+                    </div>
+                </div>
+                <div class="vaultsync-chatbot-prompts">
+                    <button type="button" data-chat-prompt="Summarize this month's budget and remaining balance">Month summary</button>
+                    <button type="button" data-chat-prompt="Add expense 350 for groceries today">Log Rs. 350 groceries</button>
+                    <button type="button" data-chat-prompt="Which categories are highest this month?">Top categories</button>
+                </div>
+                <form class="vaultsync-chatbot-form" id="vaultsyncChatbotForm">
+                    <input type="text" id="vaultsyncChatbotInput" placeholder="Ask or log an expense..." autocomplete="off" maxlength="600" />
+                    <button type="submit" id="vaultsyncChatbotSend" aria-label="Send">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+            <button type="button" class="vaultsync-chatbot-fab" id="vaultsyncChatbotFab" aria-expanded="false">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                <span>AI Assistant</span>
+            </button>
+        `;
+        document.body.appendChild(root);
+
+        this.panel = root.querySelector('#vaultsyncChatbotPanel');
+        this.fab = root.querySelector('#vaultsyncChatbotFab');
+        this.closeBtn = root.querySelector('#vaultsyncChatbotClose');
+        this.messages = root.querySelector('#vaultsyncChatbotMessages');
+        this.form = root.querySelector('#vaultsyncChatbotForm');
+        this.input = root.querySelector('#vaultsyncChatbotInput');
+        this.sendBtn = root.querySelector('#vaultsyncChatbotSend');
+
+        this.fab.addEventListener('click', () => this.toggle());
+        this.closeBtn.addEventListener('click', () => this.close());
+
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-open-chatbot]');
+            if (trigger) {
+                e.preventDefault();
+                this.open();
+            }
+        });
+
+        root.querySelectorAll('[data-chat-prompt]').forEach((button) => {
+            button.addEventListener('click', () => {
+                this.open();
+                this.input.value = button.getAttribute('data-chat-prompt') || '';
+                this.input.focus();
+            });
+        });
+
+        this.form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            this.sendMessage();
+        });
+    }
+
+    toggle() {
+        if (this.isOpen) this.close();
+        else this.open();
+    }
+
+    open() {
+        this.isOpen = true;
+        this.panel.hidden = false;
+        this.fab.setAttribute('aria-expanded', 'true');
+        if (!this.historyLoaded) {
+            this.loadHistory();
+        }
+        setTimeout(() => this.input.focus(), 50);
+    }
+
+    close() {
+        this.isOpen = false;
+        this.panel.hidden = true;
+        this.fab.setAttribute('aria-expanded', 'false');
+    }
+
+    async loadHistory() {
+        this.historyLoaded = true;
+        try {
+            const response = await fetch('/chatbot/history');
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (!Array.isArray(payload.messages) || !payload.messages.length) return;
+            this.messages.innerHTML = '';
+            payload.messages.forEach((item) => {
+                this.appendMessage(
+                    item.role === 'user' ? 'user' : 'assistant',
+                    item.message || '',
+                    item.actions || [],
+                    false
+                );
+            });
+        } catch (err) {
+            console.warn('Could not load chat history', err);
+        }
+    }
+
+    appendMessage(role, text, actions = [], allowExecute = true) {
+        const bubble = document.createElement('div');
+        bubble.className = `vaultsync-chat-msg ${role}`;
+        bubble.textContent = text;
+
+        if (Array.isArray(actions) && actions.length) {
+            const actionsWrap = document.createElement('div');
+            actionsWrap.className = 'vaultsync-chat-actions';
+            actions.forEach((action) => {
+                const item = document.createElement('div');
+                item.className = 'vaultsync-chat-action-item';
+                item.textContent = action.summary || `${action.type}: ${action.name || action.item_name || ''}`;
+                actionsWrap.appendChild(item);
+            });
+
+            if (allowExecute) {
+                const approveBtn = document.createElement('button');
+                approveBtn.type = 'button';
+                approveBtn.className = 'vaultsync-chat-approve-btn';
+                approveBtn.innerHTML = '<i class="fas fa-check mr-1"></i> Approve & Apply';
+                approveBtn.addEventListener('click', () => this.executeActions(actions, approveBtn));
+                actionsWrap.appendChild(approveBtn);
+            }
+            bubble.appendChild(actionsWrap);
+        }
+
+        this.messages.appendChild(bubble);
+        this.messages.scrollTop = this.messages.scrollHeight;
+    }
+
+    async sendMessage() {
+        const message = this.input.value.trim();
+        if (!message) return;
+
+        this.input.value = '';
+        this.appendMessage('user', message);
+        this.sendBtn.disabled = true;
+
+        try {
+            const response = await fetch('/chatbot/message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message })
+            });
+            const data = await response.json();
+            this.appendMessage('assistant', data.reply || 'Done.', data.actions || [], true);
+        } catch (err) {
+            this.appendMessage('assistant', 'Network error while reaching VaultSync Assistant.');
+        } finally {
+            this.sendBtn.disabled = false;
+        }
+    }
+
+    async executeActions(actions, button) {
+        button.disabled = true;
+        button.textContent = 'Applying...';
+        try {
+            const response = await fetch('/chatbot/message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ execute: true, actions })
+            });
+            const data = await response.json();
+            this.appendMessage('assistant', data.reply || 'Applied changes.');
+            button.textContent = 'Applied ✓';
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (err) {
+            button.disabled = false;
+            button.textContent = 'Retry Apply';
+        }
+    }
+}
+
+// ============================================================================
+// Initialize on DOMContentLoaded
+// ============================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    window.vaultSyncTheme = new ThemeManager();
+    window.vaultSyncDrawer = new DrawerManager();
+    initReceiptAndStatementScanners();
+    window.vaultSyncChatbot = new ChatbotWidget();
+});

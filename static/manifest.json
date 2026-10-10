@@ -1,11 +1,11 @@
 {
-  "name": "VaultSync Family Budget",
+  "name": "VaultSync Family Finance",
   "short_name": "VaultSync",
-  "start_url": "/dashboard",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#3b82f6",
-  "description": "Family Budget Planner & Expense Manager",
+  "background_color": "#0b1120",
+  "theme_color": "#4f46e5",
+  "description": "Smart Family Budget Planner & Expense Manager",
   "icons": [
     {
       "src": "/static/icon-192.png",

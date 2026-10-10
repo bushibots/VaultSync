@@ -1,242 +1,227 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync | Daily Diary</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
-</head>
-<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+{% extends "_layout.html" %}
+{% block title %}Daily Ledger · {{ selected_date.strftime('%d %b %Y') }} · VaultSync{% endblock %}
 
-    <aside id="sidebar" class="sidebar dashboard-desktop-sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
-        <div class="mb-8 mt-8 md:mt-0">
-            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+{% block content %}
+<!-- Top Header & Date Switcher -->
+<div class="vs-page-header">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
+            <i class="fas fa-calendar-day text-[11px]"></i>
+            <span>Day-by-Day Expense Ledger</span>
+        </div>
+        <h1 class="vs-page-title">{{ selected_date.strftime('%A, %d %B %Y') }}</h1>
+        <p class="vs-page-subtitle">
+            {% if selected_date == today %}Today's recorded expenses{% else %}Viewing historical or scheduled date{% endif %}
+        </p>
+    </div>
+
+    <div class="vs-page-actions">
+        <!-- Quick Date Buttons -->
+        <div class="vs-tabs">
+            <a href="{{ url_for('daily_diary', date=previous_date.strftime('%Y-%m-%d'), mine='1' if mine_only else None) }}" class="vs-tab" title="Previous day">
+                <i class="fas fa-chevron-left text-xs"></i>
+            </a>
+            {% for item in quick_dates %}
+            <a href="{{ url_for('daily_diary', date=item.date.strftime('%Y-%m-%d'), mine='1' if mine_only else None) }}"
+               class="vs-tab {% if item.date == selected_date %}active{% endif %}">
+                {{ item.label }}
+            </a>
+            {% endfor %}
+            <a href="{{ url_for('daily_diary', date=next_date.strftime('%Y-%m-%d'), mine='1' if mine_only else None) }}" class="vs-tab" title="Next day">
+                <i class="fas fa-chevron-right text-xs"></i>
+            </a>
         </div>
 
-        <nav class="flex-1 space-y-2 sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
-            </a>
-            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
-            </a>
-            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
-            </a>
-            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
-            </a>
-            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Reports</span>
-            </a>
-            <a href="{{ url_for('financial_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-chart-line mr-3" aria-hidden="true"></i><span>Reports & Planning</span>
-            </a>
-            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
-            </a>
-            {% if is_family_manager %}
-            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
-                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
-            </a>
-            {% endif %}
-        </nav>
+        <!-- Exact Date Jump Form -->
+        <form action="{{ url_for('daily_diary') }}" method="GET" class="flex items-center gap-1.5">
+            {% if mine_only %}<input type="hidden" name="mine" value="1">{% endif %}
+            <input type="date" name="date" value="{{ selected_date.strftime('%Y-%m-%d') }}" onchange="this.form.submit()" class="vs-input py-1.5 text-xs w-auto">
+        </form>
+    </div>
+</div>
 
-        <div class="mt-auto space-y-4">
-            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
-                <button type="button" id="dark-mode-toggle" data-theme-toggle class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
+<!-- Summary KPI Strip + Filter Switcher -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="vs-kpi-card">
+        <div class="vs-kpi-top">
+            <span class="vs-kpi-label">{% if mine_only %}My Day Total{% else %}Family Day Total{% endif %}</span>
+            <span class="vs-kpi-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
+                <i class="fas fa-coins"></i>
+            </span>
+        </div>
+        <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(daily_total) }}</div>
+        <div class="vs-kpi-meta">
+            <span>{{ expenses|length }} transaction{% if expenses|length != 1 %}s{% endif %} shown</span>
+            <span>{{ selected_date.strftime('%d %b %Y') }}</span>
+        </div>
+    </div>
+
+    <div class="vs-kpi-card">
+        <div class="vs-kpi-top">
+            <span class="vs-kpi-label">My Share Today</span>
+            <span class="vs-kpi-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                <i class="fas fa-user-check"></i>
+            </span>
+        </div>
+        <div class="vs-kpi-value">Rs. {{ "{:,.0f}".format(my_daily_total) }}</div>
+        <div class="vs-kpi-meta">
+            <span>Family total: Rs. {{ "{:,.0f}".format(family_daily_total) }}</span>
+            <a href="{{ url_for('my_spendings') }}" class="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">All my spendings →</a>
+        </div>
+    </div>
+
+    <div class="vs-kpi-card justify-center">
+        <span class="vs-kpi-label mb-2">Filter View</span>
+        <div class="vs-tabs w-full">
+            <a href="{{ url_for('daily_diary', date=selected_date.strftime('%Y-%m-%d')) }}"
+               class="vs-tab flex-1 justify-center {% if not mine_only %}active{% endif %}">
+                <i class="fas fa-users"></i>
+                <span>All Family</span>
+            </a>
+            <a href="{{ url_for('daily_diary', date=selected_date.strftime('%Y-%m-%d'), mine='1') }}"
+               class="vs-tab flex-1 justify-center {% if mine_only %}active{% endif %}">
+                <i class="fas fa-user"></i>
+                <span>Only Mine</span>
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Main 2-Column Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+    <!-- Left Column: Log Expense for Selected Day (5 cols) -->
+    <section class="vs-card lg:col-span-5" aria-labelledby="diary-add-heading">
+        <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+                <h2 id="diary-add-heading" class="text-base font-bold text-slate-900 dark:text-white">
+                    Add to {{ selected_date.strftime('%d %b') }}
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Syncs directly with the monthly dashboard</p>
+            </div>
+            <div>
+                <input type="file" id="diary-receipt-input" data-receipt-input accept="image/*,application/pdf" class="hidden">
+                <button type="button" onclick="document.getElementById('diary-receipt-input').click()" class="vs-btn vs-btn-sm vs-btn-secondary">
+                    <i class="fas fa-camera text-indigo-500"></i>
+                    <span data-receipt-status>Scan Receipt</span>
                 </button>
-                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
-                <select id="language-select" data-language-select class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
+            </div>
+        </div>
+
+        <form action="{{ url_for('add_expense') }}" method="POST" class="space-y-3.5">
+            <div>
+                <label class="vs-label" for="diary-item">Item or Merchant</label>
+                <input id="diary-item" type="text" name="item_name" placeholder="e.g., Milk & Vegetables, Auto Rickshaw" required class="vs-input">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="vs-label" for="diary-amount">Amount (Rs.)</label>
+                    <input id="diary-amount" type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" required class="vs-input tabular-nums font-semibold">
+                </div>
+                <div>
+                    <label class="vs-label" for="diary-date">Date</label>
+                    <input id="diary-date" type="date" name="expense_date" value="{{ selected_date.strftime('%Y-%m-%d') }}" required class="vs-input">
+                </div>
+            </div>
+
+            <div>
+                <label class="vs-label" for="diary-category">Category</label>
+                <select id="diary-category" name="category_id" required class="vs-select">
+                    <option value="" disabled selected>Select category...</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}">{{ cat.name }}</option>
+                    {% endfor %}
                 </select>
             </div>
-            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
-                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
-                <p class="text-xs text-blue-300 mt-1">
-                    <i class="fas fa-user-tag mr-1" aria-hidden="true"></i>{{ user.user_type.replace('_', ' ').title() }}
-                </p>
-                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
+
+            <div>
+                <label class="vs-label" for="diary-note">Note (Optional)</label>
+                <input id="diary-note" type="text" name="description" placeholder="Optional details..." class="vs-input text-xs">
             </div>
-            <a href="{{ url_for('logout') }}" class="w-full block text-center bg-red-600/20 text-red-300 font-semibold py-2.5 px-4 rounded-lg hover:bg-red-600 duration-200 transition">
-                <i class="fas fa-sign-out-alt mr-2" aria-hidden="true"></i>Logout
+
+            <button type="submit" class="vs-btn vs-btn-primary w-full py-2.5">
+                <i class="fas fa-plus"></i>
+                <span>Save Entry for {{ selected_date.strftime('%d %b') }}</span>
+            </button>
+        </form>
+    </section>
+
+    <!-- Right Column: Entries for Selected Day (7 cols) -->
+    <section class="vs-card lg:col-span-7" aria-labelledby="diary-list-heading">
+        <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+                <h2 id="diary-list-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Entries for {{ selected_date.strftime('%d %b %Y') }}</span>
+                    <span class="vs-badge vs-badge-neutral">{{ expenses|length }}</span>
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Total: <strong class="text-slate-800 dark:text-slate-200 tabular-nums">Rs. {{ "{:,.2f}".format(daily_total) }}</strong>
+                </p>
+            </div>
+            <a href="{{ url_for('dashboard', month=selected_date.month, year=selected_date.year) }}" class="vs-btn vs-btn-sm vs-btn-secondary">
+                <i class="fas fa-chart-pie text-indigo-500"></i>
+                <span>{{ selected_date.strftime('%b') }} Overview</span>
             </a>
         </div>
-    </aside>
 
-    {% set active_page = 'diary' %}
-    {% include '_mobile_nav.html' %}
-
-    <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
-        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
-            <header class="mb-6 md:mb-8 animate-slide-in">
-                <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-                    <div>
-                        <p class="text-xs md:text-sm text-blue-600 font-semibold">
-                            <i class="fas fa-calendar-day mr-2" aria-hidden="true"></i>{{ selected_date.strftime('%A, %B %d, %Y') }}
-                        </p>
-                        <h1 class="text-2xl md:text-4xl font-bold text-slate-800 mt-2">Daily Expense Diary</h1>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <a href="{{ url_for('daily_diary', date=previous_date.strftime('%Y-%m-%d')) }}" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-slate-700 font-semibold px-4 py-2.5 rounded-lg shadow-sm hover:border-blue-300 hover:text-blue-600 transition">
-                            <i class="fas fa-chevron-left text-xs" aria-hidden="true"></i>Previous Day
-                        </a>
-                        <form method="GET" action="{{ url_for('daily_diary') }}" class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
-                            <i class="fas fa-calendar-days text-blue-500" aria-hidden="true"></i>
-                            <input type="date" name="date" value="{{ selected_date.strftime('%Y-%m-%d') }}" class="bg-transparent text-sm font-semibold text-slate-700 focus:outline-none" onchange="this.form.submit()">
-                        </form>
-                        <a href="{{ url_for('daily_diary') }}" class="inline-flex items-center gap-2 bg-blue-600 text-white font-bold px-4 py-2.5 rounded-lg shadow hover:bg-blue-700 transition">
-                            Today
-                        </a>
-                        <a href="{{ url_for('daily_diary', date=next_date.strftime('%Y-%m-%d')) }}" class="inline-flex items-center gap-2 bg-white border border-gray-200 text-slate-700 font-semibold px-4 py-2.5 rounded-lg shadow-sm hover:border-blue-300 hover:text-blue-600 transition">
-                            Next Day<i class="fas fa-chevron-right text-xs" aria-hidden="true"></i>
-                        </a>
-                    </div>
-                </div>
-                <div class="mt-4 flex flex-wrap gap-2">
-                    {% for day in quick_dates %}
-                    <a href="{{ url_for('daily_diary', date=day.date.strftime('%Y-%m-%d')) }}" class="inline-flex min-h-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition {% if day.date == selected_date %}bg-blue-600 text-white border-blue-600{% else %}bg-white text-slate-600 border-gray-200 hover:border-blue-300 hover:text-blue-600{% endif %}">
-                        <span>{{ day.label }}</span>
-                        <span>{{ day.date.strftime('%d %b') }}</span>
-                    </a>
-                    {% endfor %}
-                </div>
-            </header>
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    <div class="space-y-3 mb-6">
-                        {% for category, message in messages %}
-                            <div class="p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% elif category == 'warning' %}bg-yellow-50 border border-yellow-200 text-yellow-800{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
-                                <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} mr-2" aria-hidden="true"></i>{{ message }}
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-
-            <section class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_22rem] gap-6 mb-6 md:mb-8">
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-center mb-5">
-                        <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-bolt text-blue-600" aria-hidden="true"></i>
-                        </div>
-                        <h2 class="text-lg md:text-xl font-bold text-slate-800">Quick Log</h2>
-                    </div>
-
-                    {% if categories %}
-                    <form action="{{ url_for('add_expense') }}" method="POST" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto] gap-3 items-end" data-loading>
-                        <input type="hidden" name="expense_date" value="{{ selected_date.strftime('%Y-%m-%d') }}">
-                        <div>
-                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Item Name</label>
-                            <input type="text" name="item_name" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="Tea, parking, snack" required autofocus>
-                        </div>
-                        <div>
-                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Description</label>
-                            <input type="text" name="description" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional AI context">
-                        </div>
-                        <div>
-                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Amount</label>
-                            <input type="number" name="amount" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" placeholder="0.00" min="0.01" step="0.01" required>
-                        </div>
-                        <div>
-                            <label class="block text-xs md:text-sm font-semibold text-gray-700 mb-2">Temporary Category</label>
-                            <select name="category_id" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-blue-500 focus:outline-none" required>
-                                {% for cat in categories %}
-                                <option value="{{ cat.id }}">{{ cat.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <button type="submit" class="btn-primary bg-blue-600 text-white font-bold py-3 px-5 rounded-lg hover:bg-blue-700 duration-200 flex items-center justify-center gap-2 text-sm md:text-base">
-                            <i class="fas fa-plus" aria-hidden="true"></i>Add
-                        </button>
-                    </form>
-                    {% else %}
-                    <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4">
-                        Create a category from the dashboard before logging daily expenses.
-                    </div>
-                    {% endif %}
-                </div>
-
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-blue-100">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs md:text-sm text-slate-500 font-semibold">Daily Total</p>
-                            <p class="text-3xl md:text-4xl font-bold text-slate-800 mt-2">&#8377;<span class="text-blue-600">{{ "{:,.0f}".format(daily_total) }}</span></p>
-                        </div>
-                        <div class="bg-blue-100 rounded-full p-4">
-                            <i class="fas fa-receipt text-blue-600 text-2xl" aria-hidden="true"></i>
-                        </div>
-                    </div>
-                    <p class="text-xs text-slate-400 mt-4">{{ expenses|length }} expense{% if expenses|length != 1 %}s{% endif %} logged on this day</p>
-                </div>
-            </section>
-
-            <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                <div class="flex items-center mb-6">
-                    <div class="bg-indigo-100 rounded-full p-3 mr-3 flex-shrink-0">
-                        <i class="fas fa-list-ul text-indigo-600" aria-hidden="true"></i>
-                    </div>
-                    <h2 class="text-lg md:text-xl font-bold text-slate-800">Chronological Ledger</h2>
-                </div>
-
-                {% if expenses %}
-                <ol class="relative border-l-2 border-blue-100 ml-3 space-y-4">
+        {% if expenses %}
+        <div class="vs-table-wrap -mx-4 sm:mx-0">
+            <table class="vs-table">
+                <thead>
+                    <tr>
+                        <th>Item &amp; Spender</th>
+                        <th>Category</th>
+                        <th class="text-right">Amount</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
                     {% for exp in expenses %}
-                    <li class="ml-6 bg-gray-50 rounded-xl p-4 border border-gray-100 hover:bg-blue-50 transition">
-                        <span class="absolute -left-2.5 mt-1 h-5 w-5 rounded-full bg-blue-600 ring-4 ring-white"></span>
-                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                            <div class="min-w-0">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <p class="font-bold text-slate-800 truncate">{{ exp.item_name }}</p>
-                                    <span class="px-2 py-1 rounded-full text-xs font-bold text-white" style="background-color: {{ exp.category.color }}">
-                                        {{ exp.category.name }}
-                                    </span>
-                                    {% if exp.bucket %}
-                                    <span class="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Uses reserved bucket</span>
-                                    {% endif %}
-                                </div>
-                                {% if exp.description %}
-                                <p class="text-xs text-slate-500 mt-1">{{ exp.description }}</p>
-                                {% endif %}
-                                <p class="text-xs text-slate-500 mt-1">
-                                    Logged by {{ exp.user.username }}
-                                </p>
+                    <tr>
+                        <td>
+                            <div class="font-semibold text-slate-900 dark:text-white text-sm">{{ exp.item_name }}</div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                <i class="fas fa-user text-[10px] mr-1 opacity-70"></i>{{ exp.user.username }}
+                                {% if exp.description %} · {{ exp.description }}{% endif %}
                             </div>
-                            <div class="flex items-center justify-between md:justify-end gap-4">
-                                <p class="text-red-500 font-bold text-lg">&#8377;{{ "{:,.0f}".format(exp.amount) }}</p>
-                                <a href="{{ url_for('edit_expense', id=exp.id) }}" class="edit-btn text-blue-500 hover:text-blue-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-50 duration-200 text-sm">
-                                    <i class="fas fa-edit text-xs" aria-hidden="true"></i>Edit
+                        </td>
+                        <td>
+                            <span class="vs-badge" style="background-color: {{ exp.category.color }}1c; color: {{ exp.category.color }}; border: 1px solid {{ exp.category.color }}40;">
+                                <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ exp.category.color }};"></span>
+                                {{ exp.category.name }}
+                            </span>
+                        </td>
+                        <td class="text-right font-bold tabular-nums text-slate-900 dark:text-white whitespace-nowrap">
+                            Rs. {{ "{:,.2f}".format(exp.amount) }}
+                        </td>
+                        <td class="text-right whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1">
+                                <a href="{{ url_for('edit_expense', id=exp.id) }}" class="vs-icon-btn" title="Edit">
+                                    <i class="fas fa-pen text-xs"></i>
                                 </a>
-                                <a href="{{ url_for('delete_expense', id=exp.id) }}" class="delete-btn text-red-500 hover:text-red-700 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 duration-200 text-sm" onclick="return confirm('Delete this expense?')">
-                                    <i class="fas fa-trash-alt text-xs" aria-hidden="true"></i>Delete
+                                <a href="{{ url_for('delete_expense', id=exp.id) }}" onclick="return confirm('Delete {{ exp.item_name }}?')" class="vs-icon-btn hover:text-rose-500" title="Delete">
+                                    <i class="fas fa-trash text-xs"></i>
                                 </a>
                             </div>
-                        </div>
-                    </li>
+                        </td>
+                    </tr>
                     {% endfor %}
-                </ol>
-                {% else %}
-                <div class="text-center py-12">
-                    <div class="text-5xl md:text-6xl mb-4"><i class="fas fa-calendar-check text-gray-300" aria-hidden="true"></i></div>
-                    <p class="text-gray-500 text-base md:text-lg font-semibold">No expenses for this day</p>
-                    <p class="text-gray-400 text-xs md:text-sm mt-1">Use Quick Log when a small expense happens.</p>
-                </div>
-                {% endif %}
-            </section>
+                </tbody>
+            </table>
         </div>
-    </main>
+        {% else %}
+        <div class="text-center py-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+                <i class="fas fa-book-open text-lg"></i>
+            </div>
+            <p class="text-sm font-bold text-slate-800 dark:text-slate-200">No entries recorded on {{ selected_date.strftime('%d %b %Y') }}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Use the form on the left to log an expense for this day.
+            </p>
+        </div>
+        {% endif %}
+    </section>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
-</body>
-</html>
-
+</div>
+{% endblock %}

@@ -1,369 +1,463 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync | AI Budget Planner</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mobile-nav-collapse-20260524">
-</head>
-<body class="dashboard-body font-sans flex h-screen overflow-hidden bg-gray-100">
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+{% extends "_layout.html" %}
+{% block title %}AI Budget Planner · VaultSync{% endblock %}
 
-    <aside id="sidebar" class="sidebar dashboard-desktop-sidebar w-64 bg-gradient-to-b from-slate-900 to-slate-800 h-full p-6 text-white flex flex-col shadow-lg border-r border-slate-700 fixed left-0 top-0 z-40 md:static md:translate-x-0 transition-transform duration-300" role="navigation" aria-label="Main navigation">
-        <div class="mb-8 mt-8 md:mt-0">
-            <h2 class="text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-                <i class="fas fa-vault mr-2" aria-hidden="true"></i>VaultSync
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Family Expense Manager</p>
+{% block content %}
+<div class="vs-page-header">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
+            <i class="fas fa-wand-magic-sparkles text-[11px]"></i>
+            <span>Smart Budget Planning &amp; Rollback</span>
         </div>
+        <h1 class="vs-page-title">AI Budget Planner</h1>
+        <p class="vs-page-subtitle">Generate an AI-optimized monthly budget plan in one click, compare against your current plan, and apply or revert safely.</p>
+    </div>
 
-        <nav class="flex-1 space-y-2 sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-home mr-3" aria-hidden="true"></i><span data-i18n="nav_dashboard">Dashboard</span>
-            </a>
-            <a href="{{ url_for('daily_diary') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-book-open mr-3" aria-hidden="true"></i><span data-i18n="nav_diary">Daily Diary</span>
-            </a>
-            <a href="{{ url_for('ai_budget') }}" class="block py-3 px-4 rounded-lg bg-blue-600/20 text-blue-300 font-semibold hover:bg-blue-600 duration-200">
-                <i class="fas fa-wand-magic-sparkles mr-3" aria-hidden="true"></i><span data-i18n="nav_ai_budget">AI Budget Planner</span>
-            </a>
-            <a href="{{ url_for('archive') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-archive mr-3" aria-hidden="true"></i><span data-i18n="nav_archive">Archive</span>
-            </a>
-            <a href="{{ url_for('daily_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-file-lines mr-3" aria-hidden="true"></i><span>Reports</span>
-            </a>
-            <a href="{{ url_for('financial_reports') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-chart-line mr-3" aria-hidden="true"></i><span>Reports & Planning</span>
-            </a>
-            <a href="{{ url_for('features') }}" class="block py-3 px-4 rounded-lg text-slate-300 font-semibold hover:bg-slate-700 duration-200">
-                <i class="fas fa-circle-question mr-3" aria-hidden="true"></i><span data-i18n="nav_features">Feature Guide</span>
-            </a>
-            {% if is_family_manager %}
-            <a href="{{ url_for('admin_panel') }}" class="block py-3 px-4 rounded-lg text-indigo-200 bg-indigo-600/20 font-semibold hover:bg-indigo-600 duration-200">
-                <i class="fas fa-cog mr-3" aria-hidden="true"></i><span>Admin Panel</span>
-            </a>
-            {% endif %}
-        </nav>
+    <div class="vs-page-actions">
+        <a href="#smart-book-importer-section" class="vs-btn vs-btn-primary">
+            <i class="fas fa-file-excel"></i>
+            <span>Upload Expense Book</span>
+        </a>
+        <button type="button" data-modal-open="manualAiJsonModal" class="vs-btn vs-btn-secondary">
+            <i class="fas fa-code text-indigo-500"></i>
+            <span>JSON Export / Import</span>
+        </button>
+    </div>
+</div>
 
-        <div class="mt-auto space-y-4">
-            <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600 space-y-3">
-                <button type="button" id="dark-mode-toggle" data-theme-toggle class="w-full bg-slate-900/60 text-slate-100 font-semibold py-2 px-3 rounded-lg hover:bg-slate-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-moon" aria-hidden="true"></i><span data-i18n="dark_mode">Dark Mode</span>
-                </button>
-                <label class="block text-xs text-slate-400" for="language-select" data-i18n="language">Language</label>
-                <select id="language-select" data-language-select class="w-full rounded-lg bg-slate-900/60 border border-slate-600 text-white p-2 text-sm">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                </select>
+<!-- Smart Expense Book & Ledger Auto-Capture Section -->
+<section id="smart-book-importer-section" class="vs-card mb-6 border-emerald-200 dark:border-emerald-500/30 bg-gradient-to-r from-emerald-50/50 via-white to-indigo-50/40 dark:from-slate-900 dark:via-slate-900 dark:to-emerald-950/20">
+    <div class="flex flex-wrap items-start justify-between gap-3 pb-4 mb-4 border-b border-slate-200/70 dark:border-slate-800">
+        <div class="flex items-start gap-3">
+            <div class="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                <i class="fas fa-file-excel text-xl"></i>
             </div>
-            <div class="bg-slate-700/30 rounded-lg p-4 border border-slate-600">
-                <p class="text-xs text-slate-400 mb-1">Logged in as</p>
-                <p class="font-bold text-white truncate text-sm md:text-base">{{ user.username }}</p>
-                <p class="text-xs text-slate-400 mt-2">{{ user.email }}</p>
+            <div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="vs-badge vs-badge-success"><i class="fas fa-bolt"></i> Smart Book Auto-Capture</span>
+                    <span class="text-xs text-slate-500 dark:text-slate-400">Multi-Sheet Excel (<code>.xlsx</code>), <code>.csv</code>, <code>.pdf</code>, Images &amp; Raw Spreadsheets</span>
+                </div>
+                <h2 class="text-base font-extrabold text-slate-900 dark:text-white mt-1">Upload Family Expense Book &amp; Auto-Implement</h2>
+                <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 m-0">
+                    Automatically captures all ledger transactions, sets category monthly budgets &amp; month cap, attributes spend to family members (e.g. Arish, Nahid, Shakir), and filters out internal cash conversions/transfers.
+                </p>
             </div>
         </div>
-    </aside>
+    </div>
 
-    {% set active_page = 'ai_budget' %}
-    {% include '_mobile_nav.html' %}
-
-    <main id="main-content" class="dashboard-main flex-1 overflow-y-auto" role="main">
-        <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4 md:p-8">
-            <header class="mb-8 animate-slide-in">
-                <p class="text-xs md:text-sm text-blue-600 font-semibold">AI-assisted planning</p>
-                <h1 class="text-3xl md:text-4xl font-bold text-slate-800 mt-2" data-i18n="ai_title">AI Budget Planner</h1>
-                <p class="text-slate-500 text-sm mt-2 max-w-3xl" data-i18n="ai_subtitle">Export family spending as clean JSON, ask an AI for a budget, import the JSON answer, compare it, then apply the plan.</p>
-            </header>
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    <div class="space-y-3 mb-6">
-                        {% for category, message in messages %}
-                            <div class="p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% elif category == 'warning' %}bg-yellow-50 border border-yellow-200 text-yellow-800{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
-                                {{ message }}
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-                <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-center mb-5">
-                        <div class="bg-blue-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-file-export text-blue-600" aria-hidden="true"></i>
-                        </div>
-                        <div>
-                            <h2 class="text-lg md:text-xl font-bold text-slate-800">1. Export AI-Ready Budget File</h2>
-                            <p class="text-xs text-slate-500 mt-1">Choose any date, date range, month, or month range.</p>
-                        </div>
-                    </div>
-
-                    <form action="{{ url_for('export_ai_budget') }}" method="POST" class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">Export Type</label>
-                            <select name="period_type" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                <option value="date_range">Date range</option>
-                                <option value="single_date">Specific date</option>
-                                <option value="single_month">Specific month</option>
-                                <option value="month_range">Month range</option>
-                            </select>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 mb-2">Start Date</label>
-                                <input type="date" name="start_date" value="{{ today.replace(day=1).isoformat() }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 mb-2">End Date</label>
-                                <input type="date" name="end_date" value="{{ today.isoformat() }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 mb-2">Specific Date</label>
-                                <input type="date" name="single_date" value="{{ today.isoformat() }}" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 mb-2">Specific Month</label>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <select name="single_month" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                        {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
-                                    </select>
-                                    <select name="single_month_year" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                        {% for y in year_range %}<option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 mb-2">Range Start Month</label>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <select name="start_month" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                        {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
-                                    </select>
-                                    <select name="start_month_year" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                        {% for y in year_range %}<option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 mb-2">Range End Month</label>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <select name="end_month" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                        {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
-                                    </select>
-                                    <select name="end_month_year" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm">
-                                        {% for y in year_range %}<option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn-primary w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 duration-200 flex items-center justify-center gap-2">
-                            <i class="fas fa-download" aria-hidden="true"></i>Download AI JSON
-                        </button>
-                    </form>
-                </section>
-
-                <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100">
-                    <div class="flex items-center mb-5">
-                        <div class="bg-emerald-100 rounded-full p-3 mr-3 flex-shrink-0">
-                            <i class="fas fa-file-import text-emerald-600" aria-hidden="true"></i>
-                        </div>
-                        <div>
-                            <h2 class="text-lg md:text-xl font-bold text-slate-800">2. Import AI Suggestion</h2>
-                            <p class="text-xs text-slate-500 mt-1">Paste the AI's JSON response or upload the returned file.</p>
-                        </div>
-                    </div>
-
-                    <form action="{{ url_for('import_ai_budget') }}" method="POST" enctype="multipart/form-data" class="space-y-4">
-                        <textarea name="ai_response" rows="11" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm font-mono" placeholder='{"vaultsync_budget_suggestion_version":"1.0","title":"...","planned_items":[...]}'></textarea>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-700 mb-2">Or upload JSON</label>
-                            <input type="file" name="ai_response_file" accept="application/json,.json" class="form-input w-full border-2 border-gray-200 rounded-lg p-3 text-sm">
-                        </div>
-                        <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-700 duration-200 flex items-center justify-center gap-2">
-                            <i class="fas fa-upload" aria-hidden="true"></i>Import and Compare
-                        </button>
-                    </form>
-                </section>
+    <form id="book-upload-section-form" class="space-y-4">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
+                <label class="vs-label" for="book-section-file">
+                    <i class="fas fa-cloud-arrow-up text-emerald-500 mr-1"></i> Select Expense Book File (.xlsx, .csv, .pdf, image)
+                </label>
+                <input id="book-section-file" type="file" name="book_file" accept=".xlsx,.xls,.csv,.tsv,.txt,application/pdf,image/*" class="vs-input text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700 dark:file:bg-emerald-500/20 dark:file:text-emerald-300 file:font-semibold">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 mb-0">
+                    Reads <strong>Transactions</strong>, <strong>Dashboard Category Budgets</strong>, and <strong>Settings / Members</strong> sheets automatically. Re-uploading the same book safely skips duplicates.
+                </p>
             </div>
 
-            <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-6">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-                    <div>
-                        <h2 class="text-lg md:text-xl font-bold text-slate-800">3. Compare and Apply</h2>
-                        <p class="text-xs text-slate-500 mt-1">Review how the imported plan differs from your current planned expenditure.</p>
+            <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
+                <label class="vs-label" for="book-section-text">
+                    <i class="fas fa-paste text-indigo-500 mr-1"></i> Or Paste Spreadsheet / CSV Book Directly
+                </label>
+                <textarea id="book-section-text" name="book_text" rows="2" placeholder="Paste spreadsheet rows or CSV text here..." class="vs-textarea text-xs font-mono"></textarea>
+            </div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-1">
+            <div class="flex flex-wrap items-center gap-4">
+                <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input type="checkbox" name="apply_budgets" value="true" checked class="rounded text-emerald-600">
+                    <span><strong>Auto-Implement Category Budgets &amp; Month Cap</strong></span>
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input type="checkbox" name="sync_members" value="true" checked class="rounded text-emerald-600">
+                    <span><strong>Sync Family Members</strong> (Arish, Nahid, Shakir...)</span>
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input type="checkbox" name="skip_transfers" value="true" checked class="rounded text-emerald-600">
+                    <span><strong>Skip Internal Transfers / Cashouts</strong></span>
+                </label>
+            </div>
+
+            <button type="submit" class="vs-btn vs-btn-primary shrink-0">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                <span>Auto-Capture &amp; Implement Book</span>
+            </button>
+        </div>
+
+        <div id="book-section-status" class="hidden"></div>
+    </form>
+</section>
+
+<!-- 1-Click Direct AI Plan Generator Card -->
+<section class="vs-card mb-6 border-indigo-200 dark:border-indigo-500/30 bg-gradient-to-r from-indigo-50/70 via-white to-blue-50/60 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/30">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="vs-badge vs-badge-primary"><i class="fas fa-sparkles"></i> 1-Click AI Engine</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Uses your recent 3-month spending history &amp; category limits</span>
+            </div>
+            <h2 class="text-base font-extrabold text-slate-900 dark:text-white mt-1.5">Generate AI Suggested Monthly Plan</h2>
+            <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 m-0">
+                Creates a complete category-by-category budget benchmark and scheduled items for your target month.
+            </p>
+        </div>
+
+        {% if is_manager %}
+        <form action="{{ url_for('generate_ai_suggested_plan_now') }}" method="POST" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="return_to" value="ai_budget">
+            <select name="month" aria-label="Target Month" class="vs-select w-auto py-2 text-xs font-semibold">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>
+                    {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][m-1] }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="year" aria-label="Target Year" class="vs-select w-auto py-2 text-xs font-semibold">
+                {% for y in year_range %}
+                <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="vs-btn vs-btn-primary">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                <span>Generate Plan Now</span>
+            </button>
+        </form>
+        {% else %}
+        <span class="vs-badge vs-badge-neutral">Family Manager required to generate or apply plans</span>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Main Workspace Grid: Left = Selected Plan Comparison (8 cols), Right = Saved Plans & Rollback History (4 cols) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+    <!-- Left Column: Active Comparison & Apply (8 cols) -->
+    <div class="lg:col-span-8 space-y-6">
+        {% if selected_suggestion and comparison %}
+        <section class="vs-card">
+            <div class="flex flex-wrap items-start justify-between gap-4 pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                        <span class="vs-badge {% if selected_suggestion.risk_level == 'low' %}vs-badge-success{% elif selected_suggestion.risk_level == 'high' %}vs-badge-danger{% else %}vs-badge-warning{% endif %}">
+                            {{ selected_suggestion.risk_level|upper }} RISK
+                        </span>
+                        {% if selected_suggestion.is_applied %}
+                        <span class="vs-badge vs-badge-success"><i class="fas fa-check"></i> Applied</span>
+                        {% endif %}
+                        <span class="text-xs text-slate-500 dark:text-slate-400">
+                            Target: {{ selected_suggestion.target_start_date.strftime('%b %d, %Y') }} – {{ selected_suggestion.target_end_date.strftime('%b %d, %Y') }}
+                        </span>
                     </div>
-                    {% if suggestions %}
-                    <form method="GET" action="{{ url_for('ai_budget') }}">
-                        <select name="suggestion_id" class="form-input border-2 border-gray-200 rounded-lg p-3 text-sm" onchange="this.form.submit()">
-                            {% for suggestion in suggestions %}
-                            <option value="{{ suggestion.id }}" {% if selected_suggestion and suggestion.id == selected_suggestion.id %}selected{% endif %}>
-                                {{ suggestion.title }} | {{ suggestion.created_at.strftime('%b %d') }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                    {% endif %}
+                    <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">{{ selected_suggestion.title }}</h2>
                 </div>
 
-                {% if comparison and selected_suggestion %}
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-4">
-                        <p class="text-xs text-blue-700 font-semibold">Current Plan</p>
-                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.current_total) }}</p>
-                    </div>
-                    <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-4">
-                        <p class="text-xs text-emerald-700 font-semibold">AI Suggested Plan</p>
-                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.suggested_total) }}</p>
-                    </div>
-                    <div class="{% if comparison.plan_delta <= 0 %}bg-green-50 border-green-100{% else %}bg-yellow-50 border-yellow-100{% endif %} border rounded-lg p-4">
-                        <p class="text-xs font-semibold">Plan Difference</p>
-                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.plan_delta) }}</p>
-                    </div>
-                    <div class="{% if comparison.budget_delta <= 0 %}bg-green-50 border-green-100{% else %}bg-red-50 border-red-100{% endif %} border rounded-lg p-4">
-                        <p class="text-xs font-semibold">Monthly Budget Change</p>
-                        <p class="text-2xl font-bold text-slate-800">&#8377;{{ "{:,.0f}".format(comparison.budget_delta) }}</p>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                        <h3 class="font-bold text-slate-800 mb-3">Category Comparison</h3>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full text-sm text-left">
-                                <thead>
-                                    <tr class="border-b border-gray-200">
-                                        <th class="py-2 pr-3 text-slate-800">Category</th>
-                                        <th class="py-2 pr-3 text-slate-800">Current</th>
-                                        <th class="py-2 pr-3 text-slate-800">AI</th>
-                                        <th class="py-2 text-slate-800">Delta</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for row in comparison.category_rows %}
-                                    <tr class="border-b border-gray-100">
-                                        <td class="py-2 pr-3 font-semibold text-slate-800">{{ row.category }}</td>
-                                        <td class="py-2 pr-3">&#8377;{{ "{:,.0f}".format(row.current) }}</td>
-                                        <td class="py-2 pr-3">&#8377;{{ "{:,.0f}".format(row.suggested) }}</td>
-                                        <td class="py-2 {% if row.delta > 0 %}text-red-500{% else %}text-green-600{% endif %} font-bold">&#8377;{{ "{:,.0f}".format(row.delta) }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="font-bold text-slate-800 mb-3">AI Planned Items</h3>
-                        <div class="space-y-2 max-h-80 overflow-y-auto">
-                            {% for item in comparison.payload.planned_items %}
-                            <div class="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                                <div class="flex items-center justify-between gap-3">
-                                    <p class="font-bold text-slate-800">{{ item.name }}</p>
-                                    <p class="text-red-500 font-bold">&#8377;{{ "{:,.0f}".format(item.amount) }}</p>
-                                </div>
-                                <p class="text-xs text-slate-500 mt-1">{{ item.date }} | {{ item.category }} | {{ item.priority }}</p>
-                                {% if item.reason %}<p class="text-xs text-slate-500 mt-1">{{ item.reason }}</p>{% endif %}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
-                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                        <h3 class="font-bold text-slate-800 mb-3">Strategy Notes</h3>
-                        <ul class="space-y-2 text-sm text-slate-600">
-                            {% for note in comparison.payload.strategy_notes or [] %}
-                            <li class="flex gap-2"><i class="fas fa-check text-blue-600 mt-1" aria-hidden="true"></i><span>{{ note }}</span></li>
-                            {% else %}
-                            <li>No strategy notes included.</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-                        <h3 class="font-bold text-slate-800 mb-3">Savings Goals</h3>
-                        <div class="space-y-2 text-sm text-slate-600">
-                            {% for goal in comparison.payload.savings_goals or [] %}
-                            <div>
-                                <p class="font-bold text-slate-800">{{ goal.name }} | &#8377;{{ "{:,.0f}".format(goal.target_amount or 0) }}</p>
-                                <p class="text-xs text-slate-500">{{ goal.reason }}</p>
-                            </div>
-                            {% else %}
-                            <p>No savings goals included.</p>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4">
-                        <h3 class="font-bold text-slate-800 mb-3">Guardrails</h3>
-                        <ul class="space-y-2 text-sm text-slate-600">
-                            {% for guardrail in comparison.payload.guardrails or [] %}
-                            <li class="flex gap-2"><i class="fas fa-shield-halved text-yellow-600 mt-1" aria-hidden="true"></i><span>{{ guardrail }}</span></li>
-                            {% else %}
-                            <li>No guardrails included.</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                </div>
-
-                {% if is_family_manager %}
-                <form action="{{ url_for('apply_ai_budget', id=selected_suggestion.id) }}" method="POST" class="mt-6 flex flex-col md:flex-row md:items-center gap-3">
-                    <label class="flex items-center gap-2 text-sm text-slate-600">
-                        <input type="checkbox" name="update_monthly_budget" value="yes" class="rounded border-gray-300">
-                        Update this target month's spending budget to AI recommendation
+                {% if is_manager %}
+                <form action="{{ url_for('apply_ai_budget', id=selected_suggestion.id) }}" method="POST" class="flex flex-wrap items-center gap-3">
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="update_monthly_budget" value="yes" class="rounded text-indigo-600">
+                        <span>Update month budget cap</span>
                     </label>
-                    <button type="submit" class="md:ml-auto bg-slate-900 text-white font-bold py-3 px-5 rounded-lg hover:bg-slate-700 duration-200" onclick="return confirm('Apply this AI budget suggestion to Expected Monthly Expenditure?')">
-                        Apply Suggested Plan
+                    <button type="submit" class="vs-btn vs-btn-primary">
+                        <i class="fas fa-check-double"></i>
+                        <span>Apply Plan to {{ selected_suggestion.target_start_date.strftime('%b %Y') }}</span>
                     </button>
                 </form>
                 {% endif %}
-                {% else %}
-                <div class="text-center py-12">
-                    <div class="text-5xl mb-4"><i class="fas fa-wand-magic-sparkles text-gray-300" aria-hidden="true"></i></div>
-                    <p class="text-gray-500 font-semibold">No AI suggestions imported yet</p>
-                    <p class="text-gray-400 text-sm mt-1">Export a JSON file, ask an AI to fill the schema, then import its answer here.</p>
-                </div>
-                {% endif %}
-            </section>
+            </div>
 
-            {% if applications %}
-            <section class="bg-white rounded-xl md:rounded-2xl shadow-md p-5 md:p-7 border border-gray-100 mb-6">
-                <div class="flex items-center justify-between gap-4 mb-4">
-                    <div>
-                        <h2 class="text-lg md:text-xl font-bold text-slate-800">Applied Plan History</h2>
-                        <p class="text-xs text-slate-500 mt-1">Rollback removes items created by an AI plan and restores the month budget setting when it was changed.</p>
+            <!-- 4 Comparison KPIs -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <div class="vs-card-muted">
+                    <div class="vs-kpi-label">Current Budget</div>
+                    <div class="text-base font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                        Rs. {{ "{:,.0f}".format(comparison.current_monthly_budget|default(0)) }}
                     </div>
-                    <i class="fas fa-rotate-left text-slate-400 text-xl" aria-hidden="true"></i>
+                    <div class="text-[11px] text-slate-500">Income: Rs. {{ "{:,.0f}".format(comparison.current_monthly_income|default(0)) }}</div>
                 </div>
-                <div class="space-y-3">
-                    {% for app in applications %}
-                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-lg border border-gray-200 bg-slate-50 p-4">
-                        <div class="min-w-0">
-                            <p class="font-bold text-slate-800 truncate">#{{ app.id }} | {{ app.suggestion.title }}</p>
-                            <p class="text-xs text-slate-500 mt-1">
-                                Applied {{ app.created_at.strftime('%b %d, %I:%M %p') }} for {{ app.target_month }}/{{ app.target_year }}
-                                {% if app.reverted_at %} | reverted {{ app.reverted_at.strftime('%b %d, %I:%M %p') }}{% endif %}
-                            </p>
-                        </div>
-                        {% if app.reverted_at %}
-                        <span class="inline-flex items-center justify-center rounded-full bg-gray-200 px-3 py-1 text-xs font-bold text-gray-600">Reverted</span>
+                <div class="vs-card-muted">
+                    <div class="vs-kpi-label">AI Recommended</div>
+                    <div class="text-base font-extrabold text-indigo-600 dark:text-indigo-400 mt-1 tabular-nums">
+                        Rs. {{ "{:,.0f}".format(comparison.suggested_monthly_budget|default(0)) }}
+                    </div>
+                    <div class="text-[11px] text-slate-500">Budget delta: {% if comparison.budget_delta > 0 %}+{% endif %}Rs. {{ "{:,.0f}".format(comparison.budget_delta|default(0)) }}</div>
+                </div>
+                <div class="vs-card-muted">
+                    <div class="vs-kpi-label">Current Planned</div>
+                    <div class="text-base font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+                        Rs. {{ "{:,.0f}".format(comparison.current_total|default(0)) }}
+                    </div>
+                    <div class="text-[11px] text-slate-500">{{ comparison.current_plan|length }} scheduled item(s)</div>
+                </div>
+                <div class="vs-card-muted">
+                    <div class="vs-kpi-label">AI Planned Total</div>
+                    <div class="text-base font-extrabold mt-1 tabular-nums {% if comparison.plan_delta > 0 %}text-amber-600{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+                        Rs. {{ "{:,.0f}".format(comparison.suggested_total|default(0)) }}
+                    </div>
+                    <div class="text-[11px] text-slate-500">Plan delta: {% if comparison.plan_delta > 0 %}+{% endif %}Rs. {{ "{:,.0f}".format(comparison.plan_delta|default(0)) }}</div>
+                </div>
+            </div>
+
+            <!-- Category Comparison Table -->
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-2.5">Category-by-Category Comparison</h3>
+            <div class="vs-table-wrap -mx-4 sm:mx-0 mb-5">
+                <table class="vs-table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th class="text-right">Current Plan</th>
+                            <th class="text-right">AI Suggested</th>
+                            <th class="text-right">Difference</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in comparison.category_rows %}
+                        <tr>
+                            <td class="font-semibold">{{ row.category }}</td>
+                            <td class="text-right tabular-nums text-slate-600 dark:text-slate-300">Rs. {{ "{:,.0f}".format(row.current|default(0)) }}</td>
+                            <td class="text-right tabular-nums font-bold text-indigo-600 dark:text-indigo-400">Rs. {{ "{:,.0f}".format(row.suggested|default(0)) }}</td>
+                            <td class="text-right tabular-nums font-semibold {% if row.delta > 0 %}text-amber-600{% elif row.delta < 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
+                                {% if row.delta > 0 %}+{% endif %}Rs. {{ "{:,.0f}".format(row.delta|default(0)) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Strategy Notes & Planned Items -->
+            {% set planned_items_list = comparison.payload.get('planned_items', []) if comparison.payload else [] %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="vs-card-muted">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                        <i class="fas fa-lightbulb text-amber-500 mr-1"></i> Strategy &amp; Guardrails
+                    </h4>
+                    <div class="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                        {% for line in (selected_suggestion.notes or '').split('\n') if line.strip() %}
+                        <div class="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">{{ line }}</div>
                         {% else %}
-                        <form method="POST" action="{{ url_for('revert_ai_budget_application', application_id=app.id) }}">
-                            <button type="submit" class="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 duration-200" onclick="return confirm('Revert this applied AI plan? This removes planned items created by that apply action.')">
-                                Revert Apply
-                            </button>
-                        </form>
+                        <p class="text-slate-500">No additional strategy notes recorded.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="vs-card-muted">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                        <i class="fas fa-calendar-check text-indigo-500 mr-1"></i> Suggested Planned Items ({{ planned_items_list|length }})
+                    </h4>
+                    <div class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                        {% for item in planned_items_list %}
+                        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-xs">
+                            <div class="min-w-0">
+                                <div class="font-semibold text-slate-900 dark:text-white truncate">{{ item.name }}</div>
+                                <div class="text-[11px] text-slate-500">{{ item.date }} · {{ item.category }}</div>
+                            </div>
+                            <strong class="tabular-nums text-slate-900 dark:text-white whitespace-nowrap">Rs. {{ "{:,.0f}".format(item.amount|float) }}</strong>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </section>
+        {% else %}
+        <section class="vs-card text-center py-12">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+                <i class="fas fa-wand-magic-sparkles text-lg"></i>
+            </div>
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">No AI Budget Plan Selected</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                Click <strong>Generate Plan Now</strong> above to create an AI-optimized budget plan for this month, or import a custom JSON plan.
+            </p>
+        </section>
+        {% endif %}
+    </div>
+
+    <!-- Right Column: Saved Suggestions & Rollback History (4 cols) -->
+    <div class="lg:col-span-4 space-y-6">
+        <!-- Saved Suggestions List -->
+        <section class="vs-card">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center justify-between">
+                <span>Saved AI Plans</span>
+                <span class="vs-badge vs-badge-neutral">{{ suggestions|length }}</span>
+            </h2>
+            {% if suggestions %}
+            <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {% for item in suggestions %}
+                <a href="{{ url_for('ai_budget', suggestion_id=item.id) }}"
+                   class="block p-3 rounded-xl border transition text-decoration-none {% if selected_suggestion and selected_suggestion.id == item.id %}border-indigo-500 bg-indigo-50/60 dark:bg-indigo-500/15{% else %}border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50{% endif %}">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-bold text-slate-900 dark:text-white truncate">{{ item.title }}</span>
+                        {% if item.is_applied %}
+                        <span class="vs-badge vs-badge-success">Applied</span>
                         {% endif %}
                     </div>
-                    {% endfor %}
-                </div>
-            </section>
+                    <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        <span>{{ item.target_start_date.strftime('%b %Y') }}</span>
+                        <strong class="tabular-nums text-slate-700 dark:text-slate-200">Rs. {{ "{:,.0f}".format(item.total_planned) }}</strong>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-slate-500 dark:text-slate-400">No saved plans yet.</p>
             {% endif %}
+        </section>
+
+        <!-- Applied Plan Rollback History -->
+        <section class="vs-card">
+            <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1">Rollback History</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Revert any applied AI plan safely if you change your mind.</p>
+
+            {% if applications %}
+            <div class="space-y-2.5">
+                {% for app_row in applications %}
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            #{{ app_row.id }} · {{ app_row.suggestion.title if app_row.suggestion else 'AI Plan' }}
+                        </span>
+                        {% if app_row.reverted_at %}
+                        <span class="vs-badge vs-badge-neutral">Reverted</span>
+                        {% else %}
+                        <span class="vs-badge vs-badge-success">Active</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        Target: {{ app_row.target_month }}/{{ app_row.target_year }} · Applied {{ app_row.created_at.strftime('%d %b %Y') }}
+                    </div>
+                    {% if not app_row.reverted_at and is_manager %}
+                    <form action="{{ url_for('revert_ai_budget_application', application_id=app_row.id) }}" method="POST" class="mt-2" onsubmit="return confirm('Revert AI plan application #{{ app_row.id }}? Paid items will be kept safe.');">
+                        <button type="submit" class="vs-btn vs-btn-sm vs-btn-danger w-full">
+                            <i class="fas fa-rotate-left"></i>
+                            <span>Revert Application</span>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-slate-500 dark:text-slate-400">No AI plans have been applied yet.</p>
+            {% endif %}
+        </section>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Manual JSON Export / Import Modal (#manualAiJsonModal) -->
+<div id="manualAiJsonModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="manual-json-title">
+    <div class="vs-modal-panel vs-modal-lg">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+                <h3 id="manual-json-title" class="text-base font-bold text-slate-900 dark:text-white">Manual AI JSON Export &amp; Import</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Export spending data as JSON for an external LLM, or import a JSON response</p>
+            </div>
+            <button type="button" data-modal-close="manualAiJsonModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-    </main>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=mobile-nav-collapse-20260524"></script>
-</body>
-</html>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <!-- Step 1: Export JSON -->
+            <form action="{{ url_for('export_ai_budget') }}" method="POST" class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-3">
+                <h4 class="text-sm font-bold text-slate-900 dark:text-white">1. Export Context JSON</h4>
+                <div>
+                    <label class="vs-label" for="ai-period-type">Source Window Type</label>
+                    <select id="ai-period-type" name="period_type" class="vs-select text-xs">
+                        <option value="single_month" selected>Single Month</option>
+                        <option value="date_range">Custom Date Range</option>
+                        <option value="month_range">Month Range</option>
+                        <option value="single_date">Single Day</option>
+                    </select>
+                </div>
 
+                <!-- Dynamic Input Group: Single Month -->
+                <div data-period-group="single_month">
+                    <label class="vs-label">Select Source Month</label>
+                    <input type="month" name="single_month" value="{{ today.strftime('%Y-%m') }}" class="vs-input text-xs">
+                </div>
+
+                <!-- Dynamic Input Group: Date Range -->
+                <div data-period-group="date_range" class="hidden grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="vs-label">Start Date</label>
+                        <input type="date" name="start_date" value="{{ today.replace(day=1).strftime('%Y-%m-%d') }}" class="vs-input text-xs">
+                    </div>
+                    <div>
+                        <label class="vs-label">End Date</label>
+                        <input type="date" name="end_date" value="{{ today.strftime('%Y-%m-%d') }}" class="vs-input text-xs">
+                    </div>
+                </div>
+
+                <!-- Dynamic Input Group: Month Range -->
+                <div data-period-group="month_range" class="hidden grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="vs-label">Start Month</label>
+                        <input type="month" name="start_month" value="{{ today.strftime('%Y-%m') }}" class="vs-input text-xs">
+                    </div>
+                    <div>
+                        <label class="vs-label">End Month</label>
+                        <input type="month" name="end_month" value="{{ today.strftime('%Y-%m') }}" class="vs-input text-xs">
+                    </div>
+                </div>
+
+                <!-- Dynamic Input Group: Single Date -->
+                <div data-period-group="single_date" class="hidden">
+                    <label class="vs-label">Select Date</label>
+                    <input type="date" name="single_date" value="{{ today.strftime('%Y-%m-%d') }}" class="vs-input text-xs">
+                </div>
+
+                <div>
+                    <label class="vs-label">Target Month to Plan</label>
+                    <input type="month" name="target_month" value="{{ today.strftime('%Y-%m') }}" class="vs-input text-xs">
+                </div>
+
+                <button type="submit" class="vs-btn vs-btn-secondary w-full">
+                    <i class="fas fa-download text-indigo-500"></i>
+                    <span>Download AI Context JSON</span>
+                </button>
+            </form>
+
+            <!-- Step 2: Import JSON -->
+            <form action="{{ url_for('import_ai_budget') }}" method="POST" enctype="multipart/form-data" class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-3">
+                <h4 class="text-sm font-bold text-slate-900 dark:text-white">2. Import AI JSON Response</h4>
+                <div>
+                    <label class="vs-label">Upload JSON File (Optional)</label>
+                    <input type="file" name="ai_response_file" accept=".json,application/json" class="vs-input text-xs">
+                </div>
+                <div>
+                    <label class="vs-label">Or Paste JSON Response</label>
+                    <textarea name="ai_response" rows="5" placeholder='{"version": "vaultsync-ai-budget-v1", ...}' class="vs-textarea text-xs font-mono"></textarea>
+                </div>
+                <button type="submit" class="vs-btn vs-btn-primary w-full">
+                    <i class="fas fa-file-import"></i>
+                    <span>Import &amp; Compare Plan</span>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Dynamically toggle date/month inputs based on selected period_type
+    (function() {
+        const select = document.getElementById('ai-period-type');
+        const groups = document.querySelectorAll('[data-period-group]');
+        if (!select || !groups.length) return;
+
+        function updatePeriodInputs() {
+            const val = select.value;
+            groups.forEach((group) => {
+                group.classList.toggle('hidden', group.getAttribute('data-period-group') !== val);
+            });
+        }
+        select.addEventListener('change', updatePeriodInputs);
+        updatePeriodInputs();
+    })();
+</script>
+{% endblock %}

@@ -2,189 +2,104 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - VaultSync</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Sign In · VaultSync</title>
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('vaultsync-dark-mode');
+                var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (saved === 'true' || (saved === null && prefersDark)) {
+                    document.documentElement.classList.add('dark');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .login-container {
-            animation: slideIn 0.5s ease;
-        }
-        .auth-panel {
-            backdrop-filter: blur(18px);
-            background: rgba(255, 255, 255, 0.96);
-        }
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        .input-field:focus {
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        .btn-login {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            transition: all 0.3s ease;
-        }
-        .btn-login:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
-        .password-toggle {
-            position: absolute;
-            right: 0.875rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #6b7280;
-        }
-    </style>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.0">
 </head>
-<body>
-    <div class="login-container w-full max-w-md px-4">
-        <div class="auth-panel rounded-2xl shadow-2xl p-8 md:p-10 border border-white/60">
-            <!-- Logo/Brand -->
-            <div class="text-center mb-8">
-                <div class="inline-block bg-gradient-to-r from-purple-400 to-pink-600 rounded-full p-4 mb-4">
-                    <i class="fas fa-vault text-white text-2xl"></i>
-                </div>
-                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600">
-                    VaultSync
-                </h1>
-                <p class="text-gray-500 text-sm mt-2">Family budgets, daily spend, and AI planning in one calm place</p>
-            </div>
+<body data-disable-chatbot="true" class="min-h-screen flex items-center justify-center p-4 sm:p-6">
+    <script>
+        if (document.documentElement.classList.contains('dark')) {
+            document.body.classList.add('dark-mode');
+        }
+    </script>
 
-            <!-- Flash Messages -->
+    <div class="w-full max-w-md">
+        <!-- Brand Header -->
+        <div class="text-center mb-6">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-500/30 mb-3">
+                <i class="fas fa-vault text-xl"></i>
+            </div>
+            <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Welcome back to VaultSync</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Sign in to manage your family budget and daily expenses</p>
+        </div>
+
+        <!-- Auth Card -->
+        <div class="vs-card p-6 sm:p-8">
             {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="mb-4 p-4 rounded-lg {% if category == 'error' %}bg-red-50 border border-red-200 text-red-700{% elif category == 'success' %}bg-green-50 border border-green-200 text-green-700{% else %}bg-blue-50 border border-blue-200 text-blue-700{% endif %}">
-                            <div class="flex items-center">
-                                <i class="fas {% if category == 'error' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} mr-3"></i>
-                                <span>{{ message }}</span>
-                            </div>
-                        </div>
-                    {% endfor %}
-                {% endif %}
+            {% if messages %}
+            <div class="space-y-2 mb-5">
+                {% for category, message in messages %}
+                <div class="px-3.5 py-2.5 rounded-xl border text-xs font-medium flex items-center gap-2
+                    {% if category == 'error' %}bg-rose-50 border-rose-200 text-rose-800
+                    {% elif category == 'success' %}bg-emerald-50 border-emerald-200 text-emerald-800
+                    {% else %}bg-indigo-50 border-indigo-200 text-indigo-800{% endif %}">
+                    <i class="fas {% if category == 'error' %}fa-circle-exclamation text-rose-500{% elif category == 'success' %}fa-circle-check text-emerald-500{% else %}fa-circle-info text-indigo-500{% endif %}"></i>
+                    <span>{{ message }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
             {% endwith %}
 
-            <!-- Login Form -->
-            <form method="POST" class="space-y-5">
-                <!-- Username/Email Field -->
+            <form method="POST" action="{{ url_for('login') }}" class="space-y-4">
                 <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                        <i class="fas fa-user mr-2 text-purple-500"></i>Username or Email
-                    </label>
-                    <input 
-                        type="text" 
-                        name="username_or_email"
-                        autocomplete="username"
-                        class="input-field w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
-                        placeholder="Enter username or email"
-                        autofocus
-                        required
-                    >
-                </div>
-
-                <!-- Password Field -->
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                        <i class="fas fa-lock mr-2 text-purple-500"></i>Password
-                    </label>
+                    <label class="vs-label" for="username_or_email">Username or Email</label>
                     <div class="relative">
-                        <input
-                            type="password"
-                            name="password"
-                            id="password"
-                            autocomplete="current-password"
-                            class="input-field w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none transition"
-                            placeholder="Enter password"
-                            required
-                        >
-                        <button type="button" class="password-toggle" onclick="togglePassword('password', this)" aria-label="Show password">
-                            <i class="fas fa-eye"></i>
-                        </button>
+                        <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input id="username_or_email" type="text" name="username_or_email" required autofocus placeholder="Enter username or email" class="vs-input pl-9">
                     </div>
                 </div>
 
-                <!-- Remember Me -->
-                <div class="flex items-center">
-                    <input 
-                        type="checkbox" 
-                        name="remember" 
-                        id="remember"
-                        class="rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                    >
-                    <label for="remember" class="ml-2 text-sm text-gray-600 cursor-pointer">
-                        Remember me
-                    </label>
+                <div>
+                    <label class="vs-label" for="password">Password</label>
+                    <div class="relative">
+                        <i class="fas fa-lock absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input id="password" type="password" name="password" required placeholder="Enter your password" class="vs-input pl-9">
+                    </div>
                 </div>
 
-                <!-- Login Button -->
-                <button 
-                    type="submit" 
-                    class="btn-login w-full text-white font-bold py-3 rounded-lg hover:shadow-lg transition flex items-center justify-center gap-2"
-                >
-                    <i class="fas fa-sign-in-alt"></i>Login
+                <div class="flex items-center justify-between pt-1">
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="remember" class="rounded text-indigo-600">
+                        <span>Keep me signed in</span>
+                    </label>
+                    <button type="button" data-theme-toggle class="text-xs text-slate-500 hover:text-indigo-500 inline-flex items-center gap-1">
+                        <i class="fas fa-moon"></i>
+                        <span>Theme</span>
+                    </button>
+                </div>
+
+                <button type="submit" class="vs-btn vs-btn-primary w-full py-2.5 text-sm">
+                    <span>Sign In</span>
+                    <i class="fas fa-arrow-right text-xs"></i>
                 </button>
             </form>
 
-            <!-- Divider -->
-            <div class="flex items-center my-6">
-                <div class="flex-1 border-t border-gray-200"></div>
-                <span class="px-3 text-sm text-gray-500">Don't have an account?</span>
-                <div class="flex-1 border-t border-gray-200"></div>
-            </div>
-
-            <!-- Register Link -->
-            <a 
-                href="{{ url_for('register') }}" 
-                class="block w-full text-center bg-gray-100 text-gray-700 font-semibold py-3 rounded-lg hover:bg-gray-200 transition"
-            >
-                <i class="fas fa-user-plus mr-2"></i>Create New Account
-            </a>
-
-            <!-- Security Info -->
-            <div class="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
-                <div class="p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                    <i class="fas fa-lock text-blue-600"></i>
-                    <p class="text-xs text-blue-700 font-semibold mt-1">Private</p>
-                </div>
-                <div class="p-3 bg-green-50 border border-green-100 rounded-lg">
-                    <i class="fas fa-users text-green-600"></i>
-                    <p class="text-xs text-green-700 font-semibold mt-1">Family-safe</p>
-                </div>
-                <div class="p-3 bg-purple-50 border border-purple-100 rounded-lg">
-                    <i class="fas fa-wand-magic-sparkles text-purple-600"></i>
-                    <p class="text-xs text-purple-700 font-semibold mt-1">AI-ready</p>
-                </div>
+            <div class="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-center">
+                <p class="text-xs text-slate-500 dark:text-slate-400 m-0">
+                    New to VaultSync?
+                    <a href="{{ url_for('register') }}" class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline ml-1">Create a family or join with a code</a>
+                </p>
             </div>
         </div>
-
-        <!-- Footer -->
-        <p class="text-center text-white text-sm mt-6">
-            <i class="fas fa-shield-alt mr-1"></i>VaultSync &copy; 2026 - Secure Family Finance
-        </p>
     </div>
-    <script>
-        function togglePassword(inputId, button) {
-            const input = document.getElementById(inputId);
-            const isHidden = input.type === 'password';
-            input.type = isHidden ? 'text' : 'password';
-            button.innerHTML = isHidden ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
-            button.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
-        }
-    </script>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=3.0"></script>
 </body>
 </html>
