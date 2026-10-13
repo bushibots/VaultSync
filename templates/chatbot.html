@@ -100,10 +100,11 @@
         border-color: #334155;
     }
     .prose-chat td, .vs-chat-table td {
-        padding: 0.6rem 0.85rem;
+        padding: 0.65rem 0.85rem;
         border-bottom: 1px solid #e2e8f0;
         color: #334155;
-        vertical-align: top;
+        vertical-align: middle !important;
+        line-height: 1.45;
     }
     .dark .prose-chat td, .dark .vs-chat-table td {
         border-color: #1e293b;
@@ -849,6 +850,31 @@
         });
         html += '</tbody></table></div>';
         return html;
+    }
+
+    // Setup marked with clean table wrapper & vertical alignment
+    if (typeof marked !== 'undefined') {
+        try {
+            const renderer = new marked.Renderer();
+            renderer.table = function(header, body) {
+                return `<div class="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs"><table class="vs-chat-table w-full text-xs"><thead>${header}</thead><tbody>${body}</tbody></table></div>`;
+            };
+            renderer.tablerow = function(content) {
+                const isTotal = content.toLowerCase().includes('total') || content.toLowerCase().includes('net');
+                const rowClass = isTotal ? 'font-bold bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200' : 'hover:bg-slate-50/40 dark:hover:bg-slate-800/30';
+                return `<tr class="${rowClass}">${content}</tr>`;
+            };
+            renderer.tablecell = function(content, flags) {
+                const tag = flags.header ? 'th' : 'td';
+                const extra = flags.header 
+                    ? 'p-2.5 font-bold uppercase tracking-wider text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 whitespace-nowrap text-left'
+                    : 'p-2.5 border-b border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 align-middle text-left';
+                return `<${tag} class="${extra}">${content}</${tag}>`;
+            };
+            marked.use({ renderer, gfm: true, breaks: true });
+        } catch(e) {
+            console.warn('marked config error', e);
+        }
     }
 
     // Markdown Renderer with fallbacks
