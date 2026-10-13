@@ -186,6 +186,13 @@
                             <div class="vs-nav-desc">Get pre-formatted monthly template</div>
                         </div>
                     </a>
+                    <a href="{{ url_for('dashboard') }}" onclick="localStorage.setItem('openGoogleSheetModal', 'true');" class="vs-nav-link text-emerald-400 hover:text-emerald-300">
+                        <i class="fab fa-google-drive text-emerald-400"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title text-emerald-300">Google Sheets Sync</div>
+                            <div class="vs-nav-desc">2-Way live sync with spreadsheet</div>
+                        </div>
+                    </a>
                     <a href="{{ url_for('archive') }}" class="vs-nav-link {% if current_endpoint == 'archive' %}active{% endif %}">
                         <i class="fas fa-box-archive"></i>
                         <div class="flex-1 min-w-0">

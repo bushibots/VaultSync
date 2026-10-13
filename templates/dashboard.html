@@ -1,5 +1,5 @@
 {% extends "_layout.html" %}
-{% block title %}Overview · {{ month_name }} {{ selected_year }} · VaultSync{% endblock %}
+{% block title %}{% if is_all_time %}All Time Ledger{% else %}Overview · {{ month_name }} {{ selected_year }}{% endif %} · VaultSync{% endblock %}
 
 {% block content %}
 <!-- Top Workspace Bar -->
@@ -7,25 +7,32 @@
     <div>
         <div class="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
             <i class="fas fa-sparkles text-[11px]"></i>
-            <span>{% if family %}{{ family.name }}{% else %}Personal Workspace{% endif %} · Monthly Overview</span>
+            <span>{% if family %}{{ family.name }}{% else %}Personal Workspace{% endif %} · {% if is_all_time %}All Time History{% else %}Monthly Overview{% endif %}</span>
         </div>
-        <h1 class="vs-page-title">{{ month_name }} {{ selected_year }}</h1>
+        <h1 class="vs-page-title">{% if is_all_time %}All Time Ledger{% else %}{{ month_name }} {{ selected_year }}{% endif %}</h1>
         <p class="vs-page-subtitle">
-            Track daily spending, protected budget buckets, and monthly commitments in one place.
+            {% if is_all_time %}
+                Viewing all historical recorded family transactions across all months. (Current month is shown by default).
+            {% else %}
+                Track daily spending, protected budget buckets, and monthly commitments in one place.
+            {% endif %}
         </p>
     </div>
 
     <div class="vs-page-actions">
-        <!-- Compact Period Selector -->
+        <!-- Compact Period Selector with All-Time Option -->
         <form method="GET" action="{{ url_for('dashboard') }}" class="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-xs">
-            <select name="month" aria-label="Select month" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg focus:outline-none cursor-pointer">
-                {% for m in range(1, 13) %}
-                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
-                    {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}
-                </option>
-                {% endfor %}
+            <select name="month" aria-label="Select period" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg focus:outline-none cursor-pointer">
+                <option value="all" {% if is_all_time %}selected{% endif %}>🌐 All Time</option>
+                <optgroup label="Monthly View">
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if not is_all_time and m == selected_month %}selected{% endif %}>
+                        {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}
+                    </option>
+                    {% endfor %}
+                </optgroup>
             </select>
-            <select name="year" aria-label="Select year" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2 py-1.5 rounded-lg focus:outline-none cursor-pointer">
+            <select name="year" aria-label="Select year" onchange="this.form.submit()" class="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 px-2 py-1.5 rounded-lg focus:outline-none cursor-pointer {% if is_all_time %}opacity-40 pointer-events-none{% endif %}">
                 {% for y in year_range %}
                 <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
                 {% endfor %}
@@ -33,10 +40,15 @@
             <noscript><button type="submit" class="vs-btn vs-btn-sm vs-btn-primary">Go</button></noscript>
         </form>
 
-        <a href="{{ url_for('download_expense_book_template', month=selected_month, year=selected_year) }}" class="vs-btn vs-btn-secondary text-emerald-600 dark:text-emerald-400 hover:text-emerald-700" title="Download official Excel template with automated formulas">
+        <a href="{{ url_for('download_expense_book_template', month=(10 if is_all_time else selected_month), year=selected_year) }}" class="vs-btn vs-btn-secondary text-emerald-600 dark:text-emerald-400 hover:text-emerald-700" title="Download official Excel template with automated formulas">
             <i class="fas fa-file-excel text-emerald-500"></i>
             <span>Template (.xlsx)</span>
         </a>
+
+        <button type="button" data-modal-open="googleSheetSyncModal" class="vs-btn vs-btn-secondary text-emerald-600 dark:text-emerald-400 hover:text-emerald-700" title="Google Sheets 2-Way Live Sync">
+            <i class="fab fa-google-drive text-emerald-500"></i>
+            <span>Google Sheets Sync</span>
+        </button>
 
         <button type="button" data-modal-open="manageCategoriesModal" class="vs-btn vs-btn-secondary">
             <i class="fas fa-tags text-indigo-500"></i>
@@ -275,15 +287,31 @@
         <div>
             <div class="flex items-center gap-2">
                 <h2 id="recent-tx-heading" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Transactions Ledger</h2>
-                <span class="vs-badge vs-badge-neutral font-semibold" id="visibleTxCount">{{ expenses|length }} expenses</span>
+                <span class="vs-badge vs-badge-neutral font-semibold" id="visibleTxCount">{{ expenses|length }} expenses {% if is_all_time %}(All Time){% else %}({{ month_name }}){% endif %}</span>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">All recorded family expenses for {{ month_name }} {{ selected_year }} with live member filtering</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {% if is_all_time %}
+                    All recorded family expenses across all time with live member filtering
+                {% else %}
+                    All recorded family expenses for {{ month_name }} {{ selected_year }} with live member filtering
+                {% endif %}
+            </p>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            <!-- Quick Scope Toggle: Current Month (Default) vs All Time -->
+            <div class="inline-flex p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <a href="{{ url_for('dashboard') }}" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all {% if not is_all_time %}bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs{% else %}text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white{% endif %}" title="View active month only (Default)">
+                    <i class="fas fa-calendar-check text-[11px] mr-1"></i> Current Month
+                </a>
+                <a href="{{ url_for('dashboard', month='all') }}" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all {% if is_all_time %}bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs{% else %}text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white{% endif %}" title="View all transactions across all time">
+                    <i class="fas fa-globe text-[11px] mr-1"></i> All Time
+                </a>
+            </div>
+
             <a href="{{ url_for('daily_diary') }}" class="vs-btn vs-btn-sm vs-btn-secondary" title="View expenses grouped day-by-day">
                 <i class="fas fa-calendar-day text-indigo-500"></i>
-                <span>Daily Diary View</span>
+                <span class="hidden sm:inline">Daily Diary</span>
             </a>
             <a href="{{ url_for('export_ai_data') }}" class="vs-btn vs-btn-sm vs-btn-ghost" title="Download CSV of all transactions">
                 <i class="fas fa-download"></i>
@@ -668,6 +696,145 @@
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Google Sheets Live 2-Way Sync Modal (#googleSheetSyncModal) -->
+<div id="googleSheetSyncModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="google-sheet-modal-title">
+    <div class="vs-modal-panel max-w-2xl">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-lg">
+                    <i class="fab fa-google-drive"></i>
+                </div>
+                <div>
+                    <h3 id="google-sheet-modal-title" class="text-base font-bold text-slate-900 dark:text-white">Google Sheets 2-Way Live Sync</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Entries logged on the site update your Google Sheet; entries in Google Sheet appear here without duplicates.</p>
+                </div>
+            </div>
+            <button type="button" data-modal-close="googleSheetSyncModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- Sync Status Banner -->
+        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div class="flex items-center gap-2 text-xs">
+                {% if family and family.google_sheet_url %}
+                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Connected
+                    </span>
+                    <a href="{{ family.google_sheet_url }}" target="_blank" rel="noopener" class="font-mono text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-xs">
+                        Open Google Sheet <i class="fas fa-arrow-up-right-from-square text-[10px]"></i>
+                    </a>
+                {% else %}
+                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span> Not Connected Yet
+                    </span>
+                    <span class="text-slate-500 dark:text-slate-400">Add your sheet link below</span>
+                {% endif %}
+            </div>
+            <div class="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <i class="fas fa-clock text-slate-400"></i>
+                <span>Last Synced: {% if family and family.last_sheet_sync_at %}{{ family.last_sheet_sync_at.strftime('%d %b, %I:%M %p') }}{% else %}Never{% endif %}</span>
+            </div>
+        </div>
+
+        <!-- Tab Controls -->
+        <div class="flex items-center gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 mb-4 text-xs font-semibold">
+            <button type="button" class="vs-sheet-tab-btn active flex-1 py-1.5 px-3 rounded-lg text-center transition-all bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs" data-sheet-tab="pull">
+                <i class="fas fa-arrows-rotate mr-1"></i> 1-Click Pull Sync
+            </button>
+            <button type="button" class="vs-sheet-tab-btn flex-1 py-1.5 px-3 rounded-lg text-center transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" data-sheet-tab="settings">
+                <i class="fas fa-gear mr-1"></i> Connection Settings
+            </button>
+            <button type="button" class="vs-sheet-tab-btn flex-1 py-1.5 px-3 rounded-lg text-center transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" data-sheet-tab="guide">
+                <i class="fas fa-code mr-1"></i> 30s Apps Script Guide
+            </button>
+        </div>
+
+        <!-- TAB 1: 1-Click Pull Sync -->
+        <div id="sheetTabPull" class="vs-sheet-tab-content space-y-4">
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-2">
+                <label class="vs-label" for="pullSheetUrlInput">Google Sheet Link (Viewable / Shared)</label>
+                <div class="flex items-center gap-2">
+                    <input type="url" id="pullSheetUrlInput" placeholder="https://docs.google.com/spreadsheets/d/.../edit" value="{{ family.google_sheet_url if family else '' }}" class="vs-input text-xs font-mono">
+                    <button type="button" id="btnExecutePullSync" class="vs-btn vs-btn-primary shrink-0">
+                        <i class="fas fa-arrows-rotate"></i>
+                        <span>Sync Now</span>
+                    </button>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-0">
+                    Pulling will inspect every row. Existing transactions are <strong>automatically detected and skipped</strong> so zero duplicates are created!
+                </p>
+            </div>
+
+            <!-- Result Box -->
+            <div id="pullSyncStatusBox" class="hidden"></div>
+        </div>
+
+        <!-- TAB 2: Connection Settings -->
+        <div id="sheetTabSettings" class="vs-sheet-tab-content hidden space-y-4">
+            <form id="sheetSettingsForm" class="space-y-3">
+                <div>
+                    <label class="vs-label" for="settingSheetUrl">Your Google Sheet URL</label>
+                    <input type="url" id="settingSheetUrl" name="google_sheet_url" placeholder="https://docs.google.com/spreadsheets/d/..." value="{{ family.google_sheet_url if family else '' }}" class="vs-input text-xs font-mono">
+                    <p class="text-[11px] text-slate-500 mt-1">Make sure the sheet is shared as "Anyone with link can view" or published via File &rarr; Share &rarr; Publish to web.</p>
+                </div>
+
+                <div>
+                    <label class="vs-label" for="settingWebhookUrl">Google Apps Script Web App URL (for live push to sheet)</label>
+                    <input type="url" id="settingWebhookUrl" name="google_sheet_webhook_url" placeholder="https://script.google.com/macros/s/.../exec" value="{{ family.google_sheet_webhook_url if family else '' }}" class="vs-input text-xs font-mono">
+                    <p class="text-[11px] text-slate-500 mt-1">When configured, expenses added on VaultSync are automatically appended to your Google Sheet in real time.</p>
+                </div>
+
+                <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <div class="text-xs font-bold text-slate-800 dark:text-slate-200">VaultSync Family Webhook Token</div>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="syncTokenDisplay" value="{{ family.google_sheet_sync_token if family else '' }}" readonly class="vs-input text-xs font-mono bg-slate-100 dark:bg-slate-800">
+                        <button type="button" id="btnCopySyncToken" class="vs-btn vs-btn-sm vs-btn-secondary shrink-0" title="Copy token">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                </div>
+
+                <div id="sheetSettingsStatusBox" class="hidden"></div>
+
+                <div class="flex items-center justify-end gap-2 pt-2">
+                    <button type="submit" class="vs-btn vs-btn-primary">
+                        <i class="fas fa-save"></i> Save Sync Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB 3: 30-Second Google Apps Script Setup Guide -->
+        <div id="sheetTabGuide" class="vs-sheet-tab-content hidden space-y-3">
+            <div class="text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
+                <div class="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <span class="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 inline-flex items-center justify-center text-[11px] font-bold">1</span>
+                    Open your Google Sheet, click <strong>Extensions</strong> &rarr; <strong>Apps Script</strong>.
+                </div>
+                <div class="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <span class="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 inline-flex items-center justify-center text-[11px] font-bold">2</span>
+                    Delete any existing text in <code>Code.gs</code>, paste the code snippet below, and save (Ctrl+S).
+                </div>
+                <div class="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <span class="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 inline-flex items-center justify-center text-[11px] font-bold">3</span>
+                    Click <strong>Deploy</strong> &rarr; <strong>New deployment</strong> &rarr; Select <strong>Web app</strong>. Set <em>Who has access</em> to <strong>Anyone</strong>, click Deploy, copy the Web App URL, and paste it into Settings!
+                </div>
+            </div>
+
+            <div class="relative">
+                <div class="flex items-center justify-between pb-1.5">
+                    <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Ready-to-use Apps Script (Pre-configured)</span>
+                    <button type="button" id="btnCopyAppsScript" class="vs-btn vs-btn-sm vs-btn-secondary text-[11px] py-1 px-2.5">
+                        <i class="fas fa-copy text-indigo-500"></i> <span>Copy Script</span>
+                    </button>
+                </div>
+                <pre id="appsScriptCodePre" class="p-3 rounded-xl bg-slate-900 text-slate-200 text-[11px] font-mono overflow-x-auto max-h-56 leading-relaxed border border-slate-800">Loading script...</pre>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1194,6 +1361,195 @@
             chart.data.datasets[0].borderColor = isDark() ? '#111827' : '#ffffff';
             chart.update();
         }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    })();
+
+    // Google Sheets Live Sync Interactivity
+    (function() {
+        const tabBtns = document.querySelectorAll('.vs-sheet-tab-btn');
+        const tabContents = {
+            pull: document.getElementById('sheetTabPull'),
+            settings: document.getElementById('sheetTabSettings'),
+            guide: document.getElementById('sheetTabGuide')
+        };
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.sheetTab;
+                tabBtns.forEach(b => {
+                    b.classList.remove('active', 'bg-white', 'dark:bg-slate-900', 'text-indigo-600', 'dark:text-indigo-400', 'shadow-xs');
+                    b.classList.add('text-slate-600', 'dark:text-slate-400');
+                });
+                btn.classList.add('active', 'bg-white', 'dark:bg-slate-900', 'text-indigo-600', 'dark:text-indigo-400', 'shadow-xs');
+                btn.classList.remove('text-slate-600', 'dark:text-slate-400');
+
+                Object.keys(tabContents).forEach(k => {
+                    if (tabContents[k]) {
+                        tabContents[k].classList.toggle('hidden', k !== tab);
+                    }
+                });
+
+                if (tab === 'guide') {
+                    loadAppsScriptCode();
+                }
+            });
+        });
+
+        // 1-Click Pull Sync Execution
+        const btnExecutePull = document.getElementById('btnExecutePullSync');
+        const pullInput = document.getElementById('pullSheetUrlInput');
+        const pullStatus = document.getElementById('pullSyncStatusBox');
+
+        if (btnExecutePull) {
+            btnExecutePull.addEventListener('click', async () => {
+                const sheetUrl = (pullInput ? pullInput.value : '').trim();
+                if (!sheetUrl) {
+                    alert('Please enter a Google Sheet URL first.');
+                    return;
+                }
+
+                const origHTML = btnExecutePull.innerHTML;
+                btnExecutePull.disabled = true;
+                btnExecutePull.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Syncing...';
+
+                if (pullStatus) {
+                    pullStatus.className = 'p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs border border-indigo-200 dark:border-indigo-500/30 font-medium';
+                    pullStatus.innerHTML = '<i class="fas fa-arrows-rotate fa-spin mr-1.5"></i> Downloading sheet data and verifying duplicates...';
+                    pullStatus.classList.remove('hidden');
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('sheet_url', sheetUrl);
+
+                    const res = await fetch('/api/sync/google-sheet/pull', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (res.ok && data.success) {
+                        if (pullStatus) {
+                            pullStatus.className = 'p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs border border-emerald-200 dark:border-emerald-500/30 space-y-1';
+                            pullStatus.innerHTML = `
+                                <div class="font-bold text-sm flex items-center gap-1.5"><i class="fas fa-check-circle text-emerald-600"></i> Sync Completed Successfully!</div>
+                                <div>${data.message || `Imported ${data.imported} new expenses, skipped ${data.skipped_duplicates} duplicates.`}</div>
+                            `;
+                        }
+                        setTimeout(() => window.location.reload(), 1600);
+                    } else {
+                        if (pullStatus) {
+                            pullStatus.className = 'p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-semibold border border-rose-200 dark:border-rose-500/30';
+                            pullStatus.textContent = data.error || 'Failed to sync Google Sheet.';
+                        }
+                        btnExecutePull.disabled = false;
+                        btnExecutePull.innerHTML = origHTML;
+                    }
+                } catch (err) {
+                    if (pullStatus) {
+                        pullStatus.className = 'p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-semibold border border-rose-200 dark:border-rose-500/30';
+                        pullStatus.textContent = 'Network error: ' + err.message;
+                    }
+                    btnExecutePull.disabled = false;
+                    btnExecutePull.innerHTML = origHTML;
+                }
+            });
+        }
+
+        // Save Settings Form
+        const settingsForm = document.getElementById('sheetSettingsForm');
+        const settingsStatus = document.getElementById('sheetSettingsStatusBox');
+
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const submitBtn = settingsForm.querySelector('button[type="submit"]');
+                const origHTML = submitBtn.innerHTML;
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving...';
+
+                try {
+                    const formData = new FormData(settingsForm);
+                    const res = await fetch('/api/sync/google-sheet/settings', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (res.ok && data.success) {
+                        if (settingsStatus) {
+                            settingsStatus.className = 'p-2.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200';
+                            settingsStatus.textContent = data.message || 'Settings saved!';
+                            settingsStatus.classList.remove('hidden');
+                        }
+                        setTimeout(() => window.location.reload(), 1200);
+                    } else {
+                        if (settingsStatus) {
+                            settingsStatus.className = 'p-2.5 rounded-lg bg-rose-50 text-rose-700 text-xs font-semibold border border-rose-200';
+                            settingsStatus.textContent = data.error || 'Failed to save settings.';
+                            settingsStatus.classList.remove('hidden');
+                        }
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = origHTML;
+                    }
+                } catch (err) {
+                    if (settingsStatus) {
+                        settingsStatus.className = 'p-2.5 rounded-lg bg-rose-50 text-rose-700 text-xs font-semibold border border-rose-200';
+                        settingsStatus.textContent = 'Error: ' + err.message;
+                        settingsStatus.classList.remove('hidden');
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = origHTML;
+                }
+            });
+        }
+
+        // Copy Sync Token
+        const btnCopyToken = document.getElementById('btnCopySyncToken');
+        const tokenInput = document.getElementById('syncTokenDisplay');
+        if (btnCopyToken && tokenInput) {
+            btnCopyToken.addEventListener('click', () => {
+                navigator.clipboard.writeText(tokenInput.value);
+                const orig = btnCopyToken.innerHTML;
+                btnCopyToken.innerHTML = '<i class="fas fa-check text-emerald-500"></i> Copied!';
+                setTimeout(() => { btnCopyToken.innerHTML = orig; }, 1800);
+            });
+        }
+
+        // Load & Copy Apps Script Code
+        let scriptCodeLoaded = false;
+        async function loadAppsScriptCode() {
+            const pre = document.getElementById('appsScriptCodePre');
+            if (!pre || scriptCodeLoaded) return;
+            try {
+                const res = await fetch('/api/sync/google-sheet/script-template');
+                const data = await res.json();
+                if (data.code) {
+                    pre.textContent = data.code;
+                    scriptCodeLoaded = true;
+                }
+            } catch (err) {
+                pre.textContent = '// Failed to load script template: ' + err.message;
+            }
+        }
+
+        const btnCopyScript = document.getElementById('btnCopyAppsScript');
+        if (btnCopyScript) {
+            btnCopyScript.addEventListener('click', () => {
+                const pre = document.getElementById('appsScriptCodePre');
+                if (pre && pre.textContent) {
+                    navigator.clipboard.writeText(pre.textContent);
+                    const orig = btnCopyScript.innerHTML;
+                    btnCopyScript.innerHTML = '<i class="fas fa-check text-emerald-500"></i> <span>Copied!</span>';
+                    setTimeout(() => { btnCopyScript.innerHTML = orig; }, 2000);
+                }
+            });
+        }
+
+        if (localStorage.getItem('openGoogleSheetModal') === 'true' || window.location.hash === '#googleSheetSyncModal') {
+            localStorage.removeItem('openGoogleSheetModal');
+            const sheetModal = document.getElementById('googleSheetSyncModal');
+            if (sheetModal) sheetModal.classList.remove('hidden');
+        }
     })();
 </script>
 {% endblock %}

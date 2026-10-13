@@ -276,6 +276,18 @@ def repair_schema():
             connection.execute(text('ALTER TABLE family ADD COLUMN monthly_income FLOAT'))
             connection.execute(text('UPDATE family SET monthly_income = monthly_budget WHERE monthly_income IS NULL'))
             added.append('family.monthly_income')
+        if 'google_sheet_url' not in family_columns:
+            connection.execute(text('ALTER TABLE family ADD COLUMN google_sheet_url VARCHAR(500)'))
+            added.append('family.google_sheet_url')
+        if 'google_sheet_webhook_url' not in family_columns:
+            connection.execute(text('ALTER TABLE family ADD COLUMN google_sheet_webhook_url VARCHAR(500)'))
+            added.append('family.google_sheet_webhook_url')
+        if 'google_sheet_sync_token' not in family_columns:
+            connection.execute(text('ALTER TABLE family ADD COLUMN google_sheet_sync_token VARCHAR(64)'))
+            added.append('family.google_sheet_sync_token')
+        if 'last_sheet_sync_at' not in family_columns:
+            connection.execute(text('ALTER TABLE family ADD COLUMN last_sheet_sync_at DATETIME'))
+            added.append('family.last_sheet_sync_at')
         if not inspector.has_table('monthly_finance_setting'):
             connection.execute(text("""
                 CREATE TABLE monthly_finance_setting (
@@ -473,19 +485,23 @@ def find_budget_bucket(family_id, category_id, expense_date):
     ).order_by(ExpectedExpense.due_day.asc(), ExpectedExpense.id.asc()).first()
 
 
-def build_budget_bucket_summaries(buckets, family_id, month_str, year_str):
+def build_budget_bucket_summaries(buckets, family_id, month_str=None, year_str=None):
     bucket_ids = [bucket.id for bucket in buckets]
     spent_map = {}
     if bucket_ids:
-        spent_rows = db.session.query(
+        query = db.session.query(
             Expense.bucket_id,
             func.coalesce(func.sum(Expense.amount), 0).label('total')
         ).filter(
             Expense.bucket_id.in_(bucket_ids),
-            Expense.family_id == family_id,
-            func.strftime('%Y', Expense.date) == year_str,
-            func.strftime('%m', Expense.date) == month_str
-        ).group_by(Expense.bucket_id).all()
+            Expense.family_id == family_id
+        )
+        if month_str and year_str:
+            query = query.filter(
+                func.strftime('%Y', Expense.date) == year_str,
+                func.strftime('%m', Expense.date) == month_str
+            )
+        spent_rows = query.group_by(Expense.bucket_id).all()
         spent_map = {int(bucket_id): float(total) for bucket_id, total in spent_rows}
 
     summaries = []
@@ -3147,10 +3163,27 @@ def ensure_runtime_schema():
     inspector = inspect(db.engine)
     if inspector.has_table('family'):
         family_columns = {column['name'] for column in inspector.get_columns('family')}
-        if 'monthly_income' not in family_columns:
-            with db.engine.begin() as connection:
+        with db.engine.begin() as connection:
+            if 'monthly_income' not in family_columns:
                 connection.execute(text('ALTER TABLE family ADD COLUMN monthly_income FLOAT'))
                 connection.execute(text('UPDATE family SET monthly_income = monthly_budget WHERE monthly_income IS NULL'))
+            if 'google_sheet_url' not in family_columns:
+                connection.execute(text('ALTER TABLE family ADD COLUMN google_sheet_url VARCHAR(500)'))
+            if 'google_sheet_webhook_url' not in family_columns:
+                connection.execute(text('ALTER TABLE family ADD COLUMN google_sheet_webhook_url VARCHAR(500)'))
+            if 'google_sheet_sync_token' not in family_columns:
+                connection.execute(text('ALTER TABLE family ADD COLUMN google_sheet_sync_token VARCHAR(64)'))
+            if 'last_sheet_sync_at' not in family_columns:
+                connection.execute(text('ALTER TABLE family ADD COLUMN last_sheet_sync_at DATETIME'))
+
+        # Ensure families have sync tokens generated
+        families_without_token = Family.query.filter(
+            (Family.google_sheet_sync_token == None) | (Family.google_sheet_sync_token == '')
+        ).all()
+        if families_without_token:
+            for f in families_without_token:
+                f.google_sheet_sync_token = secrets.token_hex(16)
+            db.session.commit()
 
     _runtime_schema_checked = True
 
@@ -3358,105 +3391,179 @@ def dashboard():
         if created_presets:
             db.session.commit()
 
-    # Get month/year from URL args, default to current date if none provided
+    # Get month/year from URL args, default strictly to current date if none provided
     current_date = datetime.utcnow()
-    selected_month = request.args.get('month', current_date.month, type=int)
-    selected_year = request.args.get('year', current_date.year, type=int)
-
-    # Validate month is within 1-12
-    if not (1 <= selected_month <= 12):
-        selected_month = current_date.month
-    if selected_year < 2020 or selected_year > 2050:
-        selected_year = current_date.year
-
-    # Normalize strings for SQLite strftime comparisons
-    month_str = f"{selected_month:02d}"
-    year_str = str(selected_year)
-
-    # Filter expenses by the selected month, year, AND family
-    all_expenses = Expense.query.filter(
-        func.strftime('%Y', Expense.date) == year_str,
-        func.strftime('%m', Expense.date) == month_str,
-        Expense.family_id == current_user.family_id
-    ).order_by(Expense.date.desc()).all()
+    raw_month = (request.args.get('month') or '').strip()
+    is_all_time = raw_month.lower() in ('all', 'all_time', 'alltime', '0')
 
     all_categories = Category.query.filter_by(family_id=current_user.family_id).all()
 
-    # Math is now isolated to the selected month.
-    total_spent = sum(exp.amount for exp in all_expenses)
-    finance = monthly_finance_for(current_user.family, selected_month, selected_year)
-    monthly_income = finance['monthly_income']
-    monthly_budget = finance['monthly_budget']
+    if is_all_time:
+        selected_month = 'all'
+        selected_year = request.args.get('year', current_date.year, type=int)
+        if selected_year < 2020 or selected_year > 2050:
+            selected_year = current_date.year
+        month_name = 'All Time'
 
-    # Compute per-category totals using a grouped query to ensure accuracy
-    totals = db.session.query(
-        Expense.category_id,
-        func.coalesce(func.sum(Expense.amount), 0).label('total')
-    ).filter(
-        func.strftime('%Y', Expense.date) == year_str,
-        func.strftime('%m', Expense.date) == month_str,
-        Expense.family_id == current_user.family_id
-    ).group_by(Expense.category_id).all()
+        # Filter expenses across all time for this family
+        all_expenses = Expense.query.filter_by(
+            family_id=current_user.family_id
+        ).order_by(Expense.date.desc()).all()
 
-    totals_map = {int(cat_id): float(total) for cat_id, total in totals}
+        total_spent = sum(exp.amount for exp in all_expenses)
 
-    chart_labels = []
-    chart_data = []
-    chart_colors = []
+        # Totals grouped by category across all time
+        totals = db.session.query(
+            Expense.category_id,
+            func.coalesce(func.sum(Expense.amount), 0).label('total')
+        ).filter(
+            Expense.family_id == current_user.family_id
+        ).group_by(Expense.category_id).all()
 
-    for cat in all_categories:
-        cat_total = totals_map.get(cat.id, 0.0)
-        if cat_total > 0:
-            chart_labels.append(cat.name)
-            chart_data.append(cat_total)
-            chart_colors.append(cat.color)
-            
-    # Fetch expected expenses for the selected month/year and family
-    expected_expenses = ExpectedExpense.query.filter_by(
-        month=selected_month, 
-        year=selected_year, 
-        family_id=current_user.family_id
-    ).order_by(ExpectedExpense.amount.desc()).all()
+        totals_map = {int(cat_id): float(total) for cat_id, total in totals}
 
-    budget_bucket_items = [exp for exp in expected_expenses if exp.is_bucket]
-    budget_buckets = build_budget_bucket_summaries(
-        budget_bucket_items,
-        current_user.family_id,
-        month_str,
-        year_str
-    )
-    bucket_unspent_total = sum(bucket['remaining'] for bucket in budget_buckets)
-    bucket_allocated_total = sum(bucket['allocated'] for bucket in budget_buckets)
-    bucket_spent_total = sum(bucket['spent'] for bucket in budget_buckets)
-    bucket_overflow_total = sum(bucket['overflow'] for bucket in budget_buckets)
+        chart_labels = []
+        chart_data = []
+        chart_colors = []
+        for cat in all_categories:
+            cat_total = totals_map.get(cat.id, 0.0)
+            if cat_total > 0:
+                chart_labels.append(cat.name)
+                chart_data.append(cat_total)
+                chart_colors.append(cat.color)
 
-    projected_savings = monthly_income - total_spent - bucket_unspent_total
+        finance = monthly_finance_for(current_user.family, current_date.month, current_date.year)
+        monthly_income = finance['monthly_income']
+        monthly_budget = finance['monthly_budget']
 
-    expected_total = sum(expected_budget_amount(exp) for exp in expected_expenses)
-    expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid and not exp.is_bucket)
-    expected_unpaid_total = sum(exp.amount for exp in expected_expenses if not exp.is_paid and not exp.is_bucket)
-    planned_after_budget = monthly_budget - expected_total
-    standard_expected_total = expected_paid_total + expected_unpaid_total
-    plan_paid_percentage = (expected_paid_total / standard_expected_total * 100) if standard_expected_total else 0
-    top_category_id = max(totals_map, key=totals_map.get) if totals_map else None
-    top_category = next((cat for cat in all_categories if cat.id == top_category_id), None)
-    selected_days_in_month = calendar.monthrange(selected_year, selected_month)[1]
-    if selected_year == current_date.year and selected_month == current_date.month:
+        expected_expenses = ExpectedExpense.query.filter_by(
+            family_id=current_user.family_id
+        ).order_by(ExpectedExpense.amount.desc()).all()
+
+        budget_bucket_items = [exp for exp in expected_expenses if exp.is_bucket]
+        budget_buckets = build_budget_bucket_summaries(
+            budget_bucket_items,
+            current_user.family_id,
+            month_str=None,
+            year_str=None
+        )
+        bucket_unspent_total = sum(bucket['remaining'] for bucket in budget_buckets)
+        bucket_allocated_total = sum(bucket['allocated'] for bucket in budget_buckets)
+        bucket_spent_total = sum(bucket['spent'] for bucket in budget_buckets)
+        bucket_overflow_total = sum(bucket['overflow'] for bucket in budget_buckets)
+
+        projected_savings = monthly_income - total_spent - bucket_unspent_total
+        expected_total = sum(expected_budget_amount(exp) for exp in expected_expenses)
+        expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid and not exp.is_bucket)
+        expected_unpaid_total = sum(exp.amount for exp in expected_expenses if not exp.is_paid and not exp.is_bucket)
+        planned_after_budget = monthly_budget - expected_total
+        standard_expected_total = expected_paid_total + expected_unpaid_total
+        plan_paid_percentage = (expected_paid_total / standard_expected_total * 100) if standard_expected_total else 0
+        top_category_id = max(totals_map, key=totals_map.get) if totals_map else None
+        top_category = next((cat for cat in all_categories if cat.id == top_category_id), None)
         days_elapsed = current_date.day
-        days_remaining = max(selected_days_in_month - current_date.day, 0)
-    elif date(selected_year, selected_month, 1) < date(current_date.year, current_date.month, 1):
-        days_elapsed = selected_days_in_month
         days_remaining = 0
+        daily_rate = total_spent / days_elapsed if days_elapsed else 0
+        projected_month_total = total_spent
+        budget_percentage = (total_spent / monthly_budget * 100) if monthly_budget else 0
+        budget_remaining = monthly_budget - total_spent
+        safe_daily_spend = 0
+        daily_budget_target = 0
+        burn_percentage = 0
     else:
-        days_elapsed = 1
-        days_remaining = selected_days_in_month
-    daily_rate = total_spent / days_elapsed if days_elapsed else 0
-    projected_month_total = daily_rate * selected_days_in_month
-    budget_percentage = (total_spent / monthly_budget * 100) if monthly_budget else 0
-    budget_remaining = monthly_budget - total_spent
-    safe_daily_spend = budget_remaining / days_remaining if days_remaining else max(budget_remaining, 0)
-    daily_budget_target = monthly_budget / selected_days_in_month if monthly_budget else 0
-    burn_percentage = (daily_rate / daily_budget_target * 100) if daily_budget_target else 0
+        # Strict current active month default
+        try:
+            selected_month = int(raw_month) if raw_month else current_date.month
+            if not (1 <= selected_month <= 12):
+                selected_month = current_date.month
+        except (ValueError, TypeError):
+            selected_month = current_date.month
+
+        selected_year = request.args.get('year', current_date.year, type=int)
+        if selected_year < 2020 or selected_year > 2050:
+            selected_year = current_date.year
+
+        month_str = f"{selected_month:02d}"
+        year_str = str(selected_year)
+        month_name = calendar.month_name[selected_month]
+
+        # Filter expenses strictly by the selected month, year, AND family
+        all_expenses = Expense.query.filter(
+            func.strftime('%Y', Expense.date) == year_str,
+            func.strftime('%m', Expense.date) == month_str,
+            Expense.family_id == current_user.family_id
+        ).order_by(Expense.date.desc()).all()
+
+        total_spent = sum(exp.amount for exp in all_expenses)
+        finance = monthly_finance_for(current_user.family, selected_month, selected_year)
+        monthly_income = finance['monthly_income']
+        monthly_budget = finance['monthly_budget']
+
+        totals = db.session.query(
+            Expense.category_id,
+            func.coalesce(func.sum(Expense.amount), 0).label('total')
+        ).filter(
+            func.strftime('%Y', Expense.date) == year_str,
+            func.strftime('%m', Expense.date) == month_str,
+            Expense.family_id == current_user.family_id
+        ).group_by(Expense.category_id).all()
+
+        totals_map = {int(cat_id): float(total) for cat_id, total in totals}
+
+        chart_labels = []
+        chart_data = []
+        chart_colors = []
+        for cat in all_categories:
+            cat_total = totals_map.get(cat.id, 0.0)
+            if cat_total > 0:
+                chart_labels.append(cat.name)
+                chart_data.append(cat_total)
+                chart_colors.append(cat.color)
+
+        expected_expenses = ExpectedExpense.query.filter_by(
+            month=selected_month, 
+            year=selected_year, 
+            family_id=current_user.family_id
+        ).order_by(ExpectedExpense.amount.desc()).all()
+
+        budget_bucket_items = [exp for exp in expected_expenses if exp.is_bucket]
+        budget_buckets = build_budget_bucket_summaries(
+            budget_bucket_items,
+            current_user.family_id,
+            month_str,
+            year_str
+        )
+        bucket_unspent_total = sum(bucket['remaining'] for bucket in budget_buckets)
+        bucket_allocated_total = sum(bucket['allocated'] for bucket in budget_buckets)
+        bucket_spent_total = sum(bucket['spent'] for bucket in budget_buckets)
+        bucket_overflow_total = sum(bucket['overflow'] for bucket in budget_buckets)
+
+        projected_savings = monthly_income - total_spent - bucket_unspent_total
+        expected_total = sum(expected_budget_amount(exp) for exp in expected_expenses)
+        expected_paid_total = sum(exp.amount for exp in expected_expenses if exp.is_paid and not exp.is_bucket)
+        expected_unpaid_total = sum(exp.amount for exp in expected_expenses if not exp.is_paid and not exp.is_bucket)
+        planned_after_budget = monthly_budget - expected_total
+        standard_expected_total = expected_paid_total + expected_unpaid_total
+        plan_paid_percentage = (expected_paid_total / standard_expected_total * 100) if standard_expected_total else 0
+        top_category_id = max(totals_map, key=totals_map.get) if totals_map else None
+        top_category = next((cat for cat in all_categories if cat.id == top_category_id), None)
+        selected_days_in_month = calendar.monthrange(selected_year, selected_month)[1]
+        if selected_year == current_date.year and selected_month == current_date.month:
+            days_elapsed = current_date.day
+            days_remaining = max(selected_days_in_month - current_date.day, 0)
+        elif date(selected_year, selected_month, 1) < date(current_date.year, current_date.month, 1):
+            days_elapsed = selected_days_in_month
+            days_remaining = 0
+        else:
+            days_elapsed = 1
+            days_remaining = selected_days_in_month
+        daily_rate = total_spent / days_elapsed if days_elapsed else 0
+        projected_month_total = daily_rate * selected_days_in_month
+        budget_percentage = (total_spent / monthly_budget * 100) if monthly_budget else 0
+        budget_remaining = monthly_budget - total_spent
+        safe_daily_spend = budget_remaining / days_remaining if days_remaining else max(budget_remaining, 0)
+        daily_budget_target = monthly_budget / selected_days_in_month if monthly_budget else 0
+        burn_percentage = (daily_rate / daily_budget_target * 100) if daily_budget_target else 0
 
     return render_template('dashboard.html',
                             user=current_user,
@@ -3497,7 +3604,8 @@ def dashboard():
                             preset_categories=PRESET_CATEGORIES,
                             selected_month=selected_month,
                             selected_year=selected_year,
-                            month_name=calendar.month_name[selected_month],
+                            month_name=month_name,
+                            is_all_time=is_all_time,
                             year_range=range(2024, datetime.utcnow().year + 3))
 
 
@@ -3913,6 +4021,51 @@ def my_spendings():
                            top_category_name=top_category_name,
                            today=today)
 
+def push_expense_to_google_sheet(expense, family):
+    """
+    Push a new expense logged in VaultSync to the family's connected Google Sheet
+    via its Google Apps Script Webhook. Non-blocking asynchronous daemon thread.
+    """
+    if not family or not getattr(family, 'google_sheet_webhook_url', None):
+        return
+    webhook_url = (family.google_sheet_webhook_url or '').strip()
+    if not webhook_url or not webhook_url.startswith(('http://', 'https://')):
+        return
+
+    payload = {
+        'action': 'add_expense',
+        'token': family.google_sheet_sync_token,
+        'expense': {
+            'id': expense.id,
+            'date': expense.date.isoformat() if hasattr(expense.date, 'isoformat') else str(expense.date),
+            'item_name': expense.item_name,
+            'category': expense.category.name if expense.category else 'Other',
+            'amount': round(float(expense.amount), 2),
+            'member': expense.user.username if expense.user else 'Family',
+            'description': expense.description or '',
+        }
+    }
+
+    def _do_push():
+        try:
+            import urllib.request
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                webhook_url,
+                data=data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'VaultSync-Bridge/1.0'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                resp.read()
+        except Exception as e:
+            app.logger.debug(f"Google Sheet push sync notice: {e}")
+
+    threading.Thread(target=_do_push, daemon=True).start()
+
+
 # --- UPDATED: ADD EXPENSE WITH DATE ---
 @app.route('/add_expense', methods=['POST'])
 @login_required
@@ -3958,6 +4111,7 @@ def add_expense():
     )
     db.session.add(new_expense)
     db.session.commit()
+    push_expense_to_google_sheet(new_expense, current_user.family)
 
     # Check the master pool after accounting for unspent bucket reserves.
     month_str = f"{expense_date.month:02d}"
@@ -7107,6 +7261,64 @@ def extract_ai_book_data(raw_text, base64_file, mime_type, instruction, family_i
     raise ValueError(last_error)
 
 
+def normalize_expense_date(d):
+    """Normalize date object, datetime, string, or Excel serial to datetime.date."""
+    if d is None:
+        return None
+    if isinstance(d, datetime):
+        return d.date()
+    if isinstance(d, date):
+        return d
+    if isinstance(d, str):
+        parsed = parse_book_date_value(d)
+        if parsed:
+            return parsed
+    return None
+
+
+def normalize_text_key(text):
+    """Normalize text for invariant comparison: lowercase, stripped of punctuation and whitespace."""
+    if not text:
+        return ''
+    s = str(text).strip().lower()
+    return re.sub(r'[^a-z0-9]', '', s)
+
+
+def extract_utr_tokens(text):
+    """Extract bank/UPI UTR, Txn ID, or 10-18 digit reference tokens from text."""
+    if not text:
+        return set()
+    s = str(text).lower()
+    tokens = set()
+    for m in re.finditer(r'(?:utr|txn|ref|upi|rrn)[:\s\-\.]*([a-zA-Z0-9]{6,30})', s):
+        tokens.add(m.group(1).lower())
+    for d in re.findall(r'\b\d{10,18}\b', s):
+        tokens.add(d.lower())
+    return tokens
+
+
+def extract_google_sheet_csv_url(url):
+    """
+    Convert any public or viewable Google Sheets URL into a direct CSV export URL.
+    Supports:
+    - https://docs.google.com/spreadsheets/d/{ID}/edit#gid={GID}
+    - https://docs.google.com/spreadsheets/d/{ID}/pubhtml
+    - https://docs.google.com/spreadsheets/d/{ID}/preview
+    """
+    if not url:
+        return None
+    url = url.strip()
+    m_id = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+    if not m_id:
+        return None
+    sheet_id = m_id.group(1)
+
+    m_gid = re.search(r'[#&?]gid=([0-9]+)', url)
+    gid = m_gid.group(1) if m_gid else '0'
+
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+
 def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=True, sync_members=True, skip_transfers=True):
     """
     Takes extracted book structure (transactions, category_budgets, settings_categories, settings_members)
@@ -7117,7 +7329,7 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
     - Inserts Expenses (skipping internal Transfers if skip_transfers=True, and deduplicating against existing rows)
     """
     from werkzeug.security import generate_password_hash
-    from collections import Counter
+    from collections import Counter, defaultdict
 
     family = Family.query.get(family_id)
     transactions = parsed_data.get('transactions') or []
@@ -7168,7 +7380,11 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
                     budgets_updated.append(f"{cat_obj.name} (₹{new_limit:,.0f})")
 
     # Determine primary month/year of the book from transaction dates
-    month_year_counts = Counter((tx['date'].month, tx['date'].year) for tx in transactions if tx.get('date'))
+    month_year_counts = Counter(
+        (normalize_expense_date(tx.get('date')).month, normalize_expense_date(tx.get('date')).year)
+        for tx in transactions
+        if tx.get('date') and normalize_expense_date(tx.get('date'))
+    )
     if month_year_counts:
         (book_month, book_year), _ = month_year_counts.most_common(1)[0]
     else:
@@ -7201,7 +7417,6 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
     user_by_lower = {}
     for u in family_users:
         user_by_lower[u.username.strip().lower()] = u
-        # Also index prefix before '_' in case username was suffixed
         if '_' in u.username:
             user_by_lower[u.username.split('_')[0].strip().lower()] = u
 
@@ -7235,11 +7450,29 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
                 user_by_lower[m_key] = new_member
                 members_created.append(m_clean)
 
-    # 3. Insert Transactions & Deduplicate
+    # 3. Multi-Layer Deduplication Engine
+    # Ensures that re-uploading an offline Excel sheet with previous month transactions
+    # never creates duplicate entries.
     existing_expenses = Expense.query.filter_by(family_id=family_id).all()
-    existing_signatures = set()
+    exact_signatures = set()
+    existing_utr_tokens = set()
+    date_amt_index = defaultdict(list)
+
     for exp in existing_expenses:
-        existing_signatures.add((exp.date, exp.item_name.strip().lower(), round(float(exp.amount), 2)))
+        exp_d = normalize_expense_date(exp.date)
+        exp_d_str = exp_d.strftime('%Y-%m-%d') if exp_d else ''
+        exp_amt = round(float(exp.amount), 2)
+        exp_norm = normalize_text_key(exp.item_name)
+        if exp_d_str:
+            exact_signatures.add((exp_d_str, exp_norm, exp_amt))
+            date_amt_index[(exp_d_str, exp_amt)].append({
+                'norm_name': exp_norm,
+                'name': exp.item_name,
+                'cat_id': exp.category_id,
+                'desc': (exp.description or '').lower(),
+            })
+        utrs = extract_utr_tokens(exp.description)
+        existing_utr_tokens.update(utrs)
 
     imported_expenses = []
     skipped_transfers = []
@@ -7254,12 +7487,53 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
             skipped_transfers.append(tx)
             continue
 
-        tx_date = tx['date']
-        item_name = tx['item_name'].strip()[:150]
-        amount = round(float(tx['amount']), 2)
+        raw_date = tx.get('date')
+        tx_date = normalize_expense_date(raw_date) or datetime.utcnow().date()
+        tx_d_str = tx_date.strftime('%Y-%m-%d')
+        raw_name = (tx.get('item_name') or '').strip()[:150]
+        norm_name = normalize_text_key(raw_name)
+        amount = round(float(tx.get('amount') or 0), 2)
 
-        sig = (tx_date, item_name.lower(), amount)
-        if sig in existing_signatures:
+        if amount <= 0 or not raw_name:
+            continue
+
+        # Check 1: Canonical Signature Match (Exact Date + Normalized Item Name + Exact Amount)
+        sig = (tx_d_str, norm_name, amount)
+        if sig in exact_signatures:
+            skipped_duplicates += 1
+            continue
+
+        # Check 2: Reference / UTR Unique Token Match
+        cand_utrs = set()
+        if tx.get('utr'):
+            cand_utrs.update(extract_utr_tokens(str(tx['utr'])))
+        if tx.get('tx_id'):
+            cand_utrs.update(extract_utr_tokens(str(tx['tx_id'])))
+        if tx.get('notes'):
+            cand_utrs.update(extract_utr_tokens(str(tx['notes'])))
+
+        if cand_utrs and (cand_utrs & existing_utr_tokens):
+            skipped_duplicates += 1
+            continue
+
+        # Check 3: Date + Exact Amount with Substring/Token Match
+        candidate_is_duplicate = False
+        candidates_on_date_amt = date_amt_index.get((tx_d_str, amount), [])
+        for ex in candidates_on_date_amt:
+            ex_norm = ex['norm_name']
+            if norm_name == ex_norm:
+                candidate_is_duplicate = True
+                break
+            if len(norm_name) >= 3 and len(ex_norm) >= 3:
+                if norm_name in ex_norm or ex_norm in norm_name:
+                    candidate_is_duplicate = True
+                    break
+            raw_cat_lower = raw_cat.lower()
+            if (raw_cat_lower in ex_norm or ex_norm in raw_cat_lower) and len(norm_name) >= 2:
+                candidate_is_duplicate = True
+                break
+
+        if candidate_is_duplicate:
             skipped_duplicates += 1
             continue
 
@@ -7311,7 +7585,7 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
         bucket = find_budget_bucket(family_id, cat_obj.id, tx_date)
         new_exp = Expense(
             date=tx_date,
-            item_name=item_name,
+            item_name=raw_name,
             description=full_desc,
             amount=amount,
             category_id=cat_obj.id,
@@ -7320,7 +7594,17 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
             bucket_id=bucket.id if bucket else None,
         )
         db.session.add(new_exp)
-        existing_signatures.add(sig)
+
+        # Register immediately into indexes so intra-batch duplicates in the same file are caught
+        exact_signatures.add(sig)
+        if cand_utrs:
+            existing_utr_tokens.update(cand_utrs)
+        date_amt_index[(tx_d_str, amount)].append({
+            'norm_name': norm_name,
+            'name': raw_name,
+            'cat_id': cat_obj.id,
+            'desc': full_desc.lower(),
+        })
         imported_expenses.append(new_exp)
 
     db.session.commit()
@@ -7332,7 +7616,7 @@ def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=Tr
     if skipped_transfers:
         summary_parts.append(f"filtered out {len(skipped_transfers)} internal transfers/conversions (₹{total_transfer_amt:,.2f})")
     if skipped_duplicates:
-        summary_parts.append(f"skipped {skipped_duplicates} existing duplicates")
+        summary_parts.append(f"skipped {skipped_duplicates} existing duplicates already in ledger")
     if budgets_updated:
         summary_parts.append(f"synced {len(budgets_updated)} category budgets (Total Cap: ₹{total_book_budget:,.0f})")
     if members_created:
@@ -7443,6 +7727,308 @@ def import_expense_book():
 def scan_statement():
     """Delegates to the unified Smart Book & Statement Importer so CSV, XLSX, PDF, and Images all work seamlessly."""
     return import_expense_book()
+
+
+# ==============================================================================
+# GOOGLE SHEETS 2-WAY LIVE SYNC BRIDGE
+# ==============================================================================
+
+@app.route('/api/sync/google-sheet', methods=['GET', 'POST'])
+def api_sync_google_sheet():
+    """
+    Two-way live sync webhook receiver for Google Sheets.
+    Called by Google Apps Script triggers (onEdit / onChange / manual Sync button).
+    Supports token verification via query string ?token=... or request body.
+    """
+    token = request.args.get('token')
+    payload = {}
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+    elif request.form:
+        payload = request.form.to_dict()
+
+    if not token and isinstance(payload, dict):
+        token = payload.get('token')
+
+    if not token:
+        return jsonify({'success': False, 'error': 'Missing authentication token.'}), 401
+
+    family = Family.query.filter_by(google_sheet_sync_token=token).first()
+    if not family:
+        return jsonify({'success': False, 'error': 'Invalid or unrecognized sync token.'}), 403
+
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'message': f'VaultSync Google Sheet live bridge connected for family: {family.name}',
+            'family_id': family.id,
+            'last_sync': family.last_sheet_sync_at.isoformat() if family.last_sheet_sync_at else None
+        })
+
+    try:
+        raw_rows = payload.get('rows')
+        transactions = payload.get('transactions')
+        single_expense = payload.get('expense')
+
+        default_user = family.users[0] if family.users else None
+        if not default_user:
+            return jsonify({'success': False, 'error': 'Family has no registered users.'}), 400
+
+        parsed_data = {'transactions': [], 'category_budgets': {}}
+
+        if raw_rows and isinstance(raw_rows, list):
+            parsed_data = extract_structured_book_data(raw_rows)
+        elif transactions and isinstance(transactions, list):
+            parsed_data['transactions'] = transactions
+        elif single_expense and isinstance(single_expense, dict):
+            parsed_data['transactions'] = [single_expense]
+        elif 'date' in payload and 'amount' in payload:
+            parsed_data['transactions'] = [payload]
+
+        if not parsed_data.get('transactions') and not parsed_data.get('category_budgets'):
+            return jsonify({'success': True, 'message': 'No transaction rows received.', 'imported': 0, 'skipped_duplicates': 0})
+
+        result = implement_parsed_book(
+            parsed_data,
+            family_id=family.id,
+            default_user=default_user,
+            apply_budgets=True,
+            sync_members=True,
+            skip_transfers=True
+        )
+
+        family.last_sheet_sync_at = datetime.utcnow()
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'imported': result['count'],
+            'skipped_duplicates': result['skipped_duplicates'],
+            'total_amount': result['total_amount'],
+            'message': result['message']
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception('Google Sheet sync webhook error')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/sync/google-sheet/pull', methods=['POST'])
+@login_required
+def api_sync_google_sheet_pull():
+    """
+    Direct 1-Click Pull Sync: Fetches published or shared Google Sheet CSV,
+    extracts all transactions and category budgets, and safely merges without duplicates.
+    """
+    family = current_user.family
+    if not family:
+        return jsonify({'success': False, 'error': 'Please join a family first.'}), 400
+
+    sheet_url = (request.form.get('sheet_url') or family.google_sheet_url or '').strip()
+    if not sheet_url:
+        return jsonify({'success': False, 'error': 'Please provide a valid Google Sheet URL.'}), 400
+
+    csv_url = extract_google_sheet_csv_url(sheet_url)
+    if not csv_url:
+        return jsonify({'success': False, 'error': 'Invalid Google Sheet URL. Please paste a link like https://docs.google.com/spreadsheets/d/.../edit'}), 400
+
+    try:
+        import urllib.request
+        import csv
+        import io
+
+        req = urllib.request.Request(
+            csv_url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VaultSync-GoogleSheetBridge/1.0'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content_bytes = resp.read()
+
+        csv_text = content_bytes.decode('utf-8-sig', errors='replace')
+        if not csv_text or '<html' in csv_text.lower()[:300]:
+            return jsonify({
+                'success': False,
+                'error': 'Could not read Google Sheet as CSV. Please ensure your Google Sheet is shared with "Anyone with the link can view", or use File -> Share -> Publish to web.'
+            }), 400
+
+        rows = list(csv.reader(io.StringIO(csv_text)))
+        parsed_data = extract_structured_book_data(rows) if rows else {'transactions': [], 'category_budgets': {}}
+
+        if not parsed_data.get('transactions') and not parsed_data.get('category_budgets'):
+            return jsonify({
+                'success': False,
+                'error': 'No readable transaction or category budget rows found in this sheet. Ensure column headers include Date, Item/Description, and Amount.'
+            }), 400
+
+        result = implement_parsed_book(
+            parsed_data,
+            family_id=family.id,
+            default_user=current_user,
+            apply_budgets=True,
+            sync_members=True,
+            skip_transfers=True
+        )
+
+        family.google_sheet_url = sheet_url
+        family.last_sheet_sync_at = datetime.utcnow()
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'imported': result['count'],
+            'skipped_duplicates': result['skipped_duplicates'],
+            'total_amount': result['total_amount'],
+            'message': result['message']
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception('Google Sheet pull sync failed')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/sync/google-sheet/settings', methods=['POST'])
+@login_required
+def api_sync_google_sheet_settings():
+    """Update Google Sheet configuration URLs and regenerate sync tokens."""
+    family = current_user.family
+    if not family:
+        return jsonify({'success': False, 'error': 'Please join a family first.'}), 400
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    action = payload.get('action')
+
+    if action == 'regenerate_token':
+        family.google_sheet_sync_token = secrets.token_hex(16)
+        db.session.commit()
+        return jsonify({'success': True, 'token': family.google_sheet_sync_token, 'message': 'New sync token generated.'})
+
+    sheet_url = payload.get('google_sheet_url')
+    webhook_url = payload.get('google_sheet_webhook_url')
+
+    if sheet_url is not None:
+        family.google_sheet_url = sheet_url.strip()
+    if webhook_url is not None:
+        family.google_sheet_webhook_url = webhook_url.strip()
+
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'message': 'Google Sheet sync settings saved successfully!',
+        'google_sheet_url': family.google_sheet_url,
+        'google_sheet_webhook_url': family.google_sheet_webhook_url,
+        'token': family.google_sheet_sync_token
+    })
+
+
+@app.route('/api/sync/google-sheet/script-template')
+@login_required
+def api_sync_google_sheet_script_template():
+    """Generates ready-to-copy Google Apps Script code pre-filled with this family's token."""
+    family = current_user.family
+    if not family:
+        return jsonify({'error': 'No family found'}), 400
+
+    # Build server endpoint URL from request host
+    server_root = request.host_url.rstrip('/')
+    webhook_endpoint = f"{server_root}/api/sync/google-sheet"
+    token = family.google_sheet_sync_token or 'YOUR_SECRET_TOKEN'
+
+    script_code = f"""/**
+ * ==============================================================================
+ * VAULTSYNC 2-WAY LIVE SYNC SCRIPT
+ * Family: {family.name}
+ * ==============================================================================
+ * INSTRUCTIONS:
+ * 1. In your Google Sheet, click 'Extensions' -> 'Apps Script'
+ * 2. Delete any existing code, paste this entire file, and click 'Save' (Ctrl+S)
+ * 3. Click 'Deploy' -> 'New deployment' -> Select type 'Web app'
+ *    - Description: VaultSync Bridge
+ *    - Execute as: Me
+ *    - Who has access: Anyone
+ * 4. Click 'Deploy' and copy the resulting Web App URL.
+ * 5. Paste the Web App URL into VaultSync under 'Google Sheets Live Sync' settings!
+ * ==============================================================================
+ */
+
+const VAULTSYNC_WEBHOOK_URL = "{webhook_endpoint}";
+const VAULTSYNC_SYNC_TOKEN = "{token}";
+
+function onOpen() {{
+  SpreadsheetApp.getUi()
+    .createMenu('⚡ VaultSync')
+    .addItem('🔄 Sync Sheet to VaultSync', 'syncSheetToVaultSync')
+    .addItem('ℹ️ Test Connection', 'testConnection')
+    .addToUi();
+}}
+
+// 1. RECEIVE FROM VAULTSYNC -> Append new expense to active Google Sheet
+function doPost(e) {{
+  try {{
+    const data = JSON.parse(e.postData.contents);
+    if (data.token !== VAULTSYNC_SYNC_TOKEN) {{
+      return ContentService.createTextOutput(JSON.stringify({{error: "Unauthorized: Invalid token"}})).setMimeType(ContentService.MimeType.JSON);
+    }}
+    if (data.action === "add_expense" && data.expense) {{
+      const exp = data.expense;
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+      sheet.appendRow([
+        exp.date,
+        exp.item_name,
+        exp.category || "Other",
+        exp.amount,
+        exp.member || "Family",
+        exp.description || ""
+      ]);
+      return ContentService.createTextOutput(JSON.stringify({{success: true}})).setMimeType(ContentService.MimeType.JSON);
+    }}
+    return ContentService.createTextOutput(JSON.stringify({{success: false, message: "No action performed"}})).setMimeType(ContentService.MimeType.JSON);
+  }} catch (err) {{
+    return ContentService.createTextOutput(JSON.stringify({{error: err.message}})).setMimeType(ContentService.MimeType.JSON);
+  }}
+}}
+
+// 2. PUSH FROM GOOGLE SHEET -> Sync all rows to VaultSync (deduplicated automatically)
+function syncSheetToVaultSync() {{
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const data = sheet.getDataRange().getValues();
+  if (!data || data.length <= 1) {{
+    SpreadsheetApp.getUi().alert("Your sheet is empty or contains only the header row.");
+    return;
+  }}
+  const payload = {{
+    token: VAULTSYNC_SYNC_TOKEN,
+    rows: data
+  }};
+  const options = {{
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  }};
+  try {{
+    const response = UrlFetchApp.fetch(VAULTSYNC_WEBHOOK_URL + "?token=" + VAULTSYNC_SYNC_TOKEN, options);
+    const result = JSON.parse(response.getContentText());
+    if (result.success) {{
+      SpreadsheetApp.getUi().alert("VaultSync Sync Successful!\\n\\n" + (result.message || "Ledger synchronized."));
+    }} else {{
+      SpreadsheetApp.getUi().alert("Sync Warning: " + (result.message || result.error));
+    }}
+  }} catch (err) {{
+    SpreadsheetApp.getUi().alert("Failed to connect to VaultSync: " + err.message);
+  }}
+}}
+
+function testConnection() {{
+  try {{
+    const response = UrlFetchApp.fetch(VAULTSYNC_WEBHOOK_URL + "?token=" + VAULTSYNC_SYNC_TOKEN, {{muteHttpExceptions: true}});
+    const result = JSON.parse(response.getContentText());
+    SpreadsheetApp.getUi().alert(result.success ? "Connected to VaultSync!\\n" + result.message : "Error: " + result.error);
+  }} catch (err) {{
+    SpreadsheetApp.getUi().alert("Connection failed: " + err.message);
+  }}
+}}
+"""
+    return jsonify({'success': True, 'code': script_code, 'token': token, 'webhook_url': webhook_endpoint})
 
 
 
