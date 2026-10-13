@@ -1,0 +1,757 @@
+{% extends "_layout.html" %}
+
+{% block title %}AI Financial Advisor &amp; Chatbot Studio - VaultSync{% endblock %}
+
+{% block extra_head %}
+<!-- Markdown and Sanitization libraries for ChatGPT/Gemini style tables & formatting -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+    /* ChatGPT / Gemini style split workspace */
+    .chat-studio-container {
+        display: flex;
+        height: calc(100vh - 5.5rem);
+        min-height: 580px;
+        background: #ffffff;
+        border-radius: 1.25rem;
+        overflow: hidden;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+    }
+    .dark .chat-studio-container {
+        background: #0f172a;
+        border-color: rgba(51, 65, 85, 0.6);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Threads Sidebar */
+    .chat-threads-sidebar {
+        width: 290px;
+        flex-shrink: 0;
+        background: #f8fafc;
+        border-right: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.25s ease;
+    }
+    .dark .chat-threads-sidebar {
+        background: #111827;
+        border-color: #1e293b;
+    }
+
+    /* Main Chat Stream */
+    .chat-stream-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-width: 0;
+        background: #ffffff;
+        position: relative;
+    }
+    .dark .chat-stream-main {
+        background: #0b1120;
+    }
+
+    /* Markdown Table Styling */
+    .prose-chat table {
+        width: 100%;
+        margin: 1rem 0;
+        border-collapse: collapse;
+        font-size: 0.825rem;
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .prose-chat th {
+        background: #f1f5f9;
+        color: #1e293b;
+        font-weight: 700;
+        text-align: left;
+        padding: 0.65rem 0.85rem;
+        border-bottom: 2px solid #cbd5e1;
+        white-space: nowrap;
+    }
+    .dark .prose-chat th {
+        background: #1e293b;
+        color: #f1f5f9;
+        border-color: #334155;
+    }
+    .prose-chat td {
+        padding: 0.6rem 0.85rem;
+        border-bottom: 1px solid #e2e8f0;
+        color: #334155;
+    }
+    .dark .prose-chat td {
+        border-color: #1e293b;
+        color: #cbd5e1;
+    }
+    .prose-chat tr:nth-child(even) td {
+        background: #f8fafc/50;
+    }
+    .dark .prose-chat tr:nth-child(even) td {
+        background: #131d33/40;
+    }
+    .prose-chat ul, .prose-chat ol {
+        margin: 0.6rem 0;
+        padding-left: 1.4rem;
+    }
+    .prose-chat li {
+        margin: 0.25rem 0;
+    }
+    .prose-chat strong {
+        color: #0f172a;
+        font-weight: 700;
+    }
+    .dark .prose-chat strong {
+        color: #f8fafc;
+    }
+    .prose-chat p {
+        margin-bottom: 0.65rem;
+        line-height: 1.55;
+    }
+    .prose-chat p:last-child {
+        margin-bottom: 0;
+    }
+
+    /* Ghost mode glowing effect */
+    .ghost-mode-active {
+        border-color: #a855f7 !important;
+        background: rgba(168, 85, 247, 0.08) !important;
+    }
+
+    /* Responsive Mobile drawer */
+    @media (max-width: 768px) {
+        .chat-threads-sidebar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 40;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+            transform: translateX(-100%);
+        }
+        .chat-threads-sidebar.open {
+            transform: translateX(0);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-studio-container">
+    <!-- Left Sidebar: Conversation Threads & Controls -->
+    <aside class="chat-threads-sidebar" id="threadsSidebar">
+        <!-- New Chat & Disappearing Toggle Header -->
+        <div class="p-3.5 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div class="flex items-center gap-2">
+                <button type="button" id="btnNewChat" class="flex-1 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition shadow-sm active:scale-95">
+                    <i class="fas fa-plus"></i>
+                    <span>New Chat</span>
+                </button>
+                <button type="button" id="btnCloseSidebarMobile" class="md:hidden w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Disappearing / Ephemeral Message Mode Switch -->
+            <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 transition" id="disappearingModeCard">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-6 h-6 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
+                            <i class="fas fa-ghost"></i>
+                        </span>
+                        <div class="min-w-0">
+                            <div class="text-[11px] font-bold text-slate-800 dark:text-slate-200 leading-tight">Disappearing Mode</div>
+                            <div class="text-[9.5px] text-slate-500 dark:text-slate-400 truncate" id="disappearingSubtext">Messages vanish on refresh</div>
+                        </div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="chkDisappearingMode" class="sr-only peer">
+                        <div class="w-8 h-4.5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Threads List Grouped by Period -->
+        <div class="flex-1 overflow-y-auto p-2.5 space-y-4" id="threadsListContainer">
+            <div class="text-center py-8 text-xs text-slate-400">
+                <i class="fas fa-spinner fa-spin text-indigo-500 mb-2 text-base"></i>
+                <div>Loading conversations...</div>
+            </div>
+        </div>
+
+        <!-- Sidebar Footer: Clear History & Info -->
+        <div class="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+            <button type="button" id="btnClearAllChats" class="text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 text-[11px] font-medium flex items-center gap-1.5 transition">
+                <i class="fas fa-trash-can text-[10px]"></i>
+                <span>Clear All Chats</span>
+            </button>
+            <span class="text-[10px] text-slate-400">VaultSync AI</span>
+        </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="chat-stream-main">
+        <!-- Top Chat Header -->
+        <header class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white/80 dark:bg-slate-900/80 backdrop-blur z-10">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <button type="button" id="btnOpenSidebarMobile" class="md:hidden w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-sm shadow-sm flex-shrink-0">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-sm font-bold text-slate-900 dark:text-white truncate" id="activeChatTitle">New Financial Consultation</h2>
+                        <button type="button" id="btnRenameTitle" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs" title="Rename conversation">
+                            <i class="fas fa-pen text-[10px]"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Ledger Grounded
+                        </span>
+                        <span>&bull;</span>
+                        <span id="headerModeBadge" class="text-slate-500 dark:text-slate-400">History Saved</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Header Actions -->
+            <div class="flex items-center gap-2">
+                <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    <i class="fas fa-shield-halved text-indigo-500 text-[10px]"></i>
+                    <span>Read-Only Advisor</span>
+                </div>
+                <button type="button" id="btnDeleteCurrentThread" class="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-center transition" title="Delete this conversation">
+                    <i class="fas fa-trash-can text-xs"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Disappearing Mode Alert Banner (shown only when active) -->
+        <div id="disappearingAlertBanner" class="hidden px-4 py-2 bg-purple-50 dark:bg-purple-950/40 border-b border-purple-200 dark:border-purple-800/50 text-purple-800 dark:text-purple-300 text-xs flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-ghost text-purple-600 dark:text-purple-400"></i>
+                <span><strong>Disappearing Mode Active:</strong> Messages and responses are analyzed in real-time but will NOT be saved to database history.</span>
+            </div>
+            <button type="button" id="btnDisableDisappearingBanner" class="text-purple-600 dark:text-purple-400 hover:underline text-[11px] font-semibold">Turn Off</button>
+        </div>
+
+        <!-- Chat Stream Messages Container -->
+        <div class="flex-1 overflow-y-auto px-4 py-6 space-y-6" id="chatMessagesStream">
+            <!-- Empty State Starter -->
+            <div id="chatEmptyState" class="max-w-2xl mx-auto py-8 text-center space-y-6">
+                <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white flex items-center justify-center text-2xl shadow-lg shadow-indigo-500/20">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">How can I guide your finances today?</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">
+                        I am your dedicated VaultSync Financial Advisor. I have full read-only access to your real spending, monthly caps, and daily burn rates. I calculate scenario plans, verify numbers, and guide you without ever altering your records.
+                    </p>
+                </div>
+
+                <!-- Scenario Suggestion Chips -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left pt-2">
+                    <button type="button" class="scenario-prompt-chip p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border border-slate-200 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition text-xs space-y-1 group active:scale-[0.99]" data-prompt="I have 3 guests incoming next week. I need a budget plan to balance out my expenses to minimum while hosting them properly.">
+                        <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex items-center gap-1.5">
+                            <i class="fas fa-users text-purple-500"></i>
+                            <span>Incoming Guests Budget Plan</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">Balance hosting hospitality against flexible spending caps to minimize total cost.</div>
+                    </button>
+
+                    <button type="button" class="scenario-prompt-chip p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border border-slate-200 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition text-xs space-y-1 group active:scale-[0.99]" data-prompt="I want to buy an iPhone next month worth ₹80,000. The downpayment is ₹20,000 and the monthly EMI is ₹6,500. Analyze my budget and make a detailed plan how to absorb this without deficit.">
+                        <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex items-center gap-1.5">
+                            <i class="fas fa-mobile-screen-button text-blue-500"></i>
+                            <span>iPhone Purchase &amp; EMI Plan</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">Verify downpayment safety and map out exact monthly category cuts to fund the EMI.</div>
+                    </button>
+
+                    <button type="button" class="scenario-prompt-chip p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border border-slate-200 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition text-xs space-y-1 group active:scale-[0.99]" data-prompt="Analyze all our records and spending patterns this month. Where are we overspending, and what are 3 actionable ways to save money?">
+                        <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex items-center gap-1.5">
+                            <i class="fas fa-chart-pie text-emerald-500"></i>
+                            <span>Pattern &amp; Category Analysis</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">Detect spending spikes and identify high-burn categories needing attention.</div>
+                    </button>
+
+                    <button type="button" class="scenario-prompt-chip p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border border-slate-200 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition text-xs space-y-1 group active:scale-[0.99]" data-prompt="Calculate my safe daily spend for the remaining days of this month based on our current remaining budget and pending planned bills.">
+                        <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 flex items-center gap-1.5">
+                            <i class="fas fa-calculator text-amber-500"></i>
+                            <span>Safe Daily Spend Calculator</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">Find out your true daily spending cushion to finish the month safely.</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages list dynamically injected here -->
+            <div id="messagesList" class="space-y-6 max-w-3xl mx-auto"></div>
+
+            <!-- Typing indicator -->
+            <div id="typingIndicator" class="hidden max-w-3xl mx-auto flex items-start gap-3">
+                <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs shadow-sm flex-shrink-0">
+                    <i class="fas fa-brain fa-spin"></i>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/50 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <span class="inline-flex gap-1">
+                        <span class="w-2 h-2 rounded-full bg-indigo-500 animate-bounce"></span>
+                        <span class="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:0.2s]"></span>
+                        <span class="w-2 h-2 rounded-full bg-pink-500 animate-bounce [animation-delay:0.4s]"></span>
+                    </span>
+                    <span>Analyzing ledger, verifying arithmetic &amp; structuring plan...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <footer class="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <div class="max-w-3xl mx-auto space-y-2">
+                <form id="chatForm" class="relative flex items-end gap-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-2 transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
+                    <textarea id="chatInput" rows="1" placeholder="Ask about your budget, scenario plans (e.g. 3 guests visiting, iPhone EMI, cut spend)..." class="flex-1 max-h-36 min-h-[2.5rem] p-2 bg-transparent border-0 focus:ring-0 focus:outline-none text-xs text-slate-900 dark:text-slate-100 resize-none leading-relaxed"></textarea>
+
+                    <div class="flex items-center gap-1.5 pb-0.5">
+                        <!-- Quick Disappearing mode toggle button inside input -->
+                        <button type="button" id="btnInputGhostToggle" class="w-8 h-8 rounded-xl text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center justify-center transition" title="Toggle Disappearing Mode">
+                            <i class="fas fa-ghost text-xs"></i>
+                        </button>
+                        <!-- Submit button -->
+                        <button type="submit" id="btnSendMessage" class="w-8 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center text-xs transition shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none" disabled>
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                    </div>
+                </form>
+
+                <div class="flex items-center justify-between px-1 text-[10.5px] text-slate-400 dark:text-slate-500">
+                    <div class="flex items-center gap-1">
+                        <i class="fas fa-info-circle text-[9.5px]"></i>
+                        <span>Advisory only: Guides and plans without altering records directly.</span>
+                    </div>
+                    <span>Press Enter to send &bull; Shift+Enter for new line</span>
+                </div>
+            </div>
+        </footer>
+    </main>
+</div>
+
+<script>
+(() => {
+    // State
+    let activeThreadId = null;
+    let isDisappearing = false;
+    let ephemeralHistory = [];
+    let isThinking = false;
+
+    // Elements
+    const threadsSidebar = document.getElementById('threadsSidebar');
+    const threadsListContainer = document.getElementById('threadsListContainer');
+    const btnNewChat = document.getElementById('btnNewChat');
+    const btnOpenSidebarMobile = document.getElementById('btnOpenSidebarMobile');
+    const btnCloseSidebarMobile = document.getElementById('btnCloseSidebarMobile');
+    const chkDisappearingMode = document.getElementById('chkDisappearingMode');
+    const btnInputGhostToggle = document.getElementById('btnInputGhostToggle');
+    const disappearingAlertBanner = document.getElementById('disappearingAlertBanner');
+    const btnDisableDisappearingBanner = document.getElementById('btnDisableDisappearingBanner');
+    const disappearingModeCard = document.getElementById('disappearingModeCard');
+    const headerModeBadge = document.getElementById('headerModeBadge');
+    const activeChatTitle = document.getElementById('activeChatTitle');
+    const btnRenameTitle = document.getElementById('btnRenameTitle');
+    const btnDeleteCurrentThread = document.getElementById('btnDeleteCurrentThread');
+    const btnClearAllChats = document.getElementById('btnClearAllChats');
+    const chatMessagesStream = document.getElementById('chatMessagesStream');
+    const chatEmptyState = document.getElementById('chatEmptyState');
+    const messagesList = document.getElementById('messagesList');
+    const typingIndicator = document.getElementById('typingIndicator');
+    const chatForm = document.getElementById('chatForm');
+    const chatInput = document.getElementById('chatInput');
+    const btnSendMessage = document.getElementById('btnSendMessage');
+
+    // Setup marked parser
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            gfm: true,
+            breaks: true,
+            headerIds: false,
+            mangle: false
+        });
+    }
+
+    function renderMarkdown(content) {
+        if (!content) return '';
+        if (typeof marked !== 'undefined') {
+            const rawHtml = marked.parse(content);
+            if (typeof DOMPurify !== 'undefined') {
+                return DOMPurify.sanitize(rawHtml);
+            }
+            return rawHtml;
+        }
+        // Fallback simple escape
+        const div = document.createElement('div');
+        div.textContent = content;
+        return div.innerHTML.replace(/\n/g, '<br>');
+    }
+
+    // Toggle Disappearing Mode
+    function setDisappearingMode(enable) {
+        isDisappearing = Boolean(enable);
+        chkDisappearingMode.checked = isDisappearing;
+
+        if (isDisappearing) {
+            disappearingModeCard.classList.add('ghost-mode-active');
+            btnInputGhostToggle.classList.add('text-purple-600', 'bg-purple-100', 'dark:bg-purple-900/40');
+            disappearingAlertBanner.classList.remove('hidden');
+            headerModeBadge.innerHTML = '<span class="text-purple-600 dark:text-purple-400 font-bold"><i class="fas fa-ghost mr-1"></i>Disappearing Mode</span>';
+        } else {
+            disappearingModeCard.classList.remove('ghost-mode-active');
+            btnInputGhostToggle.classList.remove('text-purple-600', 'bg-purple-100', 'dark:bg-purple-900/40');
+            disappearingAlertBanner.classList.add('hidden');
+            headerModeBadge.textContent = 'History Saved';
+        }
+    }
+
+    chkDisappearingMode.addEventListener('change', (e) => setDisappearingMode(e.target.checked));
+    btnInputGhostToggle.addEventListener('click', () => setDisappearingMode(!isDisappearing));
+    btnDisableDisappearingBanner.addEventListener('click', () => setDisappearingMode(false));
+
+    // Mobile sidebar toggle
+    btnOpenSidebarMobile.addEventListener('click', () => threadsSidebar.classList.add('open'));
+    btnCloseSidebarMobile.addEventListener('click', () => threadsSidebar.classList.remove('open'));
+
+    // Input autosize and submit enable
+    chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
+        btnSendMessage.disabled = !chatInput.value.trim() || isThinking;
+    });
+
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (!btnSendMessage.disabled) {
+                chatForm.requestSubmit();
+            }
+        }
+    });
+
+    // Load Threads
+    async function loadThreads() {
+        try {
+            const res = await fetch('/api/chat/threads');
+            if (!res.ok) throw new Error('Failed to load threads');
+            const data = await res.json();
+            renderThreadsList(data.threads || []);
+        } catch (err) {
+            threadsListContainer.innerHTML = `<div class="p-4 text-center text-xs text-rose-500">Could not load chats: ${err.message}</div>`;
+        }
+    }
+
+    function renderThreadsList(threads) {
+        if (!threads.length) {
+            threadsListContainer.innerHTML = `
+                <div class="text-center py-8 text-xs text-slate-400 dark:text-slate-500">
+                    <i class="fas fa-comments text-2xl mb-2 opacity-40"></i>
+                    <div>No conversations yet</div>
+                    <div class="text-[10px] text-slate-400 mt-1">Start a new chat to begin</div>
+                </div>
+            `;
+            return;
+        }
+
+        // Group by group label
+        const groups = {};
+        threads.forEach(t => {
+            const grp = t.group || 'Older';
+            if (!groups[grp]) groups[grp] = [];
+            groups[grp].push(t);
+        });
+
+        let html = '';
+        const order = ['Today', 'Yesterday', 'Previous 7 Days', 'Older'];
+        order.forEach(grpName => {
+            if (!groups[grpName] || !groups[grpName].length) return;
+            html += `
+                <div class="space-y-1">
+                    <div class="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">${grpName}</div>
+                    <div class="space-y-0.5">
+            `;
+            groups[grpName].forEach(t => {
+                const isActive = activeThreadId === t.id;
+                html += `
+                    <div class="group relative flex items-center justify-between p-2 rounded-xl text-xs transition cursor-pointer ${isActive ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800/40' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60'}" data-thread-id="${t.id}">
+                        <div class="flex items-center gap-2 min-w-0 flex-1" onclick="switchThread(${t.id})">
+                            <i class="fas fa-message text-[11px] ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}"></i>
+                            <span class="truncate">${t.title || 'Untitled Chat'}</span>
+                        </div>
+                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                            <button type="button" class="w-6 h-6 rounded-lg text-slate-400 hover:text-rose-500 flex items-center justify-center text-[10px]" title="Delete chat" onclick="deleteThread(${t.id}, event)">
+                                <i class="fas fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+
+        threadsListContainer.innerHTML = html;
+    }
+
+    // Switch Thread
+    window.switchThread = async function(threadId) {
+        if (isThinking) return;
+        activeThreadId = threadId;
+        threadsSidebar.classList.remove('open');
+        messagesList.innerHTML = '';
+        chatEmptyState.classList.add('hidden');
+        typingIndicator.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/chat/threads/${threadId}`);
+            if (!res.ok) throw new Error('Failed to load thread');
+            const data = await res.json();
+
+            activeChatTitle.textContent = data.thread.title || 'Chat';
+            typingIndicator.classList.add('hidden');
+
+            const msgs = data.messages || [];
+            if (!msgs.length) {
+                chatEmptyState.classList.remove('hidden');
+            } else {
+                msgs.forEach(m => appendMessage(m.role, m.content, false, m.created_at));
+            }
+            scrollToBottom();
+            loadThreads();
+        } catch (err) {
+            typingIndicator.classList.add('hidden');
+            messagesList.innerHTML = `<div class="p-4 text-center text-xs text-rose-500">Error loading messages: ${err.message}</div>`;
+        }
+    };
+
+    // New Chat
+    btnNewChat.addEventListener('click', () => {
+        if (isThinking) return;
+        activeThreadId = null;
+        messagesList.innerHTML = '';
+        activeChatTitle.textContent = 'New Financial Consultation';
+        chatEmptyState.classList.remove('hidden');
+        threadsSidebar.classList.remove('open');
+        chatInput.value = '';
+        chatInput.focus();
+        loadThreads();
+    });
+
+    // Delete Thread
+    window.deleteThread = async function(threadId, event) {
+        if (event) event.stopPropagation();
+        if (!confirm('Are you sure you want to delete this chat conversation?')) return;
+
+        try {
+            const res = await fetch(`/api/chat/threads/${threadId}`, { method: 'DELETE' });
+            if (res.ok) {
+                if (activeThreadId === threadId) {
+                    btnNewChat.click();
+                } else {
+                    loadThreads();
+                }
+            }
+        } catch (err) {
+            alert('Failed to delete chat: ' + err.message);
+        }
+    };
+
+    btnDeleteCurrentThread.addEventListener('click', () => {
+        if (!activeThreadId) {
+            btnNewChat.click();
+            return;
+        }
+        deleteThread(activeThreadId);
+    });
+
+    // Rename Thread
+    btnRenameTitle.addEventListener('click', async () => {
+        if (!activeThreadId) return;
+        const current = activeChatTitle.textContent.trim();
+        const next = prompt('Rename this chat:', current);
+        if (next && next.trim() && next.trim() !== current) {
+            try {
+                const res = await fetch(`/api/chat/threads/${activeThreadId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: next.trim() })
+                });
+                if (res.ok) {
+                    activeChatTitle.textContent = next.trim();
+                    loadThreads();
+                }
+            } catch (err) {
+                alert('Could not rename chat: ' + err.message);
+            }
+        }
+    });
+
+    // Clear All Chats
+    btnClearAllChats.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to permanently delete ALL conversation history?')) return;
+        try {
+            const res = await fetch('/api/chat/clear-all', { method: 'POST' });
+            if (res.ok) {
+                btnNewChat.click();
+                loadThreads();
+            }
+        } catch (err) {
+            alert('Failed to clear chats: ' + err.message);
+        }
+    });
+
+    // Scenario prompt chips click
+    document.querySelectorAll('.scenario-prompt-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const promptText = chip.getAttribute('data-prompt');
+            if (promptText) {
+                chatInput.value = promptText;
+                chatInput.dispatchEvent(new Event('input'));
+                chatInput.focus();
+            }
+        });
+    });
+
+    // Message append helper
+    function appendMessage(role, content, isEphemeral = false, timestamp = null) {
+        chatEmptyState.classList.add('hidden');
+        const wrap = document.createElement('div');
+        wrap.className = `flex gap-3 ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+        const isUser = role === 'user';
+        const formattedTime = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        if (isUser) {
+            wrap.innerHTML = `
+                <div class="max-w-[85%] sm:max-w-[75%] space-y-1">
+                    <div class="p-3.5 rounded-2xl rounded-tr-sm bg-indigo-600 text-white text-xs leading-relaxed shadow-sm">
+                        ${content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}
+                    </div>
+                    <div class="text-[10px] text-right text-slate-400 pr-1 flex items-center justify-end gap-1.5">
+                        ${isEphemeral ? '<span class="text-purple-500 font-semibold"><i class="fas fa-ghost"></i> ephemeral</span> &bull;' : ''}
+                        <span>${formattedTime}</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            const htmlContent = renderMarkdown(content);
+            const msgId = 'msg_' + Math.random().toString(36).substring(2, 9);
+            wrap.innerHTML = `
+                <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs shadow-sm flex-shrink-0 mt-0.5">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <div class="max-w-[90%] sm:max-w-[85%] space-y-1">
+                    <div class="p-4 rounded-2xl rounded-tl-sm bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-xs text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm prose-chat" id="${msgId}">
+                        ${htmlContent}
+                    </div>
+                    <div class="text-[10px] text-slate-400 pl-1 flex items-center gap-2">
+                        <span>${formattedTime}</span>
+                        ${isEphemeral ? '&bull; <span class="text-purple-500 font-semibold"><i class="fas fa-ghost"></i> ephemeral (unsaved)</span>' : ''}
+                        &bull;
+                        <button type="button" class="hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition" onclick="copyMessageText('${msgId}', this)">
+                            <i class="fas fa-copy text-[9px]"></i> Copy
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        messagesList.appendChild(wrap);
+        scrollToBottom();
+    }
+
+    window.copyMessageText = function(elementId, btn) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        const text = el.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check text-[9px] text-emerald-500"></i> Copied!';
+            setTimeout(() => { btn.innerHTML = original; }, 2000);
+        });
+    };
+
+    function scrollToBottom() {
+        chatMessagesStream.scrollTop = chatMessagesStream.scrollHeight;
+    }
+
+    // Submit Chat Message
+    chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text || isThinking) return;
+
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        btnSendMessage.disabled = true;
+        isThinking = true;
+
+        // Append user message
+        appendMessage('user', text, isDisappearing);
+        typingIndicator.classList.remove('hidden');
+        scrollToBottom();
+
+        if (isDisappearing) {
+            ephemeralHistory.push({ role: 'user', content: text });
+        }
+
+        try {
+            const res = await fetch('/api/chat/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: text,
+                    thread_id: activeThreadId,
+                    disappearing: isDisappearing,
+                    client_history: isDisappearing ? ephemeralHistory : []
+                })
+            });
+
+            const data = await res.json();
+            typingIndicator.classList.add('hidden');
+
+            if (res.ok && data.success) {
+                appendMessage('assistant', data.reply, isDisappearing);
+                if (isDisappearing) {
+                    ephemeralHistory.push({ role: 'assistant', content: data.reply });
+                } else {
+                    if (data.thread_id) {
+                        activeThreadId = data.thread_id;
+                        if (data.thread_title) {
+                            activeChatTitle.textContent = data.thread_title;
+                        }
+                    }
+                    loadThreads();
+                }
+            } else {
+                appendMessage('assistant', data.reply || 'Sorry, I encountered an error answering your question. Please verify your connection.', isDisappearing);
+            }
+        } catch (err) {
+            typingIndicator.classList.add('hidden');
+            appendMessage('assistant', 'Network error while contacting the advisor. Please try again.', isDisappearing);
+        } finally {
+            isThinking = false;
+            btnSendMessage.disabled = false;
+            chatInput.focus();
+            scrollToBottom();
+        }
+    });
+
+    // Initial load
+    loadThreads();
+})();
+</script>
+{% endblock %}

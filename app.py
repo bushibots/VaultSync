@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from io import StringIO
+from collections import defaultdict, Counter
 from datetime import date, datetime, timedelta
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import joinedload
@@ -30,6 +31,7 @@ from models import (
     AISavingsForecast,
     BudgetReport,
     ChatbotMessage,
+    ChatThread,
     AIExpenseException,
     AuditLog,
 )
@@ -401,6 +403,33 @@ def repair_schema():
                 'ALTER TABLE category ADD COLUMN is_color_auto BOOLEAN NOT NULL DEFAULT 0'
             ))
             added.append('category.is_color_auto')
+
+        if not inspector.has_table('chat_thread'):
+            connection.execute(text("""
+                CREATE TABLE chat_thread (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    family_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    title VARCHAR(150) NOT NULL DEFAULT 'New Chat',
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(family_id) REFERENCES family (id),
+                    FOREIGN KEY(user_id) REFERENCES user (id)
+                )
+            """))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_thread_family_id ON chat_thread (family_id)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_thread_user_id ON chat_thread (user_id)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_thread_updated_at ON chat_thread (updated_at)'))
+            added.append('chat_thread')
+
+        chatbot_msg_cols = {
+            column['name']
+            for column in inspector.get_columns('chatbot_message')
+        } if inspector.has_table('chatbot_message') else set()
+        if 'thread_id' not in chatbot_msg_cols:
+            connection.execute(text('ALTER TABLE chatbot_message ADD COLUMN thread_id INTEGER REFERENCES chat_thread(id)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chatbot_message_thread_id ON chatbot_message (thread_id)'))
+            added.append('chatbot_message.thread_id')
 
     if added:
         print(f"Added missing schema items: {', '.join(added)}")
@@ -1276,6 +1305,76 @@ def call_gemini_json(prompt, response_schema):
     raise ValueError('Gemini API failed for all configured keys: ' + ' | '.join(errors))
 
 
+def extract_gemini_raw_text(response_payload):
+    candidates = response_payload.get('candidates') or []
+    if not candidates:
+        raise ValueError('Gemini returned no candidates.')
+    parts = (candidates[0].get('content') or {}).get('parts') or []
+    text_parts = [part.get('text', '') for part in parts if part.get('text')]
+    if not text_parts:
+        raise ValueError('Gemini returned no text content.')
+    return ''.join(text_parts).strip()
+
+
+def call_gemini_text(prompt, system_instruction=None, temperature=0.25):
+    api_keys = next_gemini_key_order()
+    if not api_keys:
+        raise ValueError('No Gemini API key is set. Configure GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3, or GEMINI_API_KEYS.')
+
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+    payload = {
+        'contents': [
+            {
+                'parts': [
+                    {'text': prompt}
+                ]
+            }
+        ],
+        'generationConfig': {
+            'temperature': temperature,
+            'maxOutputTokens': 1800,
+            'thinkingConfig': {'thinkingBudget': 0}
+        }
+    }
+    if system_instruction:
+        payload['systemInstruction'] = {
+            'parts': [{'text': system_instruction}]
+        }
+
+    body = json.dumps(payload).encode('utf-8')
+    errors = []
+
+    for index, api_key in enumerate(api_keys, start=1):
+        request_obj = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                'Content-Type': 'application/json',
+                'x-goog-api-key': api_key,
+            },
+            method='POST'
+        )
+
+        try:
+            with urllib.request.urlopen(request_obj, timeout=45) as response:
+                response_payload = json.loads(response.read().decode('utf-8'))
+            return extract_gemini_raw_text(response_payload)
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode('utf-8', errors='replace')
+            errors.append(f'key {index}: HTTP {exc.code} {error_body[:220]}')
+            if not should_try_next_gemini_key(exc):
+                break
+        except urllib.error.URLError as exc:
+            errors.append(f'key {index}: network {exc.reason}')
+            if not should_try_next_gemini_key(exc):
+                break
+        except json.JSONDecodeError as exc:
+            errors.append(f'key {index}: invalid JSON response {exc}')
+            break
+
+    raise ValueError('Gemini API failed for all configured keys: ' + ' | '.join(errors))
+
+
 CHATBOT_FORBIDDEN_TERMS = {
     'password', 'email', 'login', 'logout', 'role', 'promote', 'demote',
     'member', 'user', 'invite', 'archive family', 'delete family',
@@ -1356,14 +1455,15 @@ def serialize_chatbot_message(message):
     }
 
 
-def save_chatbot_message(role, content, actions=None, results=None):
+def save_chatbot_message(role, content, thread_id=None, actions=None, results=None):
     if not current_user.is_authenticated or not current_user.family_id:
         return None
     message = ChatbotMessage(
         family_id=current_user.family_id,
         user_id=current_user.id,
+        thread_id=thread_id,
         role=role,
-        content=str(content or '')[:6000],
+        content=str(content or '')[:15000],
         actions_json=json.dumps(actions or []),
         results_json=json.dumps(results or []),
     )
@@ -1371,87 +1471,207 @@ def save_chatbot_message(role, content, actions=None, results=None):
     return message
 
 
-def chatbot_context_payload(user):
+def generate_thread_title(message):
+    cleaned = re.sub(r'[\r\n\t]+', ' ', str(message or '')).strip()
+    cleaned_lower = cleaned.lower()
+    for prefix in ('can you ', 'please ', 'i want to ', 'i need to ', 'how do i ', 'make a plan for ', 'make a plan ', 'give me a plan for '):
+        if cleaned_lower.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+    if not cleaned:
+        return 'Financial Consultation'
+    words = cleaned.split()
+    short = ' '.join(words[:5])
+    if len(short) > 36:
+        short = short[:36].rsplit(' ', 1)[0]
+    return (short.strip().capitalize() or 'Budget Plan')[:40]
+
+
+def chatbot_deep_context_payload(user):
+    import calendar
     today = datetime.utcnow().date()
     month_start = today.replace(day=1)
-    categories = Category.query.filter_by(family_id=user.family_id).order_by(Category.name.asc()).all()
-    recent_expenses = Expense.query.filter_by(
-        family_id=user.family_id
-    ).order_by(Expense.date.desc(), Expense.id.desc()).limit(20).all()
+    _, days_in_month = calendar.monthrange(today.year, today.month)
+    days_passed = today.day
+    days_remaining = max(1, days_in_month - days_passed + 1)
+
+    family = user.family
+    family_id = user.family_id
+
+    finance_setting = MonthlyFinanceSetting.query.filter_by(
+        family_id=family_id, month=today.month, year=today.year
+    ).first()
+    monthly_budget = float(
+        finance_setting.monthly_budget if finance_setting and finance_setting.monthly_budget is not None
+        else (family.monthly_budget if family else 0)
+    )
+    monthly_income = float(
+        finance_setting.monthly_income if finance_setting and finance_setting.monthly_income is not None
+        else (family.monthly_income if family and family.monthly_income is not None else monthly_budget)
+    )
+
+    categories = Category.query.filter_by(family_id=family_id).order_by(Category.name.asc()).all()
+
+    this_month_expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= month_start,
+        Expense.date <= today
+    ).all()
+
+    total_spent_this_month = sum(float(e.amount or 0) for e in this_month_expenses)
+    remaining_budget = max(0.0, monthly_budget - total_spent_this_month)
+    budget_utilization_pct = round((total_spent_this_month / monthly_budget * 100), 1) if monthly_budget > 0 else 0.0
+
+    avg_daily_spent_so_far = round(total_spent_this_month / max(1, days_passed), 2)
+    safe_daily_spend_remaining = round(remaining_budget / days_remaining, 2)
+
+    cat_spent_map = defaultdict(float)
+    for e in this_month_expenses:
+        cat_spent_map[e.category_id] += float(e.amount or 0)
+
+    essential_keywords = {'grocer', 'ration', 'food', 'market', 'vegetable', 'fruit', 'milk', 'utility', 'bill', 'electric', 'water', 'gas', 'wifi', 'rent', 'house', 'medical', 'health', 'doctor', 'medicine', 'fuel', 'petrol', 'diesel', 'transport', 'commute', 'school', 'fee', 'education'}
+    discretionary_keywords = {'dining', 'restaurant', 'cafe', 'swiggy', 'zomato', 'fast food', 'entertain', 'movie', 'game', 'leisure', 'shopping', 'cloth', 'apparel', 'gadget', 'tech', 'electronics', 'amazon', 'trip', 'travel', 'vacation', 'outing', 'snack', 'personal', 'hobby', 'gift'}
+
+    category_data = []
+    for cat in categories:
+        c_spent = round(cat_spent_map.get(cat.id, 0.0), 2)
+        c_limit = round(float(cat.monthly_limit or 0), 2)
+        c_rem = round(c_limit - c_spent, 2)
+        c_name_lower = cat.name.lower()
+
+        is_essential = any(k in c_name_lower for k in essential_keywords)
+        is_discretionary = any(k in c_name_lower for k in discretionary_keywords)
+        if not is_essential and not is_discretionary:
+            is_discretionary = True
+
+        category_data.append({
+            'id': cat.id,
+            'name': cat.name,
+            'monthly_limit': c_limit,
+            'spent_this_month': c_spent,
+            'remaining_cushion': c_rem,
+            'utilization_pct': round((c_spent / c_limit * 100), 1) if c_limit > 0 else (100.0 if c_spent > 0 else 0.0),
+            'status': 'Over Budget' if (c_limit > 0 and c_spent > c_limit) else ('Near Limit' if (c_limit > 0 and c_spent >= 0.8 * c_limit) else 'Normal'),
+            'type': 'Essential' if is_essential else 'Flexible / Discretionary'
+        })
+
     planned_items = ExpectedExpense.query.filter_by(
-        family_id=user.family_id,
+        family_id=family_id,
         month=today.month,
         year=today.year
-    ).order_by(ExpectedExpense.due_day.asc()).limit(30).all()
+    ).order_by(ExpectedExpense.due_day.asc()).all()
+
+    total_unpaid_planned = sum(float(item.amount or 0) for item in planned_items if not item.is_paid)
+    net_disposable_leeway = max(0.0, remaining_budget - total_unpaid_planned)
+
+    thirty_days_ago = today - timedelta(days=30)
+    recent_expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        Expense.date >= thirty_days_ago
+    ).order_by(Expense.date.desc(), Expense.id.desc()).limit(35).all()
+
+    member_spent_map = defaultdict(float)
+    for e in this_month_expenses:
+        username = e.user.username if e.user else 'Unknown'
+        member_spent_map[username] += float(e.amount or 0)
+
+    last_month_num = 12 if today.month == 1 else today.month - 1
+    last_month_year = today.year - 1 if today.month == 1 else today.year
+    lm_start = datetime(last_month_year, last_month_num, 1).date()
+    _, lm_days = calendar.monthrange(last_month_year, last_month_num)
+    lm_end = datetime(last_month_year, last_month_num, lm_days).date()
+    last_month_spent = db.session.query(func.coalesce(func.sum(Expense.amount), 0.0)).filter(
+        Expense.family_id == family_id,
+        Expense.date >= lm_start,
+        Expense.date <= lm_end
+    ).scalar() or 0.0
 
     return {
-        'today': today.isoformat(),
-        'current_month_start': month_start.isoformat(),
+        'calendar': {
+            'today': today.isoformat(),
+            'month_name': today.strftime('%B %Y'),
+            'day_of_month': days_passed,
+            'days_in_month': days_in_month,
+            'days_remaining': days_remaining,
+        },
         'user': {
-            'id': user.id,
             'username': user.username,
             'role': user.user_type,
             'is_family_manager': is_family_manager(user),
         },
         'family': {
-            'id': user.family_id,
-            'name': user.family.name if user.family else '',
-            'monthly_budget': user.family.monthly_budget if user.family else 0,
+            'name': family.name if family else '',
+            'currency': '₹',
+            'monthly_budget': monthly_budget,
+            'monthly_income': monthly_income,
+            'total_spent_this_month': round(total_spent_this_month, 2),
+            'remaining_budget': round(remaining_budget, 2),
+            'budget_utilization_pct': budget_utilization_pct,
+            'avg_daily_spent_so_far': avg_daily_spent_so_far,
+            'safe_daily_spend_remaining': safe_daily_spend_remaining,
+            'unpaid_planned_bills_total': round(total_unpaid_planned, 2),
+            'net_disposable_leeway': round(net_disposable_leeway, 2),
+            'last_month_total_spent': round(float(last_month_spent), 2)
         },
-        'categories': [
+        'categories': [c for c in category_data if c['monthly_limit'] > 0 or c['spent_this_month'] > 0],
+        'planned_expenses_this_month': [
             {
-                'id': category.id,
-                'name': category.name,
-                'monthly_limit': round(float(category.monthly_limit or 0), 2),
+                'name': p.name,
+                'amount': round(float(p.amount or 0), 2),
+                'category': p.category.name if p.category else 'General',
+                'due_day': p.due_day,
+                'is_paid': bool(p.is_paid),
+                'is_bucket': bool(p.is_bucket)
             }
-            for category in categories
+            for p in planned_items
         ],
-        'recent_expenses': [
+        'member_spending_this_month': {k: round(v, 2) for k, v in member_spent_map.items()},
+        'recent_expenses_sample': [
             {
-                'id': expense.id,
-                'date': expense.date.isoformat(),
-                'item_name': expense.item_name,
-                'amount': round(float(expense.amount or 0), 2),
-                'category': expense.category.name if expense.category else '',
-                'spender': expense.user.username if expense.user else '',
-                'is_mine': expense.user_id == user.id,
+                'date': e.date.isoformat(),
+                'item_name': e.item_name,
+                'amount': round(float(e.amount or 0), 2),
+                'category': e.category.name if e.category else '',
+                'spender': e.user.username if e.user else ''
             }
-            for expense in recent_expenses
-        ],
-        'planned_this_month': [
-            {
-                'id': item.id,
-                'name': item.name,
-                'amount': round(float(item.amount or 0), 2),
-                'category': item.category.name if item.category else '',
-                'month': item.month,
-                'year': item.year,
-                'due_day': item.due_day,
-                'is_bucket': bool(item.is_bucket),
-                'is_paid': bool(item.is_paid),
-            }
-            for item in planned_items
-        ],
-        'recent_chat_history': [
-            serialize_chatbot_message(message)
-            for message in recent_chatbot_messages(user, limit=12)
-        ],
+            for e in recent_expenses[:8]
+        ]
     }
 
 
-def build_chatbot_prompt(message, context_payload):
+def chatbot_context_payload(user):
+    return chatbot_deep_context_payload(user)
+
+
+def build_advisor_system_instruction():
     return (
-        'You are VaultSync Assistant inside a family expense manager.\n'
-        'Answer questions and, when the user asks to change site data, return structured actions.\n'
-        'Never perform or suggest security/account/admin changes: passwords, login, email, roles, users, members, invites, permissions, family archive/delete.\n'
-        'Do not invent IDs. Use IDs only from context. If an edit/delete target is ambiguous, ask a short clarifying question and return no actions.\n'
-        'Use recent_chat_history to understand follow-up requests, but current site data in context is the source of truth for IDs and amounts.\n'
-        'For new expenses, you MUST handle messy, unstructured, natural human language lists seamlessly. Intelligently organize multiple expenses, fix typos, and categorize them accurately.\n'
-        'Parse any relative dates (like "yesterday", "last week", "3 days ago") based on the current date provided in Context JSON. Output dates precisely in YYYY-MM-DD format.\n'
-        'If a requested category is missing, choose the closest existing category and note it in your reply.\n'
-        'Family managers can manage planned expenses and reports. Normal members can manage only their own expenses plus categories.\n\n'
-        f'Context JSON:\n{json.dumps(context_payload, ensure_ascii=False)}\n\n'
-        f'User message:\n{message}'
+        "You are the VaultSync Financial Intelligence Advisor, an elite personal and family finance advisor embedded inside the VaultSync expense and budget system.\n\n"
+        "STRICT CORE RULES & OPERATIONAL BOUNDARIES:\n"
+        "1. STRICTLY READ-ONLY / ADVISORY (NEVER MODIFY OR CHANGE RECORDS DIRECTLY):\n"
+        "- You DO NOT modify, insert, or delete any database records directly.\n"
+        "- If the user asks you to modify data (e.g., 'Change my dining limit to 5000' or 'Delete my 400 expense'), OR if your financial recommendations require budget changes, YOU MUST EXPLAIN CLEARLY STEP-BY-STEP HOW THE USER CAN DO IT THEMSELVES ON THE SITE:\n"
+        "  * Category limits: 'Go to Dashboard or Family Admin -> Click Categories -> Edit the limit -> Save changes.'\n"
+        "  * Expenses: 'Go to Dashboard / Ledger -> Click Edit or Delete on the transaction.'\n"
+        "  * Planned Bills / EMIs: 'Go to AI Budget Studio -> Expected Expenses -> Add Planned Expense.'\n\n"
+        "2. EXCLUSIVE FINANCE & SITE TOPIC SCOPE:\n"
+        "- You ONLY answer questions related to personal and family finances, spending patterns, budgeting, savings strategies, debt/EMI calculations, financial planning, and VaultSync site features.\n"
+        "- If the user asks about off-topic matters (general coding, history, poems, politics, gaming), politely decline and redirect them back to their finances: 'I am your VaultSync Financial Advisor. I focus exclusively on your family\\'s budget, expenses, and financial planning on this site. How can I help you optimize your finances today?'\n\n"
+        "3. RIGOROUS ARITHMETIC & STRUCTURED TABLED PLANS:\n"
+        "- When the user asks for a scenario plan (e.g. 'I have 3 guests incoming next week, I need a budget plan to balance out my expenses to minimum', or 'I want to buy an iPhone next month worth X, EMI is Y, downpayment is V, make a plan how to spend', or 'How to save ₹10,000 this month'):\n"
+        "  a. Ground your response in the real numbers provided in Context JSON (current total spent, remaining balance, days left, safe daily burn rate, category leeway).\n"
+        "  b. Differentiate between Essential categories (Groceries, Utilities, Rent, Medicine) and Flexible/Discretionary categories (Dining Out, Shopping, Entertainment, Leisure). Target cuts from flexible ones so essential household needs are protected.\n"
+        "  c. PRESENT BUDGET PLANS, CUTS, AND COMPARISONS IN WELL-FORMATTED GITHUB MARKDOWN TABLES:\n"
+        "     | Category | Current Spent | Monthly Cap | Proposed Adjustment | Target Limit | Practical Action |\n"
+        "     |---|---|---|---|---|---|\n"
+        "  d. For big purchases (e.g., iPhone / electronics):\n"
+        "     - Analyze downpayment feasibility (does savings/buffer cover it without negative cashflow?).\n"
+        "     - Show an EMI Absorption Table detailing exactly which discretionary categories will permanently absorb the monthly EMI.\n"
+        "  e. For guest visits or events:\n"
+        "     - Provide a target daily hosting allowance for the visit period vs normal days for the rest of the month.\n"
+        "  f. Double check that all calculations balance out precisely and explain everything in clear, friendly, human terms (no jargon).\n\n"
+        "4. TONE & PRIVACY:\n"
+        "- Encouraging, practical, structured, and clear.\n"
+        "- Always format currency with ₹ (Rupees).\n"
     )
 
 
@@ -3176,6 +3396,29 @@ def ensure_runtime_schema():
             if 'last_sheet_sync_at' not in family_columns:
                 connection.execute(text('ALTER TABLE family ADD COLUMN last_sheet_sync_at DATETIME'))
 
+            if not inspector.has_table('chat_thread'):
+                connection.execute(text("""
+                    CREATE TABLE chat_thread (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        family_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        title VARCHAR(150) NOT NULL DEFAULT 'New Chat',
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        FOREIGN KEY(family_id) REFERENCES family (id),
+                        FOREIGN KEY(user_id) REFERENCES user (id)
+                    )
+                """))
+                connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_thread_family_id ON chat_thread (family_id)'))
+                connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_thread_user_id ON chat_thread (user_id)'))
+                connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_thread_updated_at ON chat_thread (updated_at)'))
+
+            if inspector.has_table('chatbot_message'):
+                chatbot_columns = {column['name'] for column in inspector.get_columns('chatbot_message')}
+                if 'thread_id' not in chatbot_columns:
+                    connection.execute(text('ALTER TABLE chatbot_message ADD COLUMN thread_id INTEGER REFERENCES chat_thread(id)'))
+                    connection.execute(text('CREATE INDEX IF NOT EXISTS ix_chatbot_message_thread_id ON chatbot_message (thread_id)'))
+
         # Ensure families have sync tokens generated
         families_without_token = Family.query.filter(
             (Family.google_sheet_sync_token == None) | (Family.google_sheet_sync_token == '')
@@ -4714,101 +4957,386 @@ def delete_expense(id):
     return back_or('dashboard')
 
 
+@app.route('/chatbot')
+@login_required
+def chatbot_view():
+    """Dedicated ChatGPT / Gemini style AI Financial Advisor Studio."""
+    if not current_user.family:
+        flash('Please join or create a family workspace first to chat with the AI Advisor.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    threads = ChatThread.query.filter_by(
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).order_by(ChatThread.updated_at.desc()).all()
+
+    return render_template('chatbot.html', threads=threads)
+
+
+@app.route('/api/chat/threads', methods=['GET'])
+@login_required
+def api_chat_threads():
+    """List all conversation threads for current user grouped by time."""
+    if not current_user.family_id:
+        return jsonify({'threads': []})
+
+    threads = ChatThread.query.filter_by(
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).order_by(ChatThread.updated_at.desc()).all()
+
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    yesterday_start = today_start - timedelta(days=1)
+    seven_days_ago = today_start - timedelta(days=7)
+
+    result = []
+    for t in threads:
+        msg_count = ChatbotMessage.query.filter_by(thread_id=t.id).count()
+        last_msg = ChatbotMessage.query.filter_by(thread_id=t.id).order_by(ChatbotMessage.id.desc()).first()
+
+        t_date = t.updated_at or t.created_at or now
+        if t_date >= today_start:
+            group = 'Today'
+        elif t_date >= yesterday_start:
+            group = 'Yesterday'
+        elif t_date >= seven_days_ago:
+            group = 'Previous 7 Days'
+        else:
+            group = 'Older'
+
+        result.append({
+            'id': t.id,
+            'title': t.title,
+            'created_at': t.created_at.isoformat() if t.created_at else None,
+            'updated_at': t.updated_at.isoformat() if t.updated_at else None,
+            'message_count': msg_count,
+            'preview': (last_msg.content[:75] + '...') if last_msg else '',
+            'group': group
+        })
+    return jsonify({'threads': result})
+
+
+@app.route('/api/chat/threads', methods=['POST'])
+@login_required
+def api_chat_thread_create():
+    """Create a new empty conversation thread."""
+    if not current_user.family_id:
+        return jsonify({'success': False, 'error': 'No family workspace joined.'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get('title') or 'New Chat').strip()[:150]
+    thread = ChatThread(
+        family_id=current_user.family_id,
+        user_id=current_user.id,
+        title=title
+    )
+    db.session.add(thread)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'thread': {
+            'id': thread.id,
+            'title': thread.title,
+            'created_at': thread.created_at.isoformat(),
+        }
+    })
+
+
+@app.route('/api/chat/threads/<int:thread_id>', methods=['GET'])
+@login_required
+def api_chat_thread_get(thread_id):
+    """Get all messages in a specific thread."""
+    thread = ChatThread.query.filter_by(
+        id=thread_id,
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).first_or_404()
+
+    messages = ChatbotMessage.query.filter_by(
+        thread_id=thread.id
+    ).order_by(ChatbotMessage.id.asc()).all()
+
+    return jsonify({
+        'success': True,
+        'thread': {
+            'id': thread.id,
+            'title': thread.title,
+            'created_at': thread.created_at.isoformat() if thread.created_at else None,
+            'updated_at': thread.updated_at.isoformat() if thread.updated_at else None,
+        },
+        'messages': [
+            {
+                'id': m.id,
+                'role': m.role,
+                'content': m.content,
+                'created_at': m.created_at.isoformat() if m.created_at else None
+            }
+            for m in messages
+        ]
+    })
+
+
+@app.route('/api/chat/threads/<int:thread_id>', methods=['PATCH'])
+@login_required
+def api_chat_thread_rename(thread_id):
+    """Rename a conversation thread."""
+    thread = ChatThread.query.filter_by(
+        id=thread_id,
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).first_or_404()
+
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get('title') or '').strip()[:150]
+    if title:
+        thread.title = title
+        db.session.commit()
+
+    return jsonify({'success': True, 'title': thread.title})
+
+
+@app.route('/api/chat/threads/<int:thread_id>', methods=['DELETE'])
+@login_required
+def api_chat_thread_delete(thread_id):
+    """Delete a conversation thread and its messages."""
+    thread = ChatThread.query.filter_by(
+        id=thread_id,
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).first_or_404()
+
+    ChatbotMessage.query.filter_by(thread_id=thread.id).delete()
+    db.session.delete(thread)
+    db.session.commit()
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/chat/clear-all', methods=['POST'])
+@login_required
+def api_chat_clear_all():
+    """Clear all chat history and threads for current user."""
+    if not current_user.family_id:
+        return jsonify({'success': False, 'error': 'No family workspace joined.'}), 400
+
+    threads = ChatThread.query.filter_by(
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).all()
+
+    for t in threads:
+        ChatbotMessage.query.filter_by(thread_id=t.id).delete()
+        db.session.delete(t)
+
+    ChatbotMessage.query.filter_by(
+        family_id=current_user.family_id,
+        user_id=current_user.id
+    ).delete()
+
+    db.session.commit()
+    return jsonify({'success': True})
+
+
 @app.route('/chatbot/message', methods=['POST'])
+@app.route('/api/chat/send', methods=['POST'])
 @login_required
 def chatbot_message():
+    """
+    Advisor Chat Endpoint:
+    - Never changes records directly (advisory only).
+    - Instructs user how to make changes on the site instead of modifying data.
+    - Deep analysis & tabled breakdown for scenarios (guests, purchases, EMI, saving goals).
+    - Supports Disappearing Message Mode (zero persistence).
+    - Supports multi-turn conversation threads.
+    """
     if not current_user.family_id:
         return jsonify({
-            'reply': 'Join a family first, then I can work with your VaultSync data.',
-            'actions': [],
-            'results': [],
+            'success': False,
+            'reply': 'Please join or create a family workspace first so I can analyze your financial records.',
         }), 400
 
     payload = request.get_json(silent=True) or {}
     message = str(payload.get('message') or '').strip()
-    execute = bool(payload.get('execute'))
-    actions = payload.get('actions') or []
-
-    if execute:
-        if not isinstance(actions, list) or not actions:
-            return jsonify({'reply': 'No actions were provided to run.', 'actions': [], 'results': []}), 400
-
-        results = []
-        try:
-            for action_payload in actions[:8]:
-                results.append(execute_chatbot_action(action_payload))
-            save_chatbot_message(
-                'assistant',
-                'Ran approved actions. ' + ' '.join(results),
-                actions=actions[:8],
-                results=results,
-            )
-            db.session.commit()
-        except Exception as exc:
-            db.session.rollback()
-            return jsonify({
-                'reply': f'I stopped before saving because: {exc}',
-                'actions': [],
-                'results': results,
-            }), 400
-
-        return jsonify({
-            'reply': 'Done. ' + ' '.join(results),
-            'actions': [],
-            'results': results,
-        })
+    thread_id = payload.get('thread_id')
+    disappearing = bool(payload.get('disappearing'))
 
     if not message:
-        return jsonify({'reply': 'Tell me what you want to do.', 'actions': [], 'results': []}), 400
+        return jsonify({'success': False, 'reply': 'Please enter a question or planning scenario.'}), 400
 
     lowered_message = message.lower()
+    # Security guardrail: explain how to perform account changes via Admin Panel
     if any(term in lowered_message for term in CHATBOT_FORBIDDEN_TERMS):
-        reply = 'I cannot change security, account, member, invite, role, or family deletion settings. A family manager must handle those directly from the Admin Panel.'
-        save_chatbot_message('user', message)
-        save_chatbot_message('assistant', reply)
-        db.session.commit()
+        admin_guidance = (
+            "I do not manage or alter account security, passwords, login credentials, member roles, or workspace deletion directly.\n\n"
+            "**How to do this on VaultSync:**\n"
+            "1. Head to the **Family Admin** panel in the navigation.\n"
+            "2. Access the **Members** tab to invite, remove, or change roles.\n"
+            "3. Access the **Settings** tab for workspace configurations."
+        )
         return jsonify({
-            'reply': reply,
-            'actions': [],
-            'results': [],
+            'success': True,
+            'reply': admin_guidance,
+            'thread_id': thread_id,
+            'disappearing': disappearing
         })
 
-    context_payload = chatbot_context_payload(current_user)
-    save_chatbot_message('user', message)
-    try:
-        ai_payload = call_gemini_json(
-            build_chatbot_prompt(message, context_payload),
-            chatbot_response_schema()
-        )
-    except Exception as exc:
-        app.logger.exception('VaultSync Assistant failed')
+    # Deep non-sensitive financial context
+    context_payload = chatbot_deep_context_payload(current_user)
+
+    # 1. DISAPPEARING MESSAGE MODE (Ephemeral: zero database writes)
+    if disappearing:
+        try:
+            client_history = payload.get('client_history') or []
+            history_snippets = []
+            for item in client_history[-6:]:
+                role = item.get('role')
+                txt = item.get('content')
+                if role and txt:
+                    history_snippets.append(f"{role.capitalize()}: {txt}")
+
+            history_block = ("\nRecent ephemeral conversation context:\n" + "\n".join(history_snippets) + "\n\n") if history_snippets else ""
+            prompt = (
+                f"{history_block}"
+                f"Financial Context JSON:\n{json.dumps(context_payload, ensure_ascii=False)}\n\n"
+                f"User Question / Planning Scenario:\n{message}"
+            )
+
+            reply = call_gemini_text(
+                prompt=prompt,
+                system_instruction=build_advisor_system_instruction(),
+                temperature=0.25
+            )
+        except Exception as exc:
+            app.logger.exception('VaultSync Advisor failed in disappearing mode')
+            reply = f"I could not complete the financial analysis right now: {exc}. Please verify your network or Gemini key."
+
         return jsonify({
-            'reply': f'I could not reach the AI service right now: {exc}',
-            'actions': [],
-            'results': [],
-        }), 502
+            'success': True,
+            'reply': reply,
+            'disappearing': True,
+            'thread_id': None
+        })
 
-    proposed_actions = ai_payload.get('actions') or []
-    if not isinstance(proposed_actions, list):
-        proposed_actions = []
-    proposed_actions = proposed_actions[:8]
+    # 2. PERSISTED CONVERSATION THREAD MODE
+    try:
+        thread = None
+        if thread_id:
+            try:
+                t_id = int(thread_id)
+                thread = ChatThread.query.filter_by(
+                    id=t_id,
+                    family_id=current_user.family_id,
+                    user_id=current_user.id
+                ).first()
+            except (ValueError, TypeError):
+                thread = None
 
-    reply = str(ai_payload.get('reply') or 'I can help with that.')
-    save_chatbot_message('assistant', reply, actions=proposed_actions)
-    db.session.commit()
+        if not thread:
+            # Create a new conversation thread with clean auto-title
+            title = generate_thread_title(message)
+            thread = ChatThread(
+                family_id=current_user.family_id,
+                user_id=current_user.id,
+                title=title
+            )
+            db.session.add(thread)
+            db.session.commit()
 
-    return jsonify({
-        'reply': reply,
-        'actions': proposed_actions,
-        'results': [],
-    })
+        # Save user message to thread
+        user_msg = ChatbotMessage(
+            family_id=current_user.family_id,
+            user_id=current_user.id,
+            thread_id=thread.id,
+            role='user',
+            content=message
+        )
+        db.session.add(user_msg)
+        db.session.commit()
+
+        # Fetch recent thread messages for context memory
+        thread_messages = ChatbotMessage.query.filter_by(
+            thread_id=thread.id
+        ).order_by(ChatbotMessage.id.asc()).all()
+
+        history_snippets = []
+        for m in thread_messages[-8:-1]:
+            history_snippets.append(f"{m.role.capitalize()}: {m.content}")
+
+        history_block = ("\nPrevious thread conversation:\n" + "\n".join(history_snippets) + "\n\n") if history_snippets else ""
+
+        prompt = (
+            f"{history_block}"
+            f"Financial Context JSON:\n{json.dumps(context_payload, ensure_ascii=False)}\n\n"
+            f"User Question / Planning Scenario:\n{message}"
+        )
+
+        reply = call_gemini_text(
+            prompt=prompt,
+            system_instruction=build_advisor_system_instruction(),
+            temperature=0.25
+        )
+
+        # Save assistant message to thread
+        assistant_msg = ChatbotMessage(
+            family_id=current_user.family_id,
+            user_id=current_user.id,
+            thread_id=thread.id,
+            role='assistant',
+            content=reply
+        )
+        db.session.add(assistant_msg)
+
+        thread.updated_at = datetime.utcnow()
+        if thread.title in ('New Chat', 'New Conversation'):
+            thread.title = generate_thread_title(message)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'reply': reply,
+            'thread_id': thread.id,
+            'thread_title': thread.title,
+            'disappearing': False
+        })
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('VaultSync Advisor failed')
+        return jsonify({
+            'success': False,
+            'reply': f"I encountered an error analyzing your financial data: {exc}",
+            'thread_id': thread.id if thread else None,
+            'disappearing': False
+        }), 500
 
 
 @app.route('/chatbot/history', methods=['GET'])
 @login_required
 def chatbot_history():
+    """Retrieve message history (supports thread_id query param or fallback to recent)."""
     if not current_user.family_id:
         return jsonify({'messages': []})
+
+    thread_id = request.args.get('thread_id')
+    if thread_id:
+        try:
+            t_id = int(thread_id)
+            messages = ChatbotMessage.query.filter_by(
+                thread_id=t_id,
+                family_id=current_user.family_id,
+                user_id=current_user.id
+            ).order_by(ChatbotMessage.id.asc()).all()
+            return jsonify({
+                'messages': [
+                    serialize_chatbot_message(m)
+                    for m in messages
+                ]
+            })
+        except (ValueError, TypeError):
+            pass
+
     return jsonify({
         'messages': [
             serialize_chatbot_message(message)
@@ -6407,8 +6935,9 @@ def erase_family_data():
         BudgetReport.query.filter_by(family_id=family_id).delete()
         # Delete AI expense exception rules
         AIExpenseException.query.filter_by(family_id=family_id).delete()
-        # Delete chatbot history
+        # Delete chatbot history & threads
         ChatbotMessage.query.filter_by(family_id=family_id).delete()
+        ChatThread.query.filter_by(family_id=family_id).delete()
         # Reset category monthly limits
         Category.query.filter_by(family_id=family_id).update({Category.monthly_limit: 0.0})
         # Reset family ai notes

@@ -1,4 +1,4 @@
-﻿<header class="dashboard-mobile-shell md:hidden">
+<header class="dashboard-mobile-shell md:hidden">
     <div class="dashboard-mobile-top">
         <div class="dashboard-mobile-brand">
             <span>VaultSync</span>
@@ -39,6 +39,9 @@
         </a>
         <a href="{{ url_for('financial_reports') }}" class="{% if active_page == 'planning' %}active{% endif %}">
             <i class="fas fa-chart-line" aria-hidden="true"></i><span>Planning</span>
+        </a>
+        <a href="{{ url_for('chatbot_view') }}" class="{% if active_page == 'chatbot' %}active{% endif %}">
+            <i class="fas fa-comments-dollar" aria-hidden="true"></i><span>AI Chat</span>
         </a>
         <a href="{{ url_for('features') }}" class="{% if active_page == 'features' %}active{% endif %}">
             <i class="fas fa-circle-question" aria-hidden="true"></i><span data-i18n="nav_features">Guide</span>

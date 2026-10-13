@@ -360,7 +360,7 @@ function initReceiptAndStatementScanners() {
 class ChatbotWidget {
     constructor() {
         if (document.body.dataset.disableChatbot === 'true') return;
-        if (window.location.pathname === '/login' || window.location.pathname === '/register') return;
+        if (window.location.pathname === '/login' || window.location.pathname === '/register' || window.location.pathname === '/chatbot') return;
         this.isOpen = false;
         this.historyLoaded = false;
         this.mount();
@@ -374,12 +374,17 @@ class ChatbotWidget {
             <div class="vaultsync-chatbot-panel" id="vaultsyncChatbotPanel" hidden>
                 <header class="vaultsync-chatbot-header">
                     <div>
-                        <h3><i class="fas fa-sparkles mr-1.5 text-indigo-400"></i>VaultSync Assistant</h3>
-                        <p>Log expenses, manage categories &amp; ask budget questions</p>
+                        <h3><i class="fas fa-sparkles mr-1.5 text-indigo-400"></i>VaultSync AI Advisor</h3>
+                        <p>Budget plans, scenario advice &amp; guidance</p>
                     </div>
-                    <button type="button" class="vaultsync-chatbot-icon-btn" id="vaultsyncChatbotClose" aria-label="Close assistant">
-                        <i class="fas fa-times"></i>
-                    </button>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <a href="/chatbot" class="vaultsync-chatbot-icon-btn" title="Open Full Chat Studio" style="display:flex;align-items:center;justify-content:center;text-decoration:none;">
+                            <i class="fas fa-expand text-xs"></i>
+                        </a>
+                        <button type="button" class="vaultsync-chatbot-icon-btn" id="vaultsyncChatbotClose" aria-label="Close assistant">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
                 </header>
                 <div class="vaultsync-chatbot-messages" id="vaultsyncChatbotMessages">
                     <div class="vaultsync-chat-msg assistant">

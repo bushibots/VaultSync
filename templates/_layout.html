@@ -172,6 +172,13 @@
                             <div class="vs-nav-desc">Pattern analysis &amp; decision questions</div>
                         </div>
                     </a>
+                    <a href="{{ url_for('chatbot_view') }}" class="vs-nav-link {% if current_endpoint == 'chatbot_view' %}active{% endif %}">
+                        <i class="fas fa-comments-dollar text-indigo-400"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">AI Chatbot Studio</div>
+                            <div class="vs-nav-desc">ChatGPT-style advisor &amp; budget plans</div>
+                        </div>
+                    </a>
                 </nav>
             </div>
 
