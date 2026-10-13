@@ -109,64 +109,105 @@
             </div>
             {% endif %}
 
-            <!-- Workspace Section -->
+            <!-- Daily Tracking Section -->
             <div class="vs-nav-section">
-                <div class="vs-nav-label">Workspace</div>
+                <div class="vs-nav-label">Daily Tracking</div>
                 <nav class="vs-nav-list">
                     <a href="{{ url_for('dashboard') }}" class="vs-nav-link {% if current_endpoint == 'dashboard' %}active{% endif %}">
                         <i class="fas fa-chart-pie"></i>
-                        <span>Overview</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">Dashboard &amp; Ledger</div>
+                            <div class="vs-nav-desc">Month overview &amp; live ledger</div>
+                        </div>
                     </a>
                     <a href="{{ url_for('daily_diary') }}" class="vs-nav-link {% if current_endpoint == 'daily_diary' %}active{% endif %}">
                         <i class="fas fa-calendar-day"></i>
-                        <span>Daily Ledger</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">Daily Diary</div>
+                            <div class="vs-nav-desc">Grouped day-by-day purchases</div>
+                        </div>
                     </a>
                     <a href="{{ url_for('my_spendings') }}" class="vs-nav-link {% if current_endpoint == 'my_spendings' %}active{% endif %}">
                         <i class="fas fa-wallet"></i>
-                        <span>My Spendings</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">My Spendings</div>
+                            <div class="vs-nav-desc">Only expenses paid by you</div>
+                        </div>
                     </a>
                 </nav>
             </div>
 
-            <!-- Intelligence & Reports Section -->
+            <!-- Budgets & Analytics Section -->
             <div class="vs-nav-section">
-                <div class="vs-nav-label">Intelligence</div>
+                <div class="vs-nav-label">Budgets &amp; Intelligence</div>
                 <nav class="vs-nav-list">
                     <a href="{{ url_for('financial_reports') }}" class="vs-nav-link {% if current_endpoint == 'financial_reports' %}active{% endif %}">
                         <i class="fas fa-chart-line"></i>
-                        <span>Financial Analytics</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">Financial Analytics</div>
+                            <div class="vs-nav-desc">Trends, cashflow &amp; category share</div>
+                        </div>
                     </a>
                     <a href="{{ url_for('daily_reports') }}" class="vs-nav-link {% if current_endpoint in ['daily_reports', 'view_report'] %}active{% endif %}">
                         <i class="fas fa-bolt"></i>
-                        <span>Daily AI Briefings</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">Daily AI Briefings</div>
+                            <div class="vs-nav-desc">Daily summaries &amp; safe spend caps</div>
+                        </div>
                         {% if unread_reports_count > 0 %}
                         <span class="vs-nav-badge">{{ unread_reports_count }}</span>
                         {% endif %}
                     </a>
                     <a href="{{ url_for('ai_budget') }}" class="vs-nav-link {% if current_endpoint == 'ai_budget' %}active{% endif %}">
                         <i class="fas fa-wand-magic-sparkles"></i>
-                        <span>AI Budget Planner</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">AI Budget Studio</div>
+                            <div class="vs-nav-desc">Smart monthly budget simulator</div>
+                        </div>
                     </a>
                 </nav>
             </div>
 
-            <!-- Vault & Administration Section -->
+            <!-- Tools & History Section -->
             <div class="vs-nav-section">
-                <div class="vs-nav-label">Management</div>
+                <div class="vs-nav-label">Tools &amp; History</div>
                 <nav class="vs-nav-list">
+                    <a href="{{ url_for('download_expense_book_template') }}" class="vs-nav-link text-emerald-400 hover:text-emerald-300">
+                        <i class="fas fa-file-excel text-emerald-400"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title text-emerald-300">Download Excel Sheet</div>
+                            <div class="vs-nav-desc">Get pre-formatted monthly template</div>
+                        </div>
+                    </a>
                     <a href="{{ url_for('archive') }}" class="vs-nav-link {% if current_endpoint == 'archive' %}active{% endif %}">
                         <i class="fas fa-box-archive"></i>
-                        <span>Monthly Archive</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">Monthly Archive</div>
+                            <div class="vs-nav-desc">Browse previous months &amp; statements</div>
+                        </div>
                     </a>
+                </nav>
+            </div>
+
+            <!-- Workspace Settings Section -->
+            <div class="vs-nav-section">
+                <div class="vs-nav-label">Workspace Settings</div>
+                <nav class="vs-nav-list">
                     {% if is_manager %}
                     <a href="{{ url_for('admin_panel') }}" class="vs-nav-link {% if current_endpoint == 'admin_panel' %}active{% endif %}">
                         <i class="fas fa-sliders"></i>
-                        <span>Family Admin</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">Family Admin</div>
+                            <div class="vs-nav-desc">Members, category caps &amp; erase data</div>
+                        </div>
                     </a>
                     {% endif %}
                     <a href="{{ url_for('features') }}" class="vs-nav-link {% if current_endpoint == 'features' %}active{% endif %}">
                         <i class="fas fa-circle-question"></i>
-                        <span>App Guide</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">App Guide</div>
+                            <div class="vs-nav-desc">What does what &amp; quick walkthrough</div>
+                        </div>
                     </a>
                 </nav>
             </div>

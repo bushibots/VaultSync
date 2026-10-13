@@ -303,6 +303,60 @@ h1, h2, h3, h4, .vs-heading {
     line-height: 1.2;
 }
 
+.vs-nav-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: #e2e8f0;
+}
+
+.vs-nav-link:hover .vs-nav-title,
+.vs-nav-link.active .vs-nav-title {
+    color: #ffffff;
+}
+
+.vs-nav-desc {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    line-height: 1.2;
+    margin-top: 1px;
+    font-weight: 400;
+}
+
+.vs-nav-link.active .vs-nav-desc {
+    color: #c7d2fe;
+}
+
+.vs-pill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--vs-text-secondary);
+    background: var(--vs-surface);
+    border: 1px solid var(--vs-border);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+.vs-pill-btn:hover {
+    background: var(--vs-surface-hover);
+    color: var(--vs-text);
+    border-color: var(--vs-border-strong);
+}
+
+.vs-pill-btn.active {
+    background: var(--vs-primary);
+    color: #ffffff !important;
+    border-color: var(--vs-primary);
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+}
+
 .vs-sidebar-footer {
     margin-top: auto;
     padding: 0.85rem 1rem 1.1rem;

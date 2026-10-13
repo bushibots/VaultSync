@@ -33,6 +33,11 @@
             <noscript><button type="submit" class="vs-btn vs-btn-sm vs-btn-primary">Go</button></noscript>
         </form>
 
+        <a href="{{ url_for('download_expense_book_template', month=selected_month, year=selected_year) }}" class="vs-btn vs-btn-secondary text-emerald-600 dark:text-emerald-400 hover:text-emerald-700" title="Download official Excel template with automated formulas">
+            <i class="fas fa-file-excel text-emerald-500"></i>
+            <span>Template (.xlsx)</span>
+        </a>
+
         <button type="button" data-modal-open="manageCategoriesModal" class="vs-btn vs-btn-secondary">
             <i class="fas fa-tags text-indigo-500"></i>
             <span>Categories ({{ categories|length }})</span>
@@ -48,6 +53,11 @@
         <button type="button" data-modal-open="statementModal" class="vs-btn vs-btn-primary">
             <i class="fas fa-book-sparkles"></i>
             <span>Import Book / Statement</span>
+        </button>
+
+        <button type="button" data-modal-open="quickGuideModal" class="vs-btn vs-btn-ghost text-slate-600 dark:text-slate-300" title="What does what? Quick visual guide">
+            <i class="fas fa-circle-question text-indigo-500"></i>
+            <span class="hidden sm:inline">Guide</span>
         </button>
     </div>
 </div>
@@ -148,14 +158,12 @@
     </div>
 </div>
 
-<!-- Main 2-Column Workspace -->
-<div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+<!-- Row 1: Quick Expense Entry (Left 6 cols) + Category Breakdown Doughnut Chart (Right 6 cols) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start mb-6">
 
-    <!-- LEFT COLUMN: Quick Expense Entry + Recent Transactions (7 cols on XL) -->
-    <div class="xl:col-span-7 space-y-6">
-
-        <!-- Quick Log Expense Card -->
-        <section class="vs-card" aria-labelledby="log-expense-heading">
+    <!-- Quick Log Expense Card (6 cols) -->
+    <div class="lg:col-span-6 space-y-6">
+        <section class="vs-card h-full" aria-labelledby="log-expense-heading">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div class="flex items-center gap-2.5">
                     <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
@@ -169,13 +177,13 @@
 
                 <div class="flex items-center gap-2">
                     <input type="file" id="receipt-input" data-receipt-input accept="image/*,application/pdf" class="hidden">
-                    <button type="button" onclick="document.getElementById('receipt-input').click()" class="vs-btn vs-btn-sm vs-btn-secondary">
+                    <button type="button" onclick="document.getElementById('receipt-input').click()" class="vs-btn vs-btn-sm vs-btn-secondary" title="Scan receipt photo or PDF with AI">
                         <i class="fas fa-camera text-indigo-500"></i>
                         <span id="receipt-upload-text" data-receipt-status>Scan Receipt</span>
                     </button>
-                    <button type="button" data-modal-open="statementModal" class="vs-btn vs-btn-sm vs-btn-ghost" title="Import full PDF or image bank statement">
+                    <button type="button" data-modal-open="statementModal" class="vs-btn vs-btn-sm vs-btn-ghost" title="Import full Excel book or bank statement">
                         <i class="fas fa-file-invoice text-purple-500"></i>
-                        <span class="hidden sm:inline">Statement</span>
+                        <span class="hidden sm:inline">Import Book</span>
                     </button>
                 </div>
             </div>
@@ -193,7 +201,7 @@
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                    <div class="sm:col-span-5">
+                    <div class="sm:col-span-6">
                         <label class="vs-label" for="dash-category">Category</label>
                         <select id="dash-category" name="category_id" required class="vs-select">
                             <option value="" disabled selected>Choose category...</option>
@@ -202,148 +210,44 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="sm:col-span-4">
+                    <div class="sm:col-span-6">
                         <label class="vs-label" for="dash-date">Date</label>
                         <input id="dash-date" type="date" name="expense_date" required class="vs-input">
                     </div>
-                    <div class="sm:col-span-3 flex items-end">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    <div class="sm:col-span-9">
+                        <label class="vs-label" for="dash-desc">Note / Description (Optional)</label>
+                        <input id="dash-desc" type="text" name="description" placeholder="e.g., paid via UPI, weekly vegetable restock" class="vs-input text-xs py-2">
+                    </div>
+                    <div class="sm:col-span-3">
                         <button type="submit" class="vs-btn vs-btn-primary w-full py-2.5">
                             <i class="fas fa-check"></i>
                             <span>Save</span>
                         </button>
                     </div>
                 </div>
-
-                <div>
-                    <input type="text" name="description" placeholder="Optional note (e.g., paid via UPI, weekly restock)" class="vs-input text-xs py-2">
-                </div>
             </form>
-        </section>
-
-        <!-- Recent Transactions Card -->
-        <section class="vs-card" aria-labelledby="recent-tx-heading">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div>
-                    <h2 id="recent-tx-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>{{ month_name }} Transactions</span>
-                        <span class="vs-badge vs-badge-neutral">{{ expenses|length }}</span>
-                    </h2>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">All recorded family expenses for {{ month_name }} {{ selected_year }}</p>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <a href="{{ url_for('daily_diary') }}" class="vs-btn vs-btn-sm vs-btn-secondary">
-                        <i class="fas fa-calendar-day text-indigo-500"></i>
-                        <span>Daily View</span>
-                    </a>
-                    <a href="{{ url_for('export_ai_data') }}" class="vs-btn vs-btn-sm vs-btn-ghost" title="Download CSV">
-                        <i class="fas fa-download"></i>
-                        <span class="hidden sm:inline">CSV</span>
-                    </a>
-                </div>
-            </div>
-
-            {% if expenses %}
-            <!-- Quick Filter Bar -->
-            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 mb-4">
-                <div class="sm:col-span-7 relative">
-                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                    <input type="text" id="txSearchInput" placeholder="Search item, note, or member..." class="vs-input pl-8 py-2 text-xs">
-                </div>
-                <div class="sm:col-span-5">
-                    <select id="txCategoryFilter" aria-label="Filter by category" class="vs-select py-2 text-xs">
-                        <option value="">All Categories</option>
-                        {% for cat in categories %}
-                        <option value="{{ cat.name|lower }}">{{ cat.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-
-            <div class="vs-table-wrap -mx-4 sm:mx-0">
-                <table class="vs-table" id="transactionsTable">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Item</th>
-                            <th>Category</th>
-                            <th class="text-right">Amount</th>
-                            <th class="text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for exp in expenses %}
-                        <tr data-tx-row
-                            data-search="{{ (exp.item_name ~ ' ' ~ (exp.description or '') ~ ' ' ~ exp.user.username ~ ' ' ~ exp.category.name)|lower }}"
-                            data-category="{{ exp.category.name|lower }}">
-                            <td class="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-medium">
-                                {{ exp.date.strftime('%d %b') }}
-                            </td>
-                            <td>
-                                <div class="font-semibold text-slate-900 dark:text-slate-100 text-sm leading-snug">{{ exp.item_name }}</div>
-                                <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
-                                    <span><i class="fas fa-user text-[10px] mr-1 opacity-70"></i>{{ exp.user.username }}</span>
-                                    {% if exp.description %}
-                                    <span class="truncate max-w-[180px]" title="{{ exp.description }}">· {{ exp.description }}</span>
-                                    {% endif %}
-                                </div>
-                            </td>
-                            <td>
-                                <span class="vs-badge" style="background-color: {{ exp.category.color }}1c; color: {{ exp.category.color }}; border: 1px solid {{ exp.category.color }}40;">
-                                    <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ exp.category.color }};"></span>
-                                    {{ exp.category.name }}
-                                </span>
-                                {% if exp.bucket_id %}
-                                <span class="vs-badge vs-badge-primary ml-1" title="Linked to reserved bucket">
-                                    <i class="fas fa-shield-halved text-[10px]"></i> Bucket
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td class="text-right whitespace-nowrap font-bold tabular-nums text-slate-900 dark:text-white">
-                                Rs. {{ "{:,.0f}".format(exp.amount) }}
-                            </td>
-                            <td class="text-right whitespace-nowrap">
-                                <div class="inline-flex items-center gap-1">
-                                    <a href="{{ url_for('edit_expense', id=exp.id) }}" class="vs-icon-btn" title="Edit expense">
-                                        <i class="fas fa-pen text-xs"></i>
-                                    </a>
-                                    <a href="{{ url_for('delete_expense', id=exp.id) }}" onclick="return confirm('Delete this expense ({{ exp.item_name }})?')" class="vs-icon-btn hover:text-rose-500" title="Delete expense">
-                                        <i class="fas fa-trash text-xs"></i>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="text-center py-10 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700">
-                <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
-                    <i class="fas fa-receipt text-lg"></i>
-                </div>
-                <p class="text-sm font-bold text-slate-800 dark:text-slate-200">No expenses logged for {{ month_name }} {{ selected_year }}</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                    Use the form above to record your first expense or scan a receipt with AI.
-                </p>
-            </div>
-            {% endif %}
         </section>
     </div>
 
-    <!-- RIGHT COLUMN: Spending Breakdown Chart + Planned Bills & Buckets (5 cols on XL) -->
-    <div class="xl:col-span-5 space-y-6">
-
-        <!-- Spending Breakdown Chart Card -->
-        <section class="vs-card" aria-labelledby="chart-heading">
-            <div class="flex items-center justify-between gap-2 mb-4">
+    <!-- Spending Breakdown Doughnut Chart Card (6 cols) -->
+    <div class="lg:col-span-6 space-y-6">
+        <section class="vs-card h-full" aria-labelledby="chart-heading">
+            <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div>
-                    <h2 id="chart-heading" class="text-base font-bold text-slate-900 dark:text-white">Category Breakdown</h2>
+                    <h2 id="chart-heading" class="text-base font-bold text-slate-900 dark:text-white">Category Spending</h2>
                     <p class="text-xs text-slate-500 dark:text-slate-400">Click any slice or category to inspect share</p>
                 </div>
-                <div class="chart-mode-toggle" role="group" aria-label="Chart display mode">
-                    <button type="button" class="chart-mode-btn active" data-chart-mode="amount">Rs.</button>
-                    <button type="button" class="chart-mode-btn" data-chart-mode="share">%</button>
+                <div class="flex items-center gap-2">
+                    <div class="chart-mode-toggle" role="group" aria-label="Chart display mode">
+                        <button type="button" class="chart-mode-btn active" data-chart-mode="amount">Rs.</button>
+                        <button type="button" class="chart-mode-btn" data-chart-mode="share">%</button>
+                    </div>
+                    <button type="button" data-modal-open="manageCategoriesModal" class="vs-btn vs-btn-sm vs-btn-ghost text-xs" title="Manage categories and limits">
+                        <i class="fas fa-tags text-indigo-500"></i>
+                    </button>
                 </div>
             </div>
 
@@ -361,147 +265,315 @@
 
             <div id="expenseLegend" class="chart-legend-list"></div>
         </section>
+    </div>
 
-        <!-- Monthly Plan & Reserved Buckets Card -->
-        <section class="vs-card" aria-labelledby="monthly-plan-heading">
-            <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                    <h2 id="monthly-plan-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>Planned Bills &amp; Buckets</span>
-                        <span class="vs-badge vs-badge-neutral">{{ expected_expenses|length }}</span>
-                    </h2>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">
-                        Rs. {{ "{:,.0f}".format(expected_total) }} planned · Rs. {{ "{:,.0f}".format(planned_after_budget) }} unallocated
-                    </p>
-                </div>
+</div>
 
-                {% if is_manager %}
-                <div class="flex items-center gap-1.5">
-                    <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-primary">
-                        <i class="fas fa-plus"></i>
-                        <span>Add Plan</span>
-                    </button>
-                    {% if expected_expenses %}
-                    <form action="{{ url_for('copy_expected_plan') }}" method="POST" class="inline">
-                        <input type="hidden" name="month" value="{{ selected_month }}">
-                        <input type="hidden" name="year" value="{{ selected_year }}">
-                        <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary" title="Copy this month's plan into next month">
-                            <i class="fas fa-copy"></i>
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-                {% endif %}
+<!-- Row 2: Full-Width 12-Column Transactions Ledger Card -->
+<section class="vs-card mb-6" aria-labelledby="recent-tx-heading">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div>
+            <div class="flex items-center gap-2">
+                <h2 id="recent-tx-heading" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Transactions Ledger</h2>
+                <span class="vs-badge vs-badge-neutral font-semibold" id="visibleTxCount">{{ expenses|length }} expenses</span>
             </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">All recorded family expenses for {{ month_name }} {{ selected_year }} with live member filtering</p>
+        </div>
 
-            <!-- Reserved Buckets Sub-section -->
-            {% if budget_buckets %}
-            <div class="mb-5">
-                <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
-                    <span><i class="fas fa-shield-halved text-indigo-500 mr-1"></i>Protected Buckets</span>
-                    <span>Rs. {{ "{:,.0f}".format(bucket_unspent_total) }} reserved</span>
-                </div>
-                <div class="space-y-2.5">
-                    {% for b in budget_buckets %}
-                    <div class="vs-card-muted p-3">
-                        <div class="flex items-center justify-between gap-2 mb-1.5">
-                            <div class="min-w-0">
-                                <div class="font-semibold text-sm text-slate-900 dark:text-white truncate">{{ b.bucket.name }}</div>
-                                <div class="text-[11px] text-slate-500 dark:text-slate-400">
-                                    {{ b.bucket.category.name }} · Spent Rs. {{ "{:,.0f}".format(b.spent) }} of Rs. {{ "{:,.0f}".format(b.allocated) }}
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1 flex-shrink-0">
-                                {% if b.is_overflow %}
-                                <span class="vs-badge vs-badge-danger">+Rs. {{ "{:,.0f}".format(b.overflow) }} over</span>
-                                {% else %}
-                                <span class="vs-badge vs-badge-success">Rs. {{ "{:,.0f}".format(b.remaining) }} left</span>
-                                {% endif %}
-                                {% if is_manager %}
-                                <a href="{{ url_for('edit_expected', id=b.bucket.id) }}" class="vs-icon-btn" title="Edit bucket">
-                                    <i class="fas fa-pen text-[11px]"></i>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="vs-progress h-1.5">
-                            <div class="vs-progress-fill {% if b.is_overflow %}bg-rose-500{% elif b.usage_pct >= 80 %}bg-amber-500{% else %}bg-emerald-500{% endif %}"
-                                 style="width: {{ [b.usage_pct, 100]|min }}%;"></div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('daily_diary') }}" class="vs-btn vs-btn-sm vs-btn-secondary" title="View expenses grouped day-by-day">
+                <i class="fas fa-calendar-day text-indigo-500"></i>
+                <span>Daily Diary View</span>
+            </a>
+            <a href="{{ url_for('export_ai_data') }}" class="vs-btn vs-btn-sm vs-btn-ghost" title="Download CSV of all transactions">
+                <i class="fas fa-download"></i>
+                <span class="hidden sm:inline">Export CSV</span>
+            </a>
+        </div>
+    </div>
+
+    {% if expenses %}
+    <!-- Filter Toolbar: Spender Pills + Search Input + Category Filter -->
+    <div class="space-y-3 mb-4">
+        <!-- Spender Filter Pills -->
+        {% set spenders = [] %}
+        {% for exp in expenses %}
+            {% if exp.user and exp.user.username not in spenders %}
+                {% set _ = spenders.append(exp.user.username) %}
             {% endif %}
+        {% endfor %}
 
-            <!-- Standard Planned Bills Sub-section -->
-            {% set standard_bills = expected_expenses | rejectattr('is_bucket') | list %}
-            {% if standard_bills %}
-            <div>
-                <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
-                    <span><i class="fas fa-file-invoice-dollar text-amber-500 mr-1"></i>Scheduled Bills</span>
-                    <span>{{ "{:.0f}".format(plan_paid_percentage) }}% paid</span>
-                </div>
-                <div class="space-y-2">
-                    {% for item in standard_bills %}
-                    <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm font-semibold text-slate-900 dark:text-white truncate {% if item.is_paid %}line-through opacity-60{% endif %}">
-                                    {{ item.name }}
-                                </span>
-                                {% if item.is_paid %}
-                                <span class="vs-badge vs-badge-success">Paid</span>
-                                {% else %}
-                                <span class="vs-badge vs-badge-warning">Due {{ item.due_day }} {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][item.month-1] }}</span>
-                                {% endif %}
-                            </div>
-                            <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
-                                <span>{{ item.category.name if item.category else 'Uncategorized' }}</span>
-                                <span>·</span>
-                                <strong class="text-slate-700 dark:text-slate-200 tabular-nums">Rs. {{ "{:,.0f}".format(item.amount) }}</strong>
-                            </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
+                <i class="fas fa-filter text-indigo-500"></i> Spender:
+            </span>
+            <button type="button" class="vs-pill-btn active" data-tx-user-filter="">
+                <i class="fas fa-users text-[10px]"></i>
+                <span>All Family ({{ expenses|length }})</span>
+            </button>
+            {% for spender in spenders %}
+                {% set spender_count = expenses | selectattr('user.username', 'equalto', spender) | list | length %}
+                <button type="button" class="vs-pill-btn" data-tx-user-filter="{{ spender|lower }}">
+                    <i class="fas fa-user text-[10px]"></i>
+                    <span>{{ spender }} ({{ spender_count }})</span>
+                </button>
+            {% endfor %}
+        </div>
+
+        <!-- Search Bar and Category Dropdown -->
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+            <div class="sm:col-span-8 relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="txSearchInput" placeholder="Search by item, merchant, notes, or spender..." class="vs-input pl-8 py-2 text-xs">
+            </div>
+            <div class="sm:col-span-4">
+                <select id="txCategoryFilter" aria-label="Filter by category" class="vs-select py-2 text-xs">
+                    <option value="">All Categories ({{ categories|length }})</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.name|lower }}">{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full-Width Responsive Table -->
+    <div class="vs-table-wrap -mx-4 sm:mx-0">
+        <table class="vs-table" id="transactionsTable">
+            <thead>
+                <tr>
+                    <th style="width: 120px;">Date</th>
+                    <th>Item &amp; Details</th>
+                    <th style="width: 180px;">Category</th>
+                    <th class="text-right" style="width: 160px;">Amount</th>
+                    <th class="text-right" style="width: 100px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exp in expenses %}
+                <tr data-tx-row
+                    data-search="{{ (exp.item_name ~ ' ' ~ (exp.description or '') ~ ' ' ~ exp.user.username ~ ' ' ~ exp.category.name)|lower }}"
+                    data-category="{{ exp.category.name|lower }}"
+                    data-user="{{ exp.user.username|lower }}">
+                    <td class="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        <div class="font-semibold text-slate-800 dark:text-slate-200">{{ exp.date.strftime('%d %b') }}</div>
+                        <div class="text-[11px] text-slate-400 dark:text-slate-500">{{ exp.date.strftime('%a') }}</div>
+                    </td>
+                    <td>
+                        <div class="font-bold text-slate-900 dark:text-white text-sm leading-snug">{{ exp.item_name }}</div>
+                        <div class="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                                <i class="fas fa-user-circle text-indigo-500 text-[10px]"></i>
+                                {{ exp.user.username }}
+                            </span>
+                            {% if exp.description %}
+                            <span class="text-slate-400 dark:text-slate-500 truncate max-w-sm sm:max-w-md" title="{{ exp.description }}">
+                                · {{ exp.description }}
+                            </span>
+                            {% endif %}
                         </div>
-
-                        {% if is_manager %}
-                        <div class="flex items-center gap-1 flex-shrink-0">
-                            <form action="{{ url_for('toggle_expected', id=item.id) }}" method="POST" class="inline">
-                                <button type="submit" class="vs-btn vs-btn-sm {% if item.is_paid %}vs-btn-ghost{% else %}vs-btn-secondary{% endif %}" title="{% if item.is_paid %}Move back to unpaid{% else %}Mark paid &amp; post to expenses{% endif %}">
-                                    <i class="fas {% if item.is_paid %}fa-rotate-left text-slate-400{% else %}fa-check text-emerald-500{% endif %}"></i>
-                                    <span>{% if item.is_paid %}Undo{% else %}Pay{% endif %}</span>
-                                </button>
-                            </form>
-                            <a href="{{ url_for('edit_expected', id=item.id) }}" class="vs-icon-btn" title="Edit planned item">
+                    </td>
+                    <td>
+                        <span class="vs-badge" style="background-color: {{ exp.category.color }}1c; color: {{ exp.category.color }}; border: 1px solid {{ exp.category.color }}40;">
+                            <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ exp.category.color }};"></span>
+                            {{ exp.category.name }}
+                        </span>
+                        {% if exp.bucket_id %}
+                        <span class="vs-badge vs-badge-primary ml-1" title="Linked to reserved bucket">
+                            <i class="fas fa-shield-halved text-[10px]"></i> Bucket
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="text-right whitespace-nowrap font-bold tabular-nums text-slate-900 dark:text-white text-base">
+                        Rs. {{ "{:,.0f}".format(exp.amount) }}
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                        <div class="inline-flex items-center gap-1">
+                            <a href="{{ url_for('edit_expense', id=exp.id) }}" class="vs-icon-btn" title="Edit expense">
                                 <i class="fas fa-pen text-xs"></i>
                             </a>
-                            <form action="{{ url_for('delete_expected', id=item.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete planned item {{ item.name }}?');">
-                                <button type="submit" class="vs-icon-btn hover:text-rose-500" title="Delete planned item">
-                                    <i class="fas fa-trash text-xs"></i>
-                                </button>
-                            </form>
+                            <a href="{{ url_for('delete_expense', id=exp.id) }}" onclick="return confirm('Delete this expense ({{ exp.item_name }})?')" class="vs-icon-btn hover:text-rose-500" title="Delete expense">
+                                <i class="fas fa-trash text-xs"></i>
+                            </a>
                         </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-10 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+            <i class="fas fa-receipt text-lg"></i>
+        </div>
+        <p class="text-sm font-bold text-slate-800 dark:text-slate-200">No expenses logged for {{ month_name }} {{ selected_year }}</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+            Use the form above to record your first expense or scan a receipt with AI.
+        </p>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Row 3: Monthly Commitments & Protection (Planned Bills & Buckets) -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+
+    <!-- Protected Buckets Card -->
+    <section class="vs-card" aria-labelledby="buckets-heading">
+        <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+                <h2 id="buckets-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <i class="fas fa-shield-halved text-indigo-500"></i>
+                    <span>Protected Spending Buckets</span>
+                    <span class="vs-badge vs-badge-neutral">{{ budget_buckets|length }}</span>
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Rs. {{ "{:,.0f}".format(bucket_unspent_total) }} unspent of Rs. {{ "{:,.0f}".format(bucket_allocated_total) }} reserved
+                </p>
+            </div>
+            {% if is_manager %}
+            <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-primary">
+                <i class="fas fa-plus"></i> Add Bucket
+            </button>
+            {% endif %}
+        </div>
+
+        {% if budget_buckets %}
+        <div class="space-y-3">
+            {% for b in budget_buckets %}
+            <div class="vs-card-muted p-3">
+                <div class="flex items-center justify-between gap-2 mb-1.5">
+                    <div class="min-w-0">
+                        <div class="font-semibold text-sm text-slate-900 dark:text-white truncate">{{ b.bucket.name }}</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400">
+                            {{ b.bucket.category.name }} · Spent Rs. {{ "{:,.0f}".format(b.spent) }} of Rs. {{ "{:,.0f}".format(b.allocated) }}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        {% if b.is_overflow %}
+                        <span class="vs-badge vs-badge-danger">+Rs. {{ "{:,.0f}".format(b.overflow) }} over</span>
+                        {% else %}
+                        <span class="vs-badge vs-badge-success">Rs. {{ "{:,.0f}".format(b.remaining) }} left</span>
+                        {% endif %}
+                        {% if is_manager %}
+                        <a href="{{ url_for('edit_expected', id=b.bucket.id) }}" class="vs-icon-btn" title="Edit bucket">
+                            <i class="fas fa-pen text-[11px]"></i>
+                        </a>
                         {% endif %}
                     </div>
-                    {% endfor %}
+                </div>
+                <div class="vs-progress h-1.5">
+                    <div class="vs-progress-fill {% if b.is_overflow %}bg-rose-500{% elif b.usage_pct >= 80 %}bg-amber-500{% else %}bg-emerald-500{% endif %}"
+                         style="width: {{ [b.usage_pct, 100]|min }}%;"></div>
                 </div>
             </div>
-            {% elif not budget_buckets %}
-            <div class="text-center py-8 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
-                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">No bills or buckets scheduled yet</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Add recurring bills (rent, EMI, utilities) or protected spending buckets to forecast month-end savings.
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-8 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+            <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">No protected buckets created</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Protect dedicated budget for groceries, fuel, or medical needs that auto-deducts as expenses are logged.
+            </p>
+            {% if is_manager %}
+            <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-secondary mt-3">
+                <i class="fas fa-plus"></i> Create Bucket
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Scheduled Bills Card -->
+    <section class="vs-card" aria-labelledby="scheduled-bills-heading">
+        {% set standard_bills = expected_expenses | rejectattr('is_bucket') | list %}
+        <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+                <h2 id="scheduled-bills-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <i class="fas fa-file-invoice-dollar text-amber-500"></i>
+                    <span>Scheduled Bills</span>
+                    <span class="vs-badge vs-badge-neutral">{{ standard_bills|length }}</span>
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Rs. {{ "{:,.0f}".format(expected_unpaid_total) }} unpaid · {{ "{:.0f}".format(plan_paid_percentage) }}% posted
                 </p>
-                {% if is_manager %}
-                <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-primary mt-3">
-                    <i class="fas fa-plus"></i>
-                    <span>Add First Planned Item</span>
+            </div>
+            {% if is_manager %}
+            <div class="flex items-center gap-1.5">
+                <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-primary">
+                    <i class="fas fa-plus"></i> Add Bill
                 </button>
+                {% if standard_bills %}
+                <form action="{{ url_for('copy_expected_plan') }}" method="POST" class="inline">
+                    <input type="hidden" name="month" value="{{ selected_month }}">
+                    <input type="hidden" name="year" value="{{ selected_year }}">
+                    <button type="submit" class="vs-btn vs-btn-sm vs-btn-secondary" title="Copy this month's bills into next month">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </form>
                 {% endif %}
             </div>
             {% endif %}
-        </section>
+        </div>
 
-    </div>
+        {% if standard_bills %}
+        <div class="space-y-2">
+            {% for item in standard_bills %}
+            <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold text-slate-900 dark:text-white truncate {% if item.is_paid %}line-through opacity-60{% endif %}">
+                            {{ item.name }}
+                        </span>
+                        {% if item.is_paid %}
+                        <span class="vs-badge vs-badge-success">Paid</span>
+                        {% else %}
+                        <span class="vs-badge vs-badge-warning">Due {{ item.due_day }} {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][item.month-1] }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
+                        <span>{{ item.category.name if item.category else 'Uncategorized' }}</span>
+                        <span>·</span>
+                        <strong class="text-slate-700 dark:text-slate-200 tabular-nums">Rs. {{ "{:,.0f}".format(item.amount) }}</strong>
+                    </div>
+                </div>
+
+                {% if is_manager %}
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <form action="{{ url_for('toggle_expected', id=item.id) }}" method="POST" class="inline">
+                        <button type="submit" class="vs-btn vs-btn-sm {% if item.is_paid %}vs-btn-ghost{% else %}vs-btn-secondary{% endif %}" title="{% if item.is_paid %}Move back to unpaid{% else %}Mark paid &amp; post to expenses{% endif %}">
+                            <i class="fas {% if item.is_paid %}fa-rotate-left text-slate-400{% else %}fa-check text-emerald-500{% endif %}"></i>
+                            <span>{% if item.is_paid %}Undo{% else %}Pay{% endif %}</span>
+                        </button>
+                    </form>
+                    <a href="{{ url_for('edit_expected', id=item.id) }}" class="vs-icon-btn" title="Edit planned item">
+                        <i class="fas fa-pen text-xs"></i>
+                    </a>
+                    <form action="{{ url_for('delete_expected', id=item.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete planned item {{ item.name }}?');">
+                        <button type="submit" class="vs-icon-btn hover:text-rose-500" title="Delete planned item">
+                            <i class="fas fa-trash text-xs"></i>
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-8 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+            <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">No recurring bills scheduled</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Add recurring commitments like House Rent, EMI, WiFi, or School Fees.
+            </p>
+            {% if is_manager %}
+            <button type="button" data-modal-open="addExpectedModal" class="vs-btn vs-btn-sm vs-btn-secondary mt-3">
+                <i class="fas fa-plus"></i> Add First Bill
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+
 </div>
 {% endblock %}
 
@@ -788,6 +860,139 @@
         </div>
     </div>
 </div>
+
+<!-- 5. What Does What? Quick Interactive App Guide Modal (#quickGuideModal) -->
+<div id="quickGuideModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="quick-guide-title">
+    <div class="vs-modal-panel vs-modal-lg max-w-2xl">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <i class="fas fa-compass text-lg"></i>
+                </div>
+                <div>
+                    <h3 id="quick-guide-title" class="text-base font-bold text-slate-900 dark:text-white">VaultSync Feature Guide</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Everything you need to know about what does what</p>
+                </div>
+            </div>
+            <button type="button" data-modal-close="quickGuideModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            <!-- 1. Dashboard & Ledger -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-chart-pie"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">Dashboard &amp; Ledger (Home)</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Your central command center. See your 4 core numbers (Budget, Spent, Planned Bills, Projected Savings), quickly log a daily expense or scan a receipt, view category shares, and browse the complete full-width ledger with 1-click spender filters.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 2. Daily Diary -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-calendar-day"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">Daily Diary</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Groups purchases day-by-day in chronological order (Today, Yesterday, Oct 08, etc.) like a passbook or diary. Switch between <em>All Family</em> and <em>Only Mine</em> to audit spending on specific dates.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 3. My Spendings -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-wallet"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">My Spendings</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Shows only the expenses you personally paid for. It strips away expenses logged by other family members so you can manage your personal spending and category totals independently.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 4. Financial Analytics -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">Financial Analytics</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Detailed reporting showing 6-month historical cash flow trends, weekly burn rate, category spending variance against limits, and top spending days of the month.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 5. Daily AI Briefings -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">Daily AI Briefings</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Every day, AI calculates your safe daily spending limit for the remaining days of the month, highlights any abnormal surges, and gives you actionable recommendations to prevent overspending.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 6. AI Budget Studio -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-pink-50 dark:bg-pink-500/15 text-pink-600 dark:text-pink-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">AI Budget Studio</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Simulate and generate smart monthly budget targets based on your family's actual past spending patterns. Compare deltas, apply the plan in 1 click, or revert to past versions anytime.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 7. Monthly Excel Template & Book Importer -->
+            <div class="p-3 rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-file-excel"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-emerald-900 dark:text-emerald-200">Download Excel Template &amp; Auto-Capture</div>
+                    <p class="text-xs text-emerald-800 dark:text-emerald-300 mt-0.5 leading-relaxed">
+                        Download our official pre-formatted Excel expense sheet with automated formulas every month. When ready, upload the sheet, CSV, or a bank PDF/photo into <em>Import Book</em> to auto-sync transactions and budgets instantly!
+                    </p>
+                </div>
+            </div>
+
+            <!-- 8. Family Admin -->
+            <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-3">
+                <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                    <i class="fas fa-sliders"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">Family Admin &amp; Data Reset</div>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Manage family members, generate invite codes, set category monthly caps, and safely erase all financial test data whenever you want a fresh monthly start.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
+            <a href="{{ url_for('features') }}" class="vs-btn vs-btn-sm vs-btn-secondary">
+                <i class="fas fa-book-open"></i> Full App Guide Page
+            </a>
+            <button type="button" data-modal-close="quickGuideModal" class="vs-btn vs-btn-sm vs-btn-primary">Got it!</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -798,25 +1003,47 @@
         if (!input.value) input.value = new Date().toISOString().split('T')[0];
     });
 
-    // Live Transaction Search & Category Filter
+    // Live Transaction Search, Category Filter & Spender Filter Pills
     (function() {
         const searchInput = document.getElementById('txSearchInput');
         const categorySelect = document.getElementById('txCategoryFilter');
+        const userButtons = document.querySelectorAll('[data-tx-user-filter]');
         const rows = document.querySelectorAll('[data-tx-row]');
+        const countBadge = document.getElementById('visibleTxCount');
+        let selectedUser = '';
+
         if (!rows.length) return;
 
         function filterTransactions() {
             const q = (searchInput ? searchInput.value : '').trim().toLowerCase();
             const cat = (categorySelect ? categorySelect.value : '').trim().toLowerCase();
+            let visibleCount = 0;
+
             rows.forEach((row) => {
                 const textMatch = !q || (row.dataset.search || '').includes(q);
                 const catMatch = !cat || (row.dataset.category || '') === cat;
-                row.style.display = (textMatch && catMatch) ? '' : 'none';
+                const userMatch = !selectedUser || (row.dataset.user || '').toLowerCase() === selectedUser;
+                const match = textMatch && catMatch && userMatch;
+                row.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
             });
+
+            if (countBadge) {
+                countBadge.textContent = `${visibleCount} expenses`;
+            }
         }
 
         if (searchInput) searchInput.addEventListener('input', filterTransactions);
         if (categorySelect) categorySelect.addEventListener('change', filterTransactions);
+
+        userButtons.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                userButtons.forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedUser = (btn.dataset.txUserFilter || '').trim().toLowerCase();
+                filterTransactions();
+            });
+        });
     })();
 
     // Interactive Doughnut Chart
