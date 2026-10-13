@@ -202,7 +202,7 @@ AUTO_COLOR_PALETTE = [
     '#be123c',  # Rose-700
 ]
 
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
 AI_ORGANIZER_BATCH_SIZE = 25
 _ai_organizer_scheduler_started = False
 _ai_plan_scheduler_started = False
@@ -1313,7 +1313,8 @@ def extract_gemini_raw_text(response_payload):
     text_parts = [part.get('text', '') for part in parts if part.get('text')]
     if not text_parts:
         raise ValueError('Gemini returned no text content.')
-    return ''.join(text_parts).strip()
+    raw_text = ''.join(text_parts).strip()
+    return re.sub(r' {4,}', ' ', raw_text).strip()
 
 
 def call_gemini_text(prompt, system_instruction=None, temperature=0.25):
@@ -1321,7 +1322,14 @@ def call_gemini_text(prompt, system_instruction=None, temperature=0.25):
     if not api_keys:
         raise ValueError('No Gemini API key is set. Configure GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3, or GEMINI_API_KEYS.')
 
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+    candidate_models = [GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest']
+    seen_models = set()
+    model_list = []
+    for m in candidate_models:
+        if m and m not in seen_models:
+            seen_models.add(m)
+            model_list.append(m)
+
     payload = {
         'contents': [
             {
@@ -1332,7 +1340,7 @@ def call_gemini_text(prompt, system_instruction=None, temperature=0.25):
         ],
         'generationConfig': {
             'temperature': temperature,
-            'maxOutputTokens': 1800,
+            'maxOutputTokens': 3500,
             'thinkingConfig': {'thinkingBudget': 0}
         }
     }
@@ -1344,33 +1352,38 @@ def call_gemini_text(prompt, system_instruction=None, temperature=0.25):
     body = json.dumps(payload).encode('utf-8')
     errors = []
 
-    for index, api_key in enumerate(api_keys, start=1):
-        request_obj = urllib.request.Request(
-            url,
-            data=body,
-            headers={
-                'Content-Type': 'application/json',
-                'x-goog-api-key': api_key,
-            },
-            method='POST'
-        )
+    for model_name in model_list:
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent'
+        for index, api_key in enumerate(api_keys, start=1):
+            request_obj = urllib.request.Request(
+                url,
+                data=body,
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': api_key,
+                },
+                method='POST'
+            )
 
-        try:
-            with urllib.request.urlopen(request_obj, timeout=45) as response:
-                response_payload = json.loads(response.read().decode('utf-8'))
-            return extract_gemini_raw_text(response_payload)
-        except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode('utf-8', errors='replace')
-            errors.append(f'key {index}: HTTP {exc.code} {error_body[:220]}')
-            if not should_try_next_gemini_key(exc):
+            try:
+                with urllib.request.urlopen(request_obj, timeout=45) as response:
+                    response_payload = json.loads(response.read().decode('utf-8'))
+                return extract_gemini_raw_text(response_payload)
+            except urllib.error.HTTPError as exc:
+                error_body = exc.read().decode('utf-8', errors='replace')
+                errors.append(f'{model_name} key {index}: HTTP {exc.code} {error_body[:180]}')
+                if exc.code == 404:
+                    # Model not available with this endpoint/key, break to next model
+                    break
+                if not should_try_next_gemini_key(exc):
+                    break
+            except urllib.error.URLError as exc:
+                errors.append(f'{model_name} key {index}: network {exc.reason}')
+                if not should_try_next_gemini_key(exc):
+                    break
+            except json.JSONDecodeError as exc:
+                errors.append(f'{model_name} key {index}: invalid JSON response {exc}')
                 break
-        except urllib.error.URLError as exc:
-            errors.append(f'key {index}: network {exc.reason}')
-            if not should_try_next_gemini_key(exc):
-                break
-        except json.JSONDecodeError as exc:
-            errors.append(f'key {index}: invalid JSON response {exc}')
-            break
 
     raise ValueError('Gemini API failed for all configured keys: ' + ' | '.join(errors))
 
@@ -1660,15 +1673,17 @@ def build_advisor_system_instruction():
         "- When the user asks for a scenario plan (e.g. 'I have 3 guests incoming next week, I need a budget plan to balance out my expenses to minimum', or 'I want to buy an iPhone next month worth X, EMI is Y, downpayment is V, make a plan how to spend', or 'How to save ₹10,000 this month'):\n"
         "  a. Ground your response in the real numbers provided in Context JSON (current total spent, remaining balance, days left, safe daily burn rate, category leeway).\n"
         "  b. Differentiate between Essential categories (Groceries, Utilities, Rent, Medicine) and Flexible/Discretionary categories (Dining Out, Shopping, Entertainment, Leisure). Target cuts from flexible ones so essential household needs are protected.\n"
-        "  c. PRESENT BUDGET PLANS, CUTS, AND COMPARISONS IN WELL-FORMATTED GITHUB MARKDOWN TABLES:\n"
-        "     | Category | Current Spent | Monthly Cap | Proposed Adjustment | Target Limit | Practical Action |\n"
-        "     |---|---|---|---|---|---|\n"
-        "  d. For big purchases (e.g., iPhone / electronics):\n"
-        "     - Analyze downpayment feasibility (does savings/buffer cover it without negative cashflow?).\n"
-        "     - Show an EMI Absorption Table detailing exactly which discretionary categories will permanently absorb the monthly EMI.\n"
+        "  c. STRICT COMPACT TABLE RULE: ALWAYS present budget plans and comparisons in compact Markdown tables without multiple padding spaces between pipes. NEVER output repeated blank whitespace. Complete the entire table with all rows and total sum:\n"
+        "     | Category | Current Spent | Cap | Change | Action |\n"
+        "     |---|---|---|---|---|\n"
+        "     | Eating Out | ₹1,616 | ₹3,500 | -₹1,000 | Cook home meals for guests |\n"
+        "     | **Total** | **₹34,075** | **₹56,583** | **+₹500** | Net impact |\n"
+        "  d. For big purchases (e.g., iPhone / electronics / EMI):\n"
+        "     - Analyze downpayment feasibility vs current unallocated buffer.\n"
+        "     - Show an EMI Absorption Table detailing exactly which discretionary categories will permanently absorb the monthly EMI without going into debt.\n"
         "  e. For guest visits or events:\n"
         "     - Provide a target daily hosting allowance for the visit period vs normal days for the rest of the month.\n"
-        "  f. Double check that all calculations balance out precisely and explain everything in clear, friendly, human terms (no jargon).\n\n"
+        "  f. Ensure every row is filled with real numbers from context. Never stop after the table header. Complete the full table and explanation in clear, friendly, human terms.\n\n"
         "4. TONE & PRIVACY:\n"
         "- Encouraging, practical, structured, and clear.\n"
         "- Always format currency with ₹ (Rupees).\n"
@@ -4970,7 +4985,17 @@ def chatbot_view():
         user_id=current_user.id
     ).order_by(ChatThread.updated_at.desc()).all()
 
-    return render_template('chatbot.html', threads=threads)
+    advisor_context = chatbot_deep_context_payload(current_user)
+    return render_template('chatbot.html', threads=threads, advisor_context=advisor_context)
+
+
+@app.route('/api/chat/context', methods=['GET'])
+@login_required
+def api_chat_context():
+    """Return live family financial context for interactive extensions."""
+    if not current_user.family_id:
+        return jsonify({'success': False, 'context': {}}), 400
+    return jsonify({'success': True, 'context': chatbot_deep_context_payload(current_user)})
 
 
 @app.route('/api/chat/threads', methods=['GET'])

@@ -2,7 +2,7 @@
 
 {% block title %}AI Financial Advisor &amp; Chatbot Studio - VaultSync{% endblock %}
 
-{% block extra_head %}
+{% block head %}
 <!-- Markdown and Sanitization libraries for ChatGPT/Gemini style tables & formatting -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
@@ -11,12 +11,13 @@
     .chat-studio-container {
         display: flex;
         height: calc(100vh - 5.5rem);
-        min-height: 580px;
+        min-height: 600px;
         background: #ffffff;
         border-radius: 1.25rem;
         overflow: hidden;
         border: 1px solid rgba(226, 232, 240, 0.8);
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+        position: relative;
     }
     .dark .chat-studio-container {
         background: #0f172a;
@@ -26,7 +27,7 @@
 
     /* Threads Sidebar */
     .chat-threads-sidebar {
-        width: 290px;
+        width: 280px;
         flex-shrink: 0;
         background: #f8fafc;
         border-right: 1px solid #e2e8f0;
@@ -53,17 +54,38 @@
         background: #0b1120;
     }
 
-    /* Markdown Table Styling */
-    .prose-chat table {
+    /* Interactive Extensions Drawer */
+    .chat-extensions-drawer {
+        width: 380px;
+        flex-shrink: 0;
+        background: #f8fafc;
+        border-left: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.25s ease, margin-right 0.25s ease;
+    }
+    .dark .chat-extensions-drawer {
+        background: #0f172a;
+        border-color: #1e293b;
+    }
+    .chat-extensions-drawer.closed {
+        display: none;
+    }
+
+    /* Markdown Table Styling - Pristine & Responsive */
+    .prose-chat table, .vs-chat-table {
         width: 100%;
-        margin: 1rem 0;
+        margin: 0.85rem 0;
         border-collapse: collapse;
-        font-size: 0.825rem;
+        font-size: 0.8rem;
         border-radius: 0.75rem;
         overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: 1px solid #e2e8f0;
     }
-    .prose-chat th {
+    .dark .prose-chat table, .dark .vs-chat-table {
+        border-color: #334155;
+    }
+    .prose-chat th, .vs-chat-table th {
         background: #f1f5f9;
         color: #1e293b;
         font-weight: 700;
@@ -72,25 +94,26 @@
         border-bottom: 2px solid #cbd5e1;
         white-space: nowrap;
     }
-    .dark .prose-chat th {
+    .dark .prose-chat th, .dark .vs-chat-table th {
         background: #1e293b;
         color: #f1f5f9;
         border-color: #334155;
     }
-    .prose-chat td {
+    .prose-chat td, .vs-chat-table td {
         padding: 0.6rem 0.85rem;
         border-bottom: 1px solid #e2e8f0;
         color: #334155;
+        vertical-align: top;
     }
-    .dark .prose-chat td {
+    .dark .prose-chat td, .dark .vs-chat-table td {
         border-color: #1e293b;
         color: #cbd5e1;
     }
-    .prose-chat tr:nth-child(even) td {
-        background: #f8fafc/50;
+    .prose-chat tr:nth-child(even) td, .vs-chat-table tr:nth-child(even) td {
+        background: rgba(248, 250, 252, 0.6);
     }
-    .dark .prose-chat tr:nth-child(even) td {
-        background: #131d33/40;
+    .dark .prose-chat tr:nth-child(even) td, .dark .vs-chat-table tr:nth-child(even) td {
+        background: rgba(30, 41, 59, 0.4);
     }
     .prose-chat ul, .prose-chat ol {
         margin: 0.6rem 0;
@@ -113,6 +136,17 @@
     .prose-chat p:last-child {
         margin-bottom: 0;
     }
+    .prose-chat blockquote {
+        border-left: 3px solid #6366f1;
+        padding-left: 0.75rem;
+        margin: 0.6rem 0;
+        color: #475569;
+        font-style: italic;
+    }
+    .dark .prose-chat blockquote {
+        border-left-color: #818cf8;
+        color: #94a3b8;
+    }
 
     /* Ghost mode glowing effect */
     .ghost-mode-active {
@@ -121,6 +155,23 @@
     }
 
     /* Responsive Mobile drawer */
+    @media (max-width: 1024px) {
+        .chat-extensions-drawer {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            right: 0;
+            z-index: 50;
+            width: 90%;
+            max-width: 380px;
+            box-shadow: -4px 0 25px rgba(0,0,0,0.2);
+            transform: translateX(100%);
+        }
+        .chat-extensions-drawer.open {
+            display: flex;
+            transform: translateX(0);
+        }
+    }
     @media (max-width: 768px) {
         .chat-threads-sidebar {
             position: absolute;
@@ -139,7 +190,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="chat-studio-container">
+<div class="chat-studio-container" id="chatStudioContainer">
     <!-- Left Sidebar: Conversation Threads & Controls -->
     <aside class="chat-threads-sidebar" id="threadsSidebar">
         <!-- New Chat & Disappearing Toggle Header -->
@@ -223,9 +274,17 @@
 
             <!-- Right Header Actions -->
             <div class="flex items-center gap-2">
+                <!-- Extensions Drawer Toggle Button -->
+                <button type="button" id="btnToggleExtensions" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 text-xs font-semibold transition shadow-sm active:scale-95" title="Open Interactive Planning Extensions">
+                    <i class="fas fa-wand-magic-sparkles text-indigo-500 text-xs"></i>
+                    <span class="hidden sm:inline">Planning Extensions</span>
+                    <span class="sm:hidden">Extensions</span>
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                </button>
+
                 <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                     <i class="fas fa-shield-halved text-indigo-500 text-[10px]"></i>
-                    <span>Read-Only Advisor</span>
+                    <span>Read-Only</span>
                 </div>
                 <button type="button" id="btnDeleteCurrentThread" class="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-center transition" title="Delete this conversation">
                     <i class="fas fa-trash-can text-xs"></i>
@@ -339,7 +398,298 @@
             </div>
         </footer>
     </main>
+
+    <!-- Right Drawer: Interactive Planning Extensions -->
+    <aside class="chat-extensions-drawer closed" id="extensionsDrawer">
+        <!-- Drawer Header -->
+        <div class="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                </span>
+                <div>
+                    <h3 class="text-xs font-bold text-slate-900 dark:text-white leading-tight">Planning Extensions</h3>
+                    <p class="text-[10px] text-slate-500 dark:text-slate-400">Interactive financial calculators</p>
+                </div>
+            </div>
+            <button type="button" id="btnCloseExtensions" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 flex items-center justify-center text-xs transition">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- Extension Tabs -->
+        <div class="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-1 gap-1 text-[11px]">
+            <button type="button" class="ext-tab-btn flex-1 py-1.5 px-2 rounded-lg font-semibold text-center transition bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs" data-target="extTabGuests">
+                <i class="fas fa-users mr-1"></i>Guests
+            </button>
+            <button type="button" class="ext-tab-btn flex-1 py-1.5 px-2 rounded-lg font-semibold text-center transition text-slate-600 dark:text-slate-400 hover:text-slate-900" data-target="extTabPurchase">
+                <i class="fas fa-mobile-screen mr-1"></i>Purchase/EMI
+            </button>
+            <button type="button" class="ext-tab-btn flex-1 py-1.5 px-2 rounded-lg font-semibold text-center transition text-slate-600 dark:text-slate-400 hover:text-slate-900" data-target="extTabHeadroom">
+                <i class="fas fa-chart-pie mr-1"></i>Headroom
+            </button>
+            <button type="button" class="ext-tab-btn flex-1 py-1.5 px-2 rounded-lg font-semibold text-center transition text-slate-600 dark:text-slate-400 hover:text-slate-900" data-target="extTabShortcuts">
+                <i class="fas fa-bolt mr-1"></i>Actions
+            </button>
+        </div>
+
+        <!-- Extension Content Container -->
+        <div class="flex-1 overflow-y-auto p-3.5 space-y-4 text-xs">
+            <!-- TAB 1: GUEST HOSTING BUDGET OPTIMIZER -->
+            <div id="extTabGuests" class="ext-tab-content space-y-3.5">
+                <div class="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40 space-y-1">
+                    <div class="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                        <i class="fas fa-users text-purple-600 dark:text-purple-400"></i>
+                        <span>Incoming Guests Budget Optimizer</span>
+                    </div>
+                    <p class="text-[11px] text-purple-700 dark:text-purple-300 leading-relaxed">
+                        Calculate exact hospitality cost and automatically offset it from flexible budget categories so your total monthly budget stays 100% intact.
+                    </p>
+                </div>
+
+                <div class="space-y-3 bg-white dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Guests Count</label>
+                            <div class="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-900">
+                                <button type="button" class="px-2.5 py-1.5 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800" onclick="adjustGuestVal('guestCount', -1)">-</button>
+                                <input type="number" id="guestCount" value="3" min="1" max="20" class="w-full text-center bg-transparent border-0 text-xs font-bold p-1 focus:ring-0">
+                                <button type="button" class="px-2.5 py-1.5 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800" onclick="adjustGuestVal('guestCount', 1)">+</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Stay Duration (Days)</label>
+                            <div class="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-900">
+                                <button type="button" class="px-2.5 py-1.5 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800" onclick="adjustGuestVal('guestDays', -1)">-</button>
+                                <input type="number" id="guestDays" value="5" min="1" max="31" class="w-full text-center bg-transparent border-0 text-xs font-bold p-1 focus:ring-0">
+                                <button type="button" class="px-2.5 py-1.5 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800" onclick="adjustGuestVal('guestDays', 1)">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Hosting Hospitality Style</label>
+                        <select id="guestStyle" class="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium">
+                            <option value="350">Modest &amp; Home-Cooked (₹350 / person / day)</option>
+                            <option value="700" selected>Balanced Outings &amp; Meals (₹700 / person / day)</option>
+                            <option value="1200">Generous &amp; Dining Out (₹1,200 / person / day)</option>
+                        </select>
+                    </div>
+
+                    <!-- Computed Breakdown Card -->
+                    <div class="p-2.5 rounded-lg bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/40 space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-slate-600 dark:text-slate-300">Projected Guest Cost:</span>
+                            <span class="font-extrabold text-indigo-700 dark:text-indigo-300 text-sm" id="guestTotalCost">₹10,500</span>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>Remaining October Cushion:</span>
+                            <span class="font-bold text-slate-700 dark:text-slate-200" id="guestAvailableCushion">₹27,008</span>
+                        </div>
+                        <div class="pt-1.5 border-t border-indigo-200/50 dark:border-indigo-800/40">
+                            <div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Recommended Category Offsets:</div>
+                            <div class="space-y-1 text-[11px]" id="guestOffsetList">
+                                <div class="flex justify-between text-emerald-600 dark:text-emerald-400"><span>+ Groceries (meals/snacks):</span><span class="font-semibold">+₹4,500</span></div>
+                                <div class="flex justify-between text-indigo-600 dark:text-indigo-400"><span>+ Eating Out (outings):</span><span class="font-semibold">+₹6,000</span></div>
+                                <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Personal Shopping:</span><span class="font-semibold">-₹3,500</span></div>
+                                <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Leisure / Entertainment:</span><span class="font-semibold">-₹2,500</span></div>
+                                <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Misc Discretionary:</span><span class="font-semibold">-₹4,500</span></div>
+                                <div class="flex justify-between font-bold text-slate-800 dark:text-slate-200 pt-1 border-t border-slate-200 dark:border-slate-700"><span>Net Budget Deficit:</span><span>₹0 (Balanced)</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 pt-1">
+                        <button type="button" id="btnAskAdvisorGuests" class="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95">
+                            <i class="fas fa-brain"></i>
+                            <span>Ask Advisor to Plan This</span>
+                        </button>
+                        <button type="button" id="btnCopyGuests" class="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs transition" title="Copy breakdown">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: MAJOR PURCHASE & EMI SIMULATOR -->
+            <div id="extTabPurchase" class="ext-tab-content hidden space-y-3.5">
+                <div class="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 space-y-1">
+                    <div class="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                        <i class="fas fa-mobile-screen text-blue-600 dark:text-blue-400"></i>
+                        <span>Major Purchase &amp; EMI Simulator</span>
+                    </div>
+                    <p class="text-[11px] text-blue-700 dark:text-blue-300 leading-relaxed">
+                        Simulate buying an iPhone, gadget, or appliance. Verifies downpayment feasibility and maps out monthly discretionary cuts to fund the EMI safely.
+                    </p>
+                </div>
+
+                <div class="space-y-3 bg-white dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                    <div>
+                        <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Item / Device Name</label>
+                        <input type="text" id="purchaseItemName" value="iPhone 16 Pro" class="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Total Price (₹)</label>
+                            <input type="number" id="purchaseTotalPrice" value="80000" class="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Downpayment (₹)</label>
+                            <input type="number" id="purchaseDownpayment" value="20000" class="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Tenure (Months)</label>
+                            <select id="purchaseTenure" class="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium">
+                                <option value="6">6 Months</option>
+                                <option value="9">9 Months</option>
+                                <option value="12" selected>12 Months</option>
+                                <option value="24">24 Months</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Monthly EMI (₹)</label>
+                            <input type="number" id="purchaseMonthlyEmi" value="6500" class="w-full p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold">
+                        </div>
+                    </div>
+
+                    <!-- Feasibility Matrix -->
+                    <div class="p-2.5 rounded-lg bg-blue-50/60 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-slate-600 dark:text-slate-300">Downpayment Cushion Check:</span>
+                            <span class="font-bold text-emerald-600 dark:text-emerald-400" id="purchaseBufferCheck">Safe (₹27,008 Cushion)</span>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>EMI % of Monthly Income:</span>
+                            <span class="font-semibold text-slate-700 dark:text-slate-300" id="purchaseEmiIncomeRatio">3.8% (Healthy &lt; 15%)</span>
+                        </div>
+                        <div class="pt-1.5 border-t border-blue-200/50 dark:border-blue-800/40">
+                            <div class="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Recommended Discretionary Cuts to Fund EMI:</div>
+                            <div class="space-y-1 text-[11px]" id="purchaseCutsList">
+                                <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Dining Out / Restaurants:</span><span class="font-semibold">-₹2,500</span></div>
+                                <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Shopping / Apparel:</span><span class="font-semibold">-₹2,500</span></div>
+                                <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Entertainment &amp; Leisure:</span><span class="font-semibold">-₹1,500</span></div>
+                                <div class="flex justify-between font-bold text-slate-800 dark:text-slate-200 pt-1 border-t border-slate-200 dark:border-slate-700"><span>Total Monthly Cut:</span><span class="text-indigo-600 dark:text-indigo-400">-₹6,500 (100% Funds EMI)</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 pt-1">
+                        <button type="button" id="btnAskAdvisorPurchase" class="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95">
+                            <i class="fas fa-brain"></i>
+                            <span>Ask Advisor for Strategy</span>
+                        </button>
+                        <a href="{{ url_for('ai_budget') }}#planned" class="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs transition flex items-center gap-1" title="Add as Planned Expense">
+                            <i class="fas fa-plus text-[10px]"></i>
+                            <span>Add Planned</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: CATEGORY HEADROOM & CUSHION EXPLORER -->
+            <div id="extTabHeadroom" class="ext-tab-content hidden space-y-3.5">
+                <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 space-y-1">
+                    <div class="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                        <i class="fas fa-chart-pie text-emerald-600 dark:text-emerald-400"></i>
+                        <span>Live Category Headroom</span>
+                    </div>
+                    <p class="text-[11px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
+                        Real-time breakdown of all categories. See where you have breathing room and which discretionary categories can absorb emergency expenses.
+                    </p>
+                </div>
+
+                <div class="space-y-2 bg-white dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60" id="headroomCategoriesList">
+                    <!-- Populated dynamically via JS -->
+                    <div class="text-center py-4 text-xs text-slate-400">
+                        <i class="fas fa-spinner fa-spin text-indigo-500 mb-1"></i>
+                        <div>Loading headroom metrics...</div>
+                    </div>
+                </div>
+
+                <button type="button" id="btnAskAdvisorHeadroom" class="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95">
+                    <i class="fas fa-brain"></i>
+                    <span>Ask Advisor to Trim Flexible Spending</span>
+                </button>
+            </div>
+
+            <!-- TAB 4: QUICK ACTION DEEP-LINKS -->
+            <div id="extTabShortcuts" class="ext-tab-content hidden space-y-3.5">
+                <div class="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/60 space-y-1">
+                    <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-bolt text-amber-500"></i>
+                        <span>VaultSync Quick Actions</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Because the Advisor is strictly read-only, use these one-click shortcuts to adjust your budget, record bills, or download sheets directly.
+                    </p>
+                </div>
+
+                <div class="space-y-2">
+                    <a href="{{ url_for('dashboard') }}" class="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition group">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">
+                                <i class="fas fa-sliders"></i>
+                            </span>
+                            <div>
+                                <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">Adjust Category Limits</div>
+                                <div class="text-[10px] text-slate-400">Change monthly caps on your Dashboard</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-[11px] text-slate-400 group-hover:text-indigo-500"></i>
+                    </a>
+
+                    <a href="{{ url_for('ai_budget') }}#planned" class="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition group">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs">
+                                <i class="fas fa-calendar-plus"></i>
+                            </span>
+                            <div>
+                                <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">Add Planned Expense / EMI</div>
+                                <div class="text-[10px] text-slate-400">Track recurring dues and upcoming bills</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-[11px] text-slate-400 group-hover:text-purple-500"></i>
+                    </a>
+
+                    <a href="{{ url_for('download_expense_book_template') }}" class="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition group">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs">
+                                <i class="fas fa-file-excel"></i>
+                            </span>
+                            <div>
+                                <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">Download Excel Template</div>
+                                <div class="text-[10px] text-slate-400">Offline expense template synced with site</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-[11px] text-slate-400 group-hover:text-emerald-500"></i>
+                    </a>
+
+                    <a href="{{ url_for('ai_budget') }}" class="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition group">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs">
+                                <i class="fas fa-chart-line"></i>
+                            </span>
+                            <div>
+                                <div class="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">View Budget Analytics</div>
+                                <div class="text-[10px] text-slate-400">Deep trends and monthly comparisons</div>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-[11px] text-slate-400 group-hover:text-blue-500"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </aside>
 </div>
+
+<!-- Embedded Live Context from Server -->
+<script id="serverAdvisorContext" type="application/json">
+{{ (advisor_context | tojson) if advisor_context else '{}' }}
+</script>
 
 <script>
 (() => {
@@ -348,6 +698,14 @@
     let isDisappearing = false;
     let ephemeralHistory = [];
     let isThinking = false;
+    let advisorContext = {};
+
+    try {
+        const rawCtx = document.getElementById('serverAdvisorContext').textContent;
+        advisorContext = JSON.parse(rawCtx || '{}');
+    } catch(e) {
+        advisorContext = {};
+    }
 
     // Elements
     const threadsSidebar = document.getElementById('threadsSidebar');
@@ -373,29 +731,141 @@
     const chatInput = document.getElementById('chatInput');
     const btnSendMessage = document.getElementById('btnSendMessage');
 
-    // Setup marked parser
-    if (typeof marked !== 'undefined') {
-        marked.setOptions({
-            gfm: true,
-            breaks: true,
-            headerIds: false,
-            mangle: false
+    // Extensions Elements
+    const extensionsDrawer = document.getElementById('extensionsDrawer');
+    const btnToggleExtensions = document.getElementById('btnToggleExtensions');
+    const btnCloseExtensions = document.getElementById('btnCloseExtensions');
+
+    // Toggle Extensions Drawer
+    function toggleExtensions() {
+        const isClosed = extensionsDrawer.classList.contains('closed');
+        if (isClosed) {
+            extensionsDrawer.classList.remove('closed');
+            extensionsDrawer.classList.add('open');
+        } else {
+            extensionsDrawer.classList.add('closed');
+            extensionsDrawer.classList.remove('open');
+        }
+    }
+    btnToggleExtensions.addEventListener('click', toggleExtensions);
+    btnCloseExtensions.addEventListener('click', toggleExtensions);
+
+    // Extension Tab Switching
+    document.querySelectorAll('.ext-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-target');
+            document.querySelectorAll('.ext-tab-btn').forEach(b => {
+                b.classList.remove('bg-white', 'dark:bg-slate-800', 'text-indigo-600', 'dark:text-indigo-400', 'shadow-xs');
+                b.classList.add('text-slate-600', 'dark:text-slate-400');
+            });
+            btn.classList.add('bg-white', 'dark:bg-slate-800', 'text-indigo-600', 'dark:text-indigo-400', 'shadow-xs');
+            btn.classList.remove('text-slate-600', 'dark:text-slate-400');
+
+            document.querySelectorAll('.ext-tab-content').forEach(c => c.classList.add('hidden'));
+            const target = document.getElementById(targetId);
+            if (target) target.classList.remove('hidden');
         });
+    });
+
+    // Zero-Dependency Custom Markdown & Table Parser
+    function customMarkdownParser(text) {
+        if (!text) return '';
+        let escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        // 1. Process Markdown Tables
+        const lines = escaped.split('\n');
+        const output = [];
+        let inTable = false;
+        let tableHeader = [];
+        let tableRows = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('|') && line.endsWith('|')) {
+                const cells = line.split('|').slice(1, -1).map(c => c.trim());
+                // Check if this is the separator line (e.g. |---|---|)
+                if (cells.every(c => /^:?-+:?$/.test(c))) {
+                    // separator line, table header is already stored
+                    inTable = true;
+                    continue;
+                }
+                if (!inTable) {
+                    // First line is header
+                    tableHeader = cells;
+                } else {
+                    tableRows.push(cells);
+                }
+            } else {
+                if (inTable) {
+                    // Flush accumulated table
+                    output.push(buildTableHtml(tableHeader, tableRows));
+                    inTable = false;
+                    tableHeader = [];
+                    tableRows = [];
+                }
+                output.push(line);
+            }
+        }
+        if (inTable) {
+            output.push(buildTableHtml(tableHeader, tableRows));
+        }
+
+        let formatted = output.join('\n');
+
+        // 2. Bold: **text**
+        formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        // 3. Headers: ### Header
+        formatted = formatted.replace(/^### (.*$)/gim, '<h4 class="font-bold text-slate-900 dark:text-white mt-3 mb-1 text-xs">$1</h4>');
+        formatted = formatted.replace(/^## (.*$)/gim, '<h3 class="font-bold text-slate-900 dark:text-white mt-3.5 mb-1 text-sm">$1</h3>');
+        formatted = formatted.replace(/^# (.*$)/gim, '<h2 class="font-bold text-slate-900 dark:text-white mt-4 mb-1.5 text-base">$1</h2>');
+        // 4. Bullet lists: * item or - item
+        formatted = formatted.replace(/^\s*[\*\-]\s+(.*$)/gim, '<li class="ml-4 list-disc">$1</li>');
+        // 5. Blockquotes: > quote
+        formatted = formatted.replace(/^\> (.*$)/gim, '<blockquote class="border-l-2 border-indigo-500 pl-2 my-1 text-slate-500 italic">$1</blockquote>');
+        // 6. Code inline `code`
+        formatted = formatted.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">$1</code>');
+        // 7. Currency highlight
+        formatted = formatted.replace(/(₹[\d,]+(?:\.\d+)?)/g, '<span class="font-semibold text-slate-900 dark:text-slate-100">$1</span>');
+
+        // Replace consecutive newlines with paragraphs/breaks
+        return formatted.replace(/\n\n+/g, '<div class="h-2"></div>').replace(/\n/g, '<br>');
     }
 
+    function buildTableHtml(headers, rows) {
+        if (!headers.length) return '';
+        let html = '<div class="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs"><table class="vs-chat-table w-full text-xs"><thead><tr>';
+        headers.forEach(h => {
+            html += `<th class="p-2.5 text-left font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700">${h}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        rows.forEach((r, idx) => {
+            const isTotalRow = r.some(c => c.toLowerCase().includes('total') || c.toLowerCase().includes('net'));
+            const rowClass = isTotalRow ? 'font-bold bg-indigo-50/40 dark:bg-indigo-950/30' : (idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-800/20' : '');
+            html += `<tr class="${rowClass}">`;
+            r.forEach(cell => {
+                html += `<td class="p-2 border-b border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300">${cell}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    // Markdown Renderer with fallbacks
     function renderMarkdown(content) {
         if (!content) return '';
         if (typeof marked !== 'undefined') {
-            const rawHtml = marked.parse(content);
-            if (typeof DOMPurify !== 'undefined') {
-                return DOMPurify.sanitize(rawHtml);
+            try {
+                const parsed = marked.parse(content);
+                if (typeof DOMPurify !== 'undefined') {
+                    return DOMPurify.sanitize(parsed);
+                }
+                return parsed;
+            } catch(e) {
+                console.warn('marked parse failed, falling back to built-in parser', e);
             }
-            return rawHtml;
         }
-        // Fallback simple escape
-        const div = document.createElement('div');
-        div.textContent = content;
-        return div.innerHTML.replace(/\n/g, '<br>');
+        return customMarkdownParser(content);
     }
 
     // Toggle Disappearing Mode
@@ -464,7 +934,6 @@
             return;
         }
 
-        // Group by group label
         const groups = {};
         threads.forEach(t => {
             const grp = t.group || 'Older';
@@ -653,7 +1122,7 @@
                 <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs shadow-sm flex-shrink-0 mt-0.5">
                     <i class="fas fa-brain"></i>
                 </div>
-                <div class="max-w-[90%] sm:max-w-[85%] space-y-1">
+                <div class="max-w-[95%] sm:max-w-[88%] space-y-1">
                     <div class="p-4 rounded-2xl rounded-tl-sm bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-xs text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm prose-chat" id="${msgId}">
                         ${htmlContent}
                     </div>
@@ -699,7 +1168,6 @@
         btnSendMessage.disabled = true;
         isThinking = true;
 
-        // Append user message
         appendMessage('user', text, isDisappearing);
         typingIndicator.classList.remove('hidden');
         scrollToBottom();
@@ -750,7 +1218,208 @@
         }
     });
 
-    // Initial load
+    // -------------------------------------------------------------
+    // EXTENSIONS INTERACTIVE CALCULATORS & DATA ENGINE
+    // -------------------------------------------------------------
+
+    // Guest Stepper Helper
+    window.adjustGuestVal = function(id, delta) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const cur = parseInt(el.value, 10) || 1;
+        el.value = Math.max(1, cur + delta);
+        updateGuestCalculations();
+    };
+
+    function updateGuestCalculations() {
+        const count = parseInt(document.getElementById('guestCount').value, 10) || 3;
+        const days = parseInt(document.getElementById('guestDays').value, 10) || 5;
+        const perDay = parseInt(document.getElementById('guestStyle').value, 10) || 700;
+
+        const totalCost = count * days * perDay;
+        document.getElementById('guestTotalCost').textContent = '₹' + totalCost.toLocaleString('en-IN');
+
+        const remBudget = (advisorContext.family && advisorContext.family.remaining_budget) || 27007.65;
+        document.getElementById('guestAvailableCushion').textContent = '₹' + Math.round(remBudget).toLocaleString('en-IN');
+
+        // Dynamic category offset breakdown
+        const groceryAdd = Math.round(totalCost * 0.45);
+        const diningAdd = Math.round(totalCost * 0.55);
+        const shoppingCut = Math.round(totalCost * 0.40);
+        const leisureCut = Math.round(totalCost * 0.35);
+        const miscCut = totalCost - (shoppingCut + leisureCut);
+
+        document.getElementById('guestOffsetList').innerHTML = `
+            <div class="flex justify-between text-emerald-600 dark:text-emerald-400"><span>+ Groceries (meals/snacks):</span><span class="font-semibold">+₹${groceryAdd.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between text-indigo-600 dark:text-indigo-400"><span>+ Eating Out (hospitality):</span><span class="font-semibold">+₹${diningAdd.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Personal Shopping:</span><span class="font-semibold">-₹${shoppingCut.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Entertainment / Leisure:</span><span class="font-semibold">-₹${leisureCut.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Discretionary / Misc:</span><span class="font-semibold">-₹${miscCut.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between font-bold text-slate-800 dark:text-slate-200 pt-1 border-t border-slate-200 dark:border-slate-700"><span>Net Budget Impact:</span><span class="text-emerald-600 dark:text-emerald-400">₹0 (Fully Balanced)</span></div>
+        `;
+    }
+
+    document.getElementById('guestCount').addEventListener('input', updateGuestCalculations);
+    document.getElementById('guestDays').addEventListener('input', updateGuestCalculations);
+    document.getElementById('guestStyle').addEventListener('change', updateGuestCalculations);
+
+    // Ask Advisor for Guests button
+    document.getElementById('btnAskAdvisorGuests').addEventListener('click', () => {
+        const count = document.getElementById('guestCount').value;
+        const days = document.getElementById('guestDays').value;
+        const cost = document.getElementById('guestTotalCost').textContent;
+        const prompt = `I have ${count} guests incoming next week for ${days} days. My projected hosting cost is ${cost}. Please generate a structured, tabled budget plan allocating these costs across my categories and detailing safe daily spend for the rest of October.`;
+
+        chatInput.value = prompt;
+        chatInput.dispatchEvent(new Event('input'));
+        chatForm.requestSubmit();
+        if (window.innerWidth < 1024) toggleExtensions();
+    });
+
+    document.getElementById('btnCopyGuests').addEventListener('click', (e) => {
+        const count = document.getElementById('guestCount').value;
+        const days = document.getElementById('guestDays').value;
+        const cost = document.getElementById('guestTotalCost').textContent;
+        const text = `Guest Hosting Plan: ${count} guests for ${days} days. Estimated Hospitality Cost: ${cost}. Offset from flexible categories to keep budget intact.`;
+        navigator.clipboard.writeText(text);
+        alert('Guest budget breakdown copied to clipboard!');
+    });
+
+    // Purchase / EMI Calculator Engine
+    function updatePurchaseCalculations() {
+        const total = parseFloat(document.getElementById('purchaseTotalPrice').value) || 80000;
+        const downpayment = parseFloat(document.getElementById('purchaseDownpayment').value) || 20000;
+        const tenure = parseInt(document.getElementById('purchaseTenure').value, 10) || 12;
+
+        const loanPrincipal = Math.max(0, total - downpayment);
+        // Approx zero/low interest monthly EMI
+        const autoEmi = Math.round(loanPrincipal / tenure);
+        const emiInput = document.getElementById('purchaseMonthlyEmi');
+        if (!emiInput.dataset.manual) {
+            emiInput.value = autoEmi;
+        }
+        const emi = parseFloat(emiInput.value) || autoEmi;
+
+        const remBudget = (advisorContext.family && advisorContext.family.remaining_budget) || 27007.65;
+        const monthlyIncome = (advisorContext.family && advisorContext.family.monthly_income) || 170000;
+
+        const bufferCheckEl = document.getElementById('purchaseBufferCheck');
+        if (downpayment <= remBudget) {
+            bufferCheckEl.textContent = `Safe (₹${Math.round(remBudget).toLocaleString('en-IN')} Cushion covers it)`;
+            bufferCheckEl.className = 'font-bold text-emerald-600 dark:text-emerald-400';
+        } else {
+            bufferCheckEl.textContent = `Warning: Downpayment exceeds current buffer (₹${Math.round(remBudget).toLocaleString('en-IN')})`;
+            bufferCheckEl.className = 'font-bold text-rose-600 dark:text-rose-400';
+        }
+
+        const emiRatio = ((emi / monthlyIncome) * 100).toFixed(1);
+        document.getElementById('purchaseEmiIncomeRatio').textContent = `${emiRatio}% of Income (${emiRatio <= 15 ? 'Healthy < 15%' : 'High Burden'})`;
+
+        // Cut distribution
+        const cutDining = Math.round(emi * 0.40);
+        const cutShopping = Math.round(emi * 0.35);
+        const cutLeisure = emi - (cutDining + cutShopping);
+
+        document.getElementById('purchaseCutsList').innerHTML = `
+            <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Dining Out / Restaurants:</span><span class="font-semibold">-₹${cutDining.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Shopping / Discretionary:</span><span class="font-semibold">-₹${cutShopping.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between text-rose-600 dark:text-rose-400"><span>- Entertainment &amp; Leisure:</span><span class="font-semibold">-₹${cutLeisure.toLocaleString('en-IN')}</span></div>
+            <div class="flex justify-between font-bold text-slate-800 dark:text-slate-200 pt-1 border-t border-slate-200 dark:border-slate-700"><span>Total Monthly Cut:</span><span class="text-indigo-600 dark:text-indigo-400">-₹${emi.toLocaleString('en-IN')} (100% Funds EMI)</span></div>
+        `;
+    }
+
+    document.getElementById('purchaseTotalPrice').addEventListener('input', () => {
+        delete document.getElementById('purchaseMonthlyEmi').dataset.manual;
+        updatePurchaseCalculations();
+    });
+    document.getElementById('purchaseDownpayment').addEventListener('input', () => {
+        delete document.getElementById('purchaseMonthlyEmi').dataset.manual;
+        updatePurchaseCalculations();
+    });
+    document.getElementById('purchaseTenure').addEventListener('change', () => {
+        delete document.getElementById('purchaseMonthlyEmi').dataset.manual;
+        updatePurchaseCalculations();
+    });
+    document.getElementById('purchaseMonthlyEmi').addEventListener('input', (e) => {
+        e.target.dataset.manual = 'true';
+        updatePurchaseCalculations();
+    });
+
+    document.getElementById('btnAskAdvisorPurchase').addEventListener('click', () => {
+        const item = document.getElementById('purchaseItemName').value || 'iPhone';
+        const total = document.getElementById('purchaseTotalPrice').value;
+        const downpayment = document.getElementById('purchaseDownpayment').value;
+        const emi = document.getElementById('purchaseMonthlyEmi').value;
+        const prompt = `I want to buy a ${item} worth ₹${total}. The downpayment is ₹${downpayment} and monthly EMI is ₹${emi}. Analyze my budget and build a two-phase plan: 1) Downpayment feasibility for October, and 2) Monthly EMI absorption table detailing exact category cuts to fund this safely.`;
+
+        chatInput.value = prompt;
+        chatInput.dispatchEvent(new Event('input'));
+        chatForm.requestSubmit();
+        if (window.innerWidth < 1024) toggleExtensions();
+    });
+
+    // Populate Headroom Categories
+    function renderHeadroomCategories() {
+        const container = document.getElementById('headroomCategoriesList');
+        const cats = advisorContext.categories || [];
+        if (!cats.length) {
+            container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">No category limits set yet. Configure them on Dashboard.</div>';
+            return;
+        }
+
+        let html = '';
+        cats.forEach(c => {
+            const spent = c.spent_this_month || 0;
+            const limit = c.monthly_limit || 0;
+            const cushion = c.remaining_cushion || 0;
+            const pct = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0;
+            const isEssential = c.type === 'Essential';
+
+            let barColor = 'bg-emerald-500';
+            let statusBadge = '<span class="text-emerald-600 dark:text-emerald-400 font-semibold">Safe</span>';
+            if (pct >= 95) {
+                barColor = 'bg-rose-500';
+                statusBadge = '<span class="text-rose-600 dark:text-rose-400 font-semibold">Over / Near Limit</span>';
+            } else if (pct >= 75) {
+                barColor = 'bg-amber-500';
+                statusBadge = '<span class="text-amber-600 dark:text-amber-400 font-semibold">Caution</span>';
+            }
+
+            html += `
+                <div class="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${c.name}</span>
+                            <span class="text-[9.5px] px-1.5 py-0.5 rounded ${isEssential ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-medium'}">${isEssential ? 'Essential' : 'Flexible'}</span>
+                        </div>
+                        <div class="text-[11px]">${statusBadge}</div>
+                    </div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                        <div class="${barColor} h-full rounded-full transition-all" style="width: ${pct}%"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[10.5px] text-slate-500 dark:text-slate-400">
+                        <span>Spent: ₹${spent.toLocaleString('en-IN')} / ₹${limit.toLocaleString('en-IN')}</span>
+                        <span class="font-semibold text-slate-700 dark:text-slate-300">Cushion: ₹${cushion.toLocaleString('en-IN')}</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    document.getElementById('btnAskAdvisorHeadroom').addEventListener('click', () => {
+        const prompt = 'Analyze all my category cushions and identify where we have flexible headroom. Where can we safely trim ₹3,000 to ₹5,000 this month without impacting essential groceries, rent, or utilities?';
+        chatInput.value = prompt;
+        chatInput.dispatchEvent(new Event('input'));
+        chatForm.requestSubmit();
+        if (window.innerWidth < 1024) toggleExtensions();
+    });
+
+    // Initialize
+    updateGuestCalculations();
+    updatePurchaseCalculations();
+    renderHeadroomCategories();
     loadThreads();
 })();
 </script>
