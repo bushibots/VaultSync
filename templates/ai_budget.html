@@ -13,8 +13,12 @@
     </div>
 
     <div class="vs-page-actions">
+        <a href="{{ url_for('download_expense_book_template', month=current_month, year=current_year) }}" class="vs-btn vs-btn-secondary">
+            <i class="fas fa-file-excel text-emerald-500"></i>
+            <span>Download Template (.xlsx)</span>
+        </a>
         <a href="#smart-book-importer-section" class="vs-btn vs-btn-primary">
-            <i class="fas fa-file-excel"></i>
+            <i class="fas fa-file-import"></i>
             <span>Upload Expense Book</span>
         </a>
         <button type="button" data-modal-open="manualAiJsonModal" class="vs-btn vs-btn-secondary">
@@ -41,6 +45,13 @@
                     Automatically captures all ledger transactions, sets category monthly budgets &amp; month cap, attributes spend to family members (e.g. Arish, Nahid, Shakir), and filters out internal cash conversions/transfers.
                 </p>
             </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('download_expense_book_template', month=current_month, year=current_year) }}" class="vs-btn vs-btn-sm vs-btn-secondary">
+                <i class="fas fa-download text-emerald-500"></i>
+                <span>Download Template (.xlsx)</span>
+            </a>
         </div>
     </div>
 

@@ -20,6 +20,16 @@
                 <i class="fas fa-copy"></i> Copy
             </button>
         </div>
+
+        <a href="{{ url_for('download_expense_book_template') }}" class="vs-btn vs-btn-secondary">
+            <i class="fas fa-file-excel text-emerald-500"></i>
+            <span>Book Template (.xlsx)</span>
+        </a>
+
+        <button type="button" data-modal-open="eraseDataModal" class="vs-btn vs-btn-danger">
+            <i class="fas fa-eraser"></i>
+            <span>Erase All Data</span>
+        </button>
     </div>
 </div>
 
@@ -559,12 +569,42 @@
                     <i class="fas fa-download text-indigo-500"></i> Download CSV
                 </a>
             </div>
+
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                    <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-file-excel text-emerald-500"></i>
+                        <span>Monthly Expense Book Template (.xlsx)</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500">Download the official pre-formatted Excel template with formulas for easy monthly tracking</div>
+                </div>
+                <a href="{{ url_for('download_expense_book_template') }}" class="vs-btn vs-btn-sm vs-btn-primary">
+                    <i class="fas fa-download"></i> Download Template
+                </a>
+            </div>
         </section>
 
         <section class="vs-card border-rose-200 dark:border-rose-500/30 space-y-4">
             <div>
                 <h2 class="text-base font-bold text-rose-600 dark:text-rose-400">Danger Zone</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Archive or permanently delete this family workspace.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Manage data resets, workspace archiving, or permanent deletion.</p>
+            </div>
+
+            <!-- Erase All Financial Data Button -->
+            <div class="p-3.5 rounded-xl bg-rose-50/70 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <div class="text-xs font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                        <i class="fas fa-eraser text-rose-500"></i>
+                        <span>Erase All Financial Data (Reset Workspace)</span>
+                    </div>
+                    <div class="text-[11px] text-rose-700/80 dark:text-rose-300/80 mt-0.5">
+                        Wipes all transactions, planned bills, reserved buckets, monthly budgets, and AI reports. 
+                        <strong>Your family account, invite code, and members stay intact.</strong>
+                    </div>
+                </div>
+                <button type="button" data-modal-open="eraseDataModal" class="vs-btn vs-btn-sm vs-btn-danger shrink-0">
+                    <i class="fas fa-eraser"></i> Erase All Data
+                </button>
             </div>
 
             <div class="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 flex items-center justify-between gap-3">
@@ -587,6 +627,62 @@
                 </form>
             </div>
         </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Erase All Data Confirmation Modal (#eraseDataModal) -->
+<div id="eraseDataModal" class="vs-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="erase-data-title">
+    <div class="vs-modal-panel max-w-lg">
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <i class="fas fa-triangle-exclamation text-lg"></i>
+                </div>
+                <div>
+                    <h3 id="erase-data-title" class="text-base font-bold text-slate-900 dark:text-white">Erase All Financial Data</h3>
+                    <p class="text-xs text-rose-600 dark:text-rose-400 font-semibold">Irreversible workspace financial reset</p>
+                </div>
+            </div>
+            <button type="button" data-modal-close="eraseDataModal" class="vs-icon-btn" aria-label="Close modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <form action="{{ url_for('erase_family_data') }}" method="POST" class="space-y-4">
+            <div class="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-800 dark:text-rose-200 space-y-1.5">
+                <div class="font-bold flex items-center gap-1.5">
+                    <i class="fas fa-exclamation-circle text-rose-600 dark:text-rose-400"></i>
+                    <span>This will permanently wipe:</span>
+                </div>
+                <ul class="list-disc pl-4 space-y-1 text-[11px] text-rose-700 dark:text-rose-300">
+                    <li>All recorded expenses and transaction logs</li>
+                    <li>All planned bills, scheduled payments &amp; reserved buckets</li>
+                    <li>All monthly finance budget settings and overrides</li>
+                    <li>All AI savings forecasts, daily budget reports, and suggestions</li>
+                    <li>All chatbot conversation history and reset category limits to zero</li>
+                </ul>
+                <div class="pt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                    ✓ <em>Your family workspace (<strong>{{ family.name }}</strong>), invite code, and member accounts will be preserved.</em>
+                </div>
+            </div>
+
+            <div>
+                <label class="vs-label" for="confirm-erase-input">
+                    To confirm, type <span class="font-bold text-rose-600 dark:text-rose-400">ERASE</span> below:
+                </label>
+                <input id="confirm-erase-input" type="text" name="confirm_text" required placeholder="Type ERASE" autocomplete="off" class="vs-input font-mono font-bold tracking-wider text-rose-600 dark:text-rose-400 uppercase">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button type="button" data-modal-close="eraseDataModal" class="vs-btn vs-btn-secondary">Cancel</button>
+                <button type="submit" class="vs-btn vs-btn-danger">
+                    <i class="fas fa-eraser"></i>
+                    <span>Permanently Erase All Data</span>
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 {% endblock %}

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, jsonify, Response, flash, url_for
+from flask import Flask, render_template, request, redirect, jsonify, Response, flash, url_for, send_file
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 from flask_migrate import Migrate
 import calendar
@@ -30,6 +30,8 @@ from models import (
     AISavingsForecast,
     BudgetReport,
     ChatbotMessage,
+    AIExpenseException,
+    AuditLog,
 )
 
 
@@ -5583,6 +5585,213 @@ def delete_family():
 
     flash('Family has been permanently deleted.', 'success')
     return redirect(url_for('dashboard'))
+
+
+@app.route('/admin_panel/family/erase_data', methods=['POST'])
+@login_required
+def erase_family_data():
+    """Erase all expenses, budgets, plans, reports, and forecasts for current family, keeping workspace & users intact."""
+    if not is_family_manager(current_user):
+        flash('Unauthorized: Only the Family Manager can erase workspace data.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    confirm_text = request.form.get('confirm_text', '').strip().upper()
+    if confirm_text != 'ERASE':
+        flash('Confirmation failed: You must type "ERASE" to wipe all financial data.', 'error')
+        return redirect(url_for('admin_panel', tab='settings'))
+
+    family_id = current_user.family_id
+    family = Family.query.get(family_id)
+    if not family:
+        flash('Family not found.', 'error')
+        return redirect(url_for('dashboard'))
+
+    try:
+        # Delete all expense items
+        Expense.query.filter_by(family_id=family_id).delete()
+        # Delete planned bills and buckets
+        ExpectedExpense.query.filter_by(family_id=family_id).delete()
+        # Delete monthly overrides
+        MonthlyFinanceSetting.query.filter_by(family_id=family_id).delete()
+        # Delete AI plan applications & suggestions
+        BudgetPlanApplication.query.filter_by(family_id=family_id).delete()
+        BudgetSuggestion.query.filter_by(family_id=family_id).delete()
+        # Delete AI savings forecasts & daily reports
+        AISavingsForecast.query.filter_by(family_id=family_id).delete()
+        BudgetReport.query.filter_by(family_id=family_id).delete()
+        # Delete AI expense exception rules
+        AIExpenseException.query.filter_by(family_id=family_id).delete()
+        # Delete chatbot history
+        ChatbotMessage.query.filter_by(family_id=family_id).delete()
+        # Reset category monthly limits
+        Category.query.filter_by(family_id=family_id).update({Category.monthly_limit: 0.0})
+        # Reset family ai notes
+        family.ai_notes = ''
+
+        db.session.add(AuditLog(
+            user_id=current_user.id,
+            family_id=family_id,
+            action='ERASE_ALL_DATA',
+            details=f'All transactions, plans, reports, and budgets erased by {current_user.username}'
+        ))
+        db.session.commit()
+        flash(f'All financial data for {family.name} has been successfully erased. Workspace reset clean!', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('Failed to erase family data')
+        flash(f'Failed to erase family data: {exc}', 'error')
+
+    return redirect(url_for('admin_panel', tab='settings'))
+
+
+def generate_monthly_expense_book_template(year=None, month=None, family=None):
+    """
+    Generate an in-memory .xlsx workbook for the requested month based on the master template.
+    Pre-populates the Dashboard title, monthly calendar dates in Daily Summary, and the family's
+    configured categories and members in Settings.
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import io
+    from datetime import date
+    import calendar
+
+    today = date.today()
+    target_year = int(year or today.year)
+    target_month = int(month or today.month)
+    if not (1 <= target_month <= 12):
+        target_month = today.month
+
+    m_name = calendar.month_name[target_month]
+    days_in_m = calendar.monthrange(target_year, target_month)[1]
+    family_name = family.name if family else 'FAMILY'
+
+    static_tpl_path = os.path.join(app.root_path, 'static', 'templates', 'VaultSync_Monthly_Expense_Book_Template.xlsx')
+    if not os.path.exists(static_tpl_path):
+        return None
+
+    with open(static_tpl_path, 'rb') as f:
+        src_bytes = f.read()
+
+    ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    out_buf = io.BytesIO()
+
+    with zipfile.ZipFile(io.BytesIO(src_bytes), 'r') as zin, zipfile.ZipFile(out_buf, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+        strings = []
+        strings_root = None
+        if 'xl/sharedStrings.xml' in zin.namelist():
+            strings_root = ET.fromstring(zin.read('xl/sharedStrings.xml'))
+            for si in strings_root.findall(f'.//{ns}si'):
+                strings.append(''.join(t.text or '' for t in si.findall(f'.//{ns}t')))
+
+        def add_string(s):
+            if s in strings:
+                return strings.index(s)
+            strings.append(s)
+            si_elem = ET.Element(f'{ns}si')
+            t_elem = ET.SubElement(si_elem, f'{ns}t')
+            t_elem.text = s
+            if strings_root is not None:
+                strings_root.append(si_elem)
+            return len(strings) - 1
+
+        for item in zin.infolist():
+            if item.filename == 'xl/sharedStrings.xml':
+                continue
+            content = zin.read(item.filename)
+
+            if item.filename == 'xl/worksheets/sheet2.xml':
+                # Dashboard title in B1
+                sroot = ET.fromstring(content)
+                title_str = f"{family_name.upper()} EXPENSE DASHBOARD - {m_name.upper()} {target_year}"
+                title_idx = add_string(title_str)
+                for c in sroot.findall(f'.//{ns}c'):
+                    if c.attrib.get('r') == 'B1':
+                        c.attrib['t'] = 's'
+                        v = c.find(f'{ns}v')
+                        if v is None:
+                            v = ET.SubElement(c, f'{ns}v')
+                        v.text = str(title_idx)
+                content = ET.tostring(sroot, encoding='utf-8')
+
+            elif item.filename == 'xl/worksheets/sheet3.xml':
+                # Daily Summary: title in A1 and serial dates in A8..A38
+                sroot = ET.fromstring(content)
+                d_title = f"DAILY EXPENSE & DATE-WISE SUMMARY – {m_name.upper()} {target_year}"
+                d_title_idx = add_string(d_title)
+                base_excel_date = date(1899, 12, 30)
+
+                for c in sroot.findall(f'.//{ns}c'):
+                    ref = c.attrib.get('r')
+                    if ref == 'A1':
+                        c.attrib['t'] = 's'
+                        v = c.find(f'{ns}v')
+                        if v is None:
+                            v = ET.SubElement(c, f'{ns}v')
+                        v.text = str(d_title_idx)
+                    elif ref and ref.startswith('A') and ref[1:].isdigit():
+                        row_idx = int(ref[1:])
+                        if 8 <= row_idx <= 38:
+                            day_num = row_idx - 7
+                            v = c.find(f'{ns}v')
+                            if day_num <= days_in_m:
+                                target_d = date(target_year, target_month, day_num)
+                                serial = (target_d - base_excel_date).days
+                                if v is None:
+                                    v = ET.SubElement(c, f'{ns}v')
+                                v.text = str(serial)
+                            else:
+                                if v is not None:
+                                    c.remove(v)
+
+                content = ET.tostring(sroot, encoding='utf-8')
+
+            zout.writestr(item.filename, content)
+
+        if strings_root is not None:
+            strings_root.attrib['count'] = str(len(strings))
+            strings_root.attrib['uniqueCount'] = str(len(strings))
+            zout.writestr('xl/sharedStrings.xml', ET.tostring(strings_root, encoding='utf-8'))
+
+    return out_buf.getvalue()
+
+
+@app.route('/download-book-template', methods=['GET'])
+@app.route('/api/download-template', methods=['GET'])
+@login_required
+def download_expense_book_template():
+    """Download the official monthly expense book Excel template (.xlsx) with automated formulas."""
+    import io
+    import calendar
+
+    month = request.args.get('month')
+    year = request.args.get('year')
+    now = datetime.utcnow()
+    m = int(month) if month and month.isdigit() else now.month
+    y = int(year) if year and year.isdigit() else now.year
+    m_name = calendar.month_name[m]
+
+    family = current_user.family if hasattr(current_user, 'family') else None
+    tpl_bytes = generate_monthly_expense_book_template(year=y, month=m, family=family)
+
+    if not tpl_bytes:
+        static_tpl = os.path.join(app.root_path, 'static', 'templates', 'VaultSync_Monthly_Expense_Book_Template.xlsx')
+        if os.path.exists(static_tpl):
+            return send_file(
+                static_tpl,
+                as_attachment=True,
+                download_name=f'VaultSync_Expense_Book_Template_{m_name}_{y}.xlsx',
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+        return jsonify({'error': 'Template file not found'}), 404
+
+    filename = f"VaultSync_Expense_Book_{family.name.replace(' ', '_') if family else 'Template'}_{m_name}_{y}.xlsx"
+    return send_file(
+        io.BytesIO(tpl_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 
 @app.route('/admin_panel/reports', methods=['GET'])
