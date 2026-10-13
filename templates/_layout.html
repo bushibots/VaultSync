@@ -165,6 +165,13 @@
                             <div class="vs-nav-desc">Smart monthly budget simulator</div>
                         </div>
                     </a>
+                    <a href="{{ url_for('financial_advisor') }}" class="vs-nav-link {% if current_endpoint == 'financial_advisor' %}active{% endif %}">
+                        <i class="fas fa-brain text-purple-400"></i>
+                        <div class="flex-1 min-w-0">
+                            <div class="vs-nav-title">AI Financial Advisor</div>
+                            <div class="vs-nav-desc">Pattern analysis &amp; decision questions</div>
+                        </div>
+                    </a>
                 </nav>
             </div>
 

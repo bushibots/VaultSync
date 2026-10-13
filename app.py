@@ -5028,7 +5028,639 @@ def export_ai_data():
             yield data.getvalue()
             data.seek(0)
             data.truncate(0)
-    return Response(generate(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=family_data.csv'})
+
+# ============================================================================
+# AI Financial Advisor & Antigravity Decision Studio (Monthly, Quarterly, Annually)
+# ============================================================================
+
+def aggregate_family_financial_period(family_id, period_type='monthly', year=None, month=None, quarter=None):
+    now = datetime.utcnow()
+    year = int(year) if year and str(year).isdigit() else now.year
+    period_type = str(period_type or 'monthly').lower()
+
+    if period_type == 'quarterly':
+        quarter = str(quarter or 'Q4').upper()
+        q_map = {'Q1': [1, 2, 3], 'Q2': [4, 5, 6], 'Q3': [7, 8, 9], 'Q4': [10, 11, 12]}
+        months = q_map.get(quarter, [10, 11, 12])
+        period_label = f"{quarter} {year} ({calendar.month_abbr[months[0]]} - {calendar.month_abbr[months[-1]]})"
+    elif period_type == 'annually':
+        quarter = None
+        months = list(range(1, 13))
+        period_label = f"Full Year {year}"
+    else:
+        period_type = 'monthly'
+        quarter = None
+        month = int(month) if month and str(month).isdigit() else now.month
+        if not (1 <= month <= 12):
+            month = now.month
+        months = [month]
+        period_label = f"{calendar.month_name[month]} {year}"
+
+    month_strs = [f"{m:02d}" for m in months]
+    expenses = Expense.query.filter(
+        Expense.family_id == family_id,
+        func.strftime('%Y', Expense.date) == str(year),
+        func.strftime('%m', Expense.date).in_(month_strs)
+    ).order_by(Expense.date.desc()).all()
+
+    total_spent = sum(e.amount for e in expenses)
+
+    family = db.session.get(Family, family_id)
+    monthly_incomes = []
+    for m in months:
+        setting = MonthlyFinanceSetting.query.filter_by(family_id=family_id, month=m, year=year).first()
+        if setting and setting.monthly_income is not None:
+            monthly_incomes.append(setting.monthly_income)
+        elif family and family.monthly_income is not None:
+            monthly_incomes.append(family.monthly_income)
+        else:
+            monthly_incomes.append(0.0)
+
+    total_income = sum(monthly_incomes)
+    net_savings = max(total_income - total_spent, 0.0) if total_income > 0 else 0.0
+    savings_rate = (net_savings / total_income * 100) if total_income > 0 else 0.0
+
+    total_days = sum(calendar.monthrange(year, m)[1] for m in months)
+    daily_avg = total_spent / total_days if total_days else 0.0
+
+    essential_keywords = {'rent', 'housing', 'grocery', 'groceries', 'utilit', 'bill', 'electric', 'water', 'gas', 'health', 'medic', 'doctor', 'pharma', 'insur', 'emi', 'loan', 'tax', 'school', 'tuition', 'educat'}
+
+    categories_all = Category.query.filter_by(family_id=family_id).all()
+    cat_spent_map = {}
+    cat_count_map = {}
+    for e in expenses:
+        cat_spent_map[e.category_id] = cat_spent_map.get(e.category_id, 0.0) + e.amount
+        cat_count_map[e.category_id] = cat_count_map.get(e.category_id, 0) + 1
+
+    category_items = []
+    discretionary_spent = 0.0
+    essential_spent = 0.0
+
+    for c in categories_all:
+        amt = cat_spent_map.get(c.id, 0.0)
+        cnt = cat_count_map.get(c.id, 0)
+        c_name_lower = c.name.lower()
+        is_essential = any(k in c_name_lower for k in essential_keywords)
+        is_discretionary = not is_essential
+
+        if is_discretionary:
+            discretionary_spent += amt
+        else:
+            essential_spent += amt
+
+        period_limit = (c.monthly_limit or 0.0) * len(months)
+        pct = (amt / total_spent * 100) if total_spent > 0 else 0.0
+        variance = amt - period_limit if period_limit > 0 else 0.0
+
+        category_items.append({
+            'id': c.id,
+            'name': c.name,
+            'color': c.color,
+            'spent': round(amt, 2),
+            'count': cnt,
+            'monthly_limit': round(c.monthly_limit or 0.0, 2),
+            'period_limit': round(period_limit, 2),
+            'pct_of_total': round(pct, 1),
+            'variance': round(variance, 2),
+            'is_over_limit': bool(period_limit > 0 and amt > period_limit),
+            'is_discretionary': is_discretionary
+        })
+
+    category_items.sort(key=lambda x: x['spent'], reverse=True)
+
+    weekday_spent = 0.0
+    weekend_spent = 0.0
+    for e in expenses:
+        if e.date.weekday() >= 5:
+            weekend_spent += e.amount
+        else:
+            weekday_spent += e.amount
+
+    weekend_pct = (weekend_spent / total_spent * 100) if total_spent > 0 else 0.0
+    weekday_pct = (weekday_spent / total_spent * 100) if total_spent > 0 else 0.0
+
+    spender_map = {}
+    for e in expenses:
+        uname = e.user.username if e.user else 'Unknown'
+        if uname not in spender_map:
+            spender_map[uname] = {'spent': 0.0, 'count': 0}
+        spender_map[uname]['spent'] += e.amount
+        spender_map[uname]['count'] += 1
+
+    spenders = []
+    for uname, data in spender_map.items():
+        spenders.append({
+            'username': uname,
+            'spent': round(data['spent'], 2),
+            'count': data['count'],
+            'pct_of_total': round((data['spent'] / total_spent * 100) if total_spent > 0 else 0.0, 1)
+        })
+    spenders.sort(key=lambda x: x['spent'], reverse=True)
+
+    top_txs = sorted(expenses, key=lambda e: e.amount, reverse=True)[:5]
+    top_expenses = [{
+        'item_name': t.item_name,
+        'amount': round(t.amount, 2),
+        'date': t.date.strftime('%d %b'),
+        'category': t.category.name if t.category else '',
+        'spender': t.user.username if t.user else ''
+    } for t in top_txs]
+
+    discretionary_pct = (discretionary_spent / total_spent * 100) if total_spent > 0 else 0.0
+
+    return {
+        'period_label': period_label,
+        'period_type': period_type,
+        'year': year,
+        'month': month if period_type == 'monthly' else None,
+        'quarter': quarter if period_type == 'quarterly' else None,
+        'months': months,
+        'days_count': total_days,
+        'total_spent': round(total_spent, 2),
+        'total_income': round(total_income, 2),
+        'net_savings': round(net_savings, 2),
+        'savings_rate': round(savings_rate, 1),
+        'expense_count': len(expenses),
+        'daily_avg': round(daily_avg, 2),
+        'categories': category_items,
+        'weekday_spent': round(weekday_spent, 2),
+        'weekend_spent': round(weekend_spent, 2),
+        'weekend_pct': round(weekend_pct, 1),
+        'weekday_pct': round(weekday_pct, 1),
+        'spenders': spenders,
+        'top_expenses': top_expenses,
+        'discretionary_spent': round(discretionary_spent, 2),
+        'essential_spent': round(essential_spent, 2),
+        'discretionary_pct': round(discretionary_pct, 1)
+    }
+
+
+def financial_advisor_schema():
+    return {
+        'type': 'OBJECT',
+        'properties': {
+            'summary_diagnosis': {'type': 'STRING'},
+            'health_grade': {'type': 'STRING'},
+            'leakage_total_estimate': {'type': 'NUMBER'},
+            'potential_annual_savings': {'type': 'NUMBER'},
+            'savings_tips': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'title': {'type': 'STRING'},
+                        'category': {'type': 'STRING'},
+                        'type': {'type': 'STRING'},
+                        'recommendation': {'type': 'STRING'},
+                        'estimated_monthly_savings': {'type': 'NUMBER'},
+                        'action_steps': {'type': 'STRING'},
+                    },
+                    'required': ['title', 'category', 'type', 'recommendation', 'estimated_monthly_savings'],
+                },
+            },
+            'decision_questions': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'id': {'type': 'STRING'},
+                        'title': {'type': 'STRING'},
+                        'context': {'type': 'STRING'},
+                        'question': {'type': 'STRING'},
+                        'is_multi_select': {'type': 'BOOLEAN'},
+                        'options': {
+                            'type': 'ARRAY',
+                            'items': {
+                                'type': 'OBJECT',
+                                'properties': {
+                                    'id': {'type': 'STRING'},
+                                    'label': {'type': 'STRING'},
+                                    'impact_description': {'type': 'STRING'},
+                                    'projected_savings_rs': {'type': 'NUMBER'},
+                                    'is_recommended': {'type': 'BOOLEAN'},
+                                },
+                                'required': ['id', 'label', 'impact_description', 'projected_savings_rs', 'is_recommended'],
+                            },
+                        },
+                    },
+                    'required': ['id', 'title', 'context', 'question', 'is_multi_select', 'options'],
+                },
+            },
+        },
+        'required': [
+            'summary_diagnosis',
+            'health_grade',
+            'leakage_total_estimate',
+            'potential_annual_savings',
+            'savings_tips',
+            'decision_questions',
+        ],
+    }
+
+
+def generate_fallback_advisor_analysis(agg, custom_goal=''):
+    total_spent = agg['total_spent']
+    months_count = max(len(agg['months']), 1)
+    monthly_equiv_spent = total_spent / months_count
+    discretionary = agg['discretionary_spent']
+    monthly_discretionary = discretionary / months_count
+    savings_rate = agg['savings_rate']
+
+    if savings_rate >= 30:
+        health_grade = 'A'
+    elif savings_rate >= 20:
+        health_grade = 'B+'
+    elif savings_rate >= 10:
+        health_grade = 'B'
+    elif agg['net_savings'] > 0:
+        health_grade = 'C+'
+    else:
+        health_grade = 'Needs Attention'
+
+    disc_cats = [c for c in agg['categories'] if c['is_discretionary'] and c['spent'] > 0]
+    top_disc = disc_cats[0] if disc_cats else (agg['categories'][0] if agg['categories'] else None)
+    top_disc_name = top_disc['name'] if top_disc else 'Discretionary'
+    top_disc_monthly = (top_disc['spent'] / months_count) if top_disc else 0.0
+
+    over_limit_total = sum(c['variance'] for c in agg['categories'] if c['is_over_limit'])
+    leakage_estimate = (monthly_discretionary * 0.18) + (over_limit_total / months_count) if discretionary > 0 else 1500.0
+    potential_annual = leakage_estimate * 12
+
+    goal_sentence = f" Grounded in your focus: '{custom_goal}'." if custom_goal else ""
+    summary_diagnosis = (
+        f"During {agg['period_label']}, your household logged {agg['expense_count']} transactions totaling Rs. {total_spent:,.0f} "
+        f"(averaging Rs. {agg['daily_avg']:,.0f}/day). Discretionary spending accounted for {agg['discretionary_pct']:.1f}% "
+        f"of total outlays. Weekend purchasing made up {agg['weekend_pct']:.1f}% of overall expenditure. "
+        f"By optimizing discretionary allocations in categories like {top_disc_name}, you can unlock approximately "
+        f"Rs. {leakage_estimate:,.0f} every month in clean family savings.{goal_sentence}"
+    )
+
+    tips = [
+        {
+            'title': f"Trim {top_disc_name} Outlays by 20%",
+            'category': top_disc_name,
+            'type': 'high_impact',
+            'recommendation': f"Reduce non-essential dining and food delivery orders by 20% by establishing dedicated home-cooking days.",
+            'estimated_monthly_savings': round(top_disc_monthly * 0.20, 2),
+            'action_steps': "Plan weekday meals in advance and reserve restaurant orders strictly for designated weekend family milestones."
+        },
+        {
+            'title': "Weekend Surge Guardrail",
+            'category': "Weekend Spending",
+            'type': 'lifestyle',
+            'recommendation': f"Weekend purchasing represents {agg['weekend_pct']:.1f}% of your budget (Rs. {agg['weekend_spent']:,.0f}). Implement a 48-hour delay rule on non-urgent Saturday/Sunday online shopping.",
+            'estimated_monthly_savings': round((agg['weekend_spent'] / months_count) * 0.15, 2),
+            'action_steps': "Leave items in online carts for 48 hours before purchasing to curb impulsive convenience buying."
+        },
+        {
+            'title': "Micro-Spend & Delivery Fee Consolidation",
+            'category': "Everyday Convenience",
+            'type': 'quick_win',
+            'recommendation': "Consolidate small frequent delivery and snack orders into larger planned bi-weekly restocks to avoid repeated platform delivery surcharges.",
+            'estimated_monthly_savings': round(min(monthly_discretionary * 0.08, 2500.0) if monthly_discretionary > 0 else 800.0, 2),
+            'action_steps': "Bundle household needs into one weekly grocery order instead of 3-4 daily express deliveries."
+        }
+    ]
+
+    disc_savings_opt1 = round(top_disc_monthly * 0.20, 2) if top_disc_monthly > 0 else 1500.0
+    disc_savings_opt2 = round(monthly_discretionary * 0.12, 2) if monthly_discretionary > 0 else 1000.0
+    weekend_savings_opt = round((agg['weekend_spent'] / months_count) * 0.15, 2) if agg['weekend_spent'] > 0 else 800.0
+    top_spender = agg['spenders'][0] if agg['spenders'] else {'username': 'Family', 'pct_of_total': 100}
+
+    questions = [
+        {
+            'id': 'q_discretionary_strategy',
+            'title': 'Discretionary Spending Calibration',
+            'context': f"Your flexible discretionary spend totaled Rs. {discretionary:,.0f} ({agg['discretionary_pct']:.1f}% of outlays), led by {top_disc_name} at Rs. {top_disc['spent']:,.0f}." if top_disc else "Evaluate non-essential household spend.",
+            'question': "Which target strategy would your household prefer to adopt for discretionary expenses?",
+            'is_multi_select': False,
+            'options': [
+                {
+                    'id': 'opt_trim_top_category',
+                    'label': f"(Recommended) Trim {top_disc_name} by 20%",
+                    'impact_description': f"Saves ~Rs. {disc_savings_opt1:,.0f}/mo (Rs. {disc_savings_opt1 * 12:,.0f}/year) without touching essential groceries or bills.",
+                    'projected_savings_rs': disc_savings_opt1,
+                    'is_recommended': True
+                },
+                {
+                    'id': 'opt_balanced_cut',
+                    'label': "Apply a balanced 10% reduction across all flexible categories",
+                    'impact_description': f"Saves ~Rs. {disc_savings_opt2:,.0f}/mo evenly distributed across all non-essential items.",
+                    'projected_savings_rs': disc_savings_opt2,
+                    'is_recommended': False
+                },
+                {
+                    'id': 'opt_weekend_ceiling',
+                    'label': f"Enforce a weekend spending ceiling ({agg['weekend_pct']:.0f}% of total spend)",
+                    'impact_description': f"Saves ~Rs. {weekend_savings_opt:,.0f}/mo by curbing impulsive Friday-Sunday outings.",
+                    'projected_savings_rs': weekend_savings_opt,
+                    'is_recommended': False
+                },
+                {
+                    'id': 'opt_preserve_lifestyle',
+                    'label': "Preserve current lifestyle spend and focus exclusively on fixed utility reductions",
+                    'impact_description': "Saves ~Rs. 1,000/mo through utility efficiency and plan renegotiation.",
+                    'projected_savings_rs': 1000.0,
+                    'is_recommended': False
+                }
+            ]
+        },
+        {
+            'id': 'q_savings_destination',
+            'title': 'Savings Goal & Capital Allocation',
+            'context': f"By implementing these steps, you will free up an estimated Rs. {leakage_estimate:,.0f} monthly (Rs. {potential_annual:,.0f} annually).",
+            'question': "Where would you like to direct your household's realized monthly savings?",
+            'is_multi_select': False,
+            'options': [
+                {
+                    'id': 'opt_dest_emergency',
+                    'label': "(Recommended) Build / Expand 3-Month Emergency Safety Fund",
+                    'impact_description': "Protects family against unforeseen medical or household surprises with zero debt reliance.",
+                    'projected_savings_rs': leakage_estimate,
+                    'is_recommended': True
+                },
+                {
+                    'id': 'opt_dest_investments',
+                    'label': "Systematic Investment / High-Yield Savings (Wealth Accumulation)",
+                    'impact_description': "Channels surplus directly into monthly automated investments (SIPs / FDs).",
+                    'projected_savings_rs': leakage_estimate,
+                    'is_recommended': False
+                },
+                {
+                    'id': 'opt_dest_debt_paydown',
+                    'label': "Accelerate Debt, EMI, or Credit Card Paydown",
+                    'impact_description': "Reduces compounding interest liabilities and frees up future cash flow faster.",
+                    'projected_savings_rs': leakage_estimate,
+                    'is_recommended': False
+                },
+                {
+                    'id': 'opt_dest_family_goal',
+                    'label': "Earmark for an upcoming family milestone (Vacation, Festival, Gadget)",
+                    'impact_description': "Funds milestone purchases in cash without touching credit or monthly income.",
+                    'projected_savings_rs': leakage_estimate,
+                    'is_recommended': False
+                }
+            ]
+        },
+        {
+            'id': 'q_enforcement_mode',
+            'title': 'Household Accountability & Limit Enforcement',
+            'context': f"Your household has {len(agg['spenders'])} active spenders ({top_spender['username']} represented {top_spender['pct_of_total']:.0f}% of spend).",
+            'question': "How would you like VaultSync to enforce and monitor these savings limits?",
+            'is_multi_select': False,
+            'options': [
+                {
+                    'id': 'opt_auto_category_limits',
+                    'label': "(Recommended) Automatically update VaultSync Category Monthly Limits",
+                    'impact_description': "Locks in hard caps on categories with live warning badges when approaching limits.",
+                    'projected_savings_rs': 0.0,
+                    'is_recommended': True
+                },
+                {
+                    'id': 'opt_daily_briefing_alerts',
+                    'label': "Use Daily AI Briefings to enforce dynamic daily burn rate ceilings",
+                    'impact_description': "Delivers a fresh safe spend ceiling each morning based on remaining monthly budget.",
+                    'projected_savings_rs': 0.0,
+                    'is_recommended': False
+                },
+                {
+                    'id': 'opt_weekly_family_review',
+                    'label': "Establish a Sunday Family Finance Check-in review rhythm",
+                    'impact_description': "Fosters transparent household communication without automated friction.",
+                    'projected_savings_rs': 0.0,
+                    'is_recommended': False
+                }
+            ]
+        }
+    ]
+
+    return {
+        'summary_diagnosis': summary_diagnosis,
+        'health_grade': health_grade,
+        'leakage_total_estimate': round(leakage_estimate, 2),
+        'potential_annual_savings': round(potential_annual, 2),
+        'savings_tips': tips,
+        'decision_questions': questions
+    }
+
+
+def refine_advisor_decisions(family_id, agg, user_answers):
+    months_count = max(len(agg.get('months') or [1]), 1)
+    disc_cats = [c for c in agg.get('categories', []) if c.get('is_discretionary') and c.get('spent', 0) > 0]
+    top_disc = disc_cats[0] if disc_cats else (agg.get('categories', [None])[0] if agg.get('categories') else None)
+    top_disc_name = top_disc['name'] if top_disc else 'Discretionary'
+    top_disc_monthly = (top_disc['spent'] / months_count) if top_disc else 0.0
+    monthly_discretionary = agg.get('discretionary_spent', 0.0) / months_count
+
+    strat = user_answers.get('q_discretionary_strategy', 'opt_trim_top_category')
+    dest = user_answers.get('q_savings_destination', 'opt_dest_emergency')
+    enf = user_answers.get('q_enforcement_mode', 'opt_auto_category_limits')
+    note = user_answers.get('custom_note', '').strip()
+
+    if strat == 'opt_trim_top_category':
+        selected_savings_monthly = round(top_disc_monthly * 0.20, 2)
+        strat_text = f"Trimming {top_disc_name} by 20%"
+    elif strat == 'opt_balanced_cut':
+        selected_savings_monthly = round(monthly_discretionary * 0.12, 2)
+        strat_text = "Applying 10% balanced reduction across all discretionary categories"
+    elif strat == 'opt_weekend_ceiling':
+        selected_savings_monthly = round((agg.get('weekend_spent', 0.0) / months_count) * 0.15, 2)
+        strat_text = "Enforcing weekend spending ceiling (curbing Fri-Sun surge)"
+    else:
+        selected_savings_monthly = 1000.0
+        strat_text = "Optimizing utility and fixed plan contracts"
+
+    selected_savings_annual = selected_savings_monthly * 12
+
+    dest_labels = {
+        'opt_dest_emergency': 'Emergency Safety Fund (3 Months Reserve)',
+        'opt_dest_investments': 'Automated SIPs & High-Yield Investments',
+        'opt_dest_debt_paydown': 'Accelerated Debt & Loan Paydown',
+        'opt_dest_family_goal': 'Family Milestone Savings Goal'
+    }
+    dest_text = dest_labels.get(dest, 'Family Savings Reserve')
+
+    category_caps = {}
+    for c in agg.get('categories', []):
+        curr_limit = c.get('monthly_limit', 0.0)
+        monthly_spent = c.get('spent', 0.0) / months_count
+
+        if c.get('is_discretionary') and strat == 'opt_trim_top_category' and top_disc and c['id'] == top_disc['id']:
+            new_limit = max(monthly_spent * 0.80, 500.0)
+            category_caps[c['id']] = {
+                'name': c['name'],
+                'current_limit': curr_limit,
+                'proposed_limit': round(new_limit, 0),
+                'monthly_savings': round(max(monthly_spent - new_limit, 0), 0)
+            }
+        elif c.get('is_discretionary') and strat == 'opt_balanced_cut' and monthly_spent > 0:
+            new_limit = max(monthly_spent * 0.90, 500.0)
+            category_caps[c['id']] = {
+                'name': c['name'],
+                'current_limit': curr_limit,
+                'proposed_limit': round(new_limit, 0),
+                'monthly_savings': round(max(monthly_spent - new_limit, 0), 0)
+            }
+        elif c.get('is_discretionary') and c.get('is_over_limit'):
+            new_limit = max(monthly_spent * 0.85, 500.0)
+            category_caps[c['id']] = {
+                'name': c['name'],
+                'current_limit': curr_limit,
+                'proposed_limit': round(new_limit, 0),
+                'monthly_savings': round(max(monthly_spent - new_limit, 0), 0)
+            }
+
+    return {
+        'strategy_chosen': strat_text,
+        'destination_chosen': dest_text,
+        'enforcement_chosen': enf,
+        'custom_note': note,
+        'selected_savings_monthly': selected_savings_monthly,
+        'selected_savings_annual': selected_savings_annual,
+        'category_recommendations': category_caps,
+        'action_summary': f"Decisions confirmed! Your strategy will reclaim Rs. {selected_savings_monthly:,.0f} every month (Rs. {selected_savings_annual:,.0f}/year) dedicated to {dest_text}."
+    }
+
+
+@app.route('/financial_advisor')
+@login_required
+def financial_advisor():
+    now = datetime.utcnow()
+    selected_month = request.args.get('month', now.month, type=int)
+    selected_year = request.args.get('year', now.year, type=int)
+    selected_period = request.args.get('period', 'monthly').lower()
+    selected_quarter = request.args.get('quarter', 'Q4').upper()
+
+    if selected_period not in {'monthly', 'quarterly', 'annually'}:
+        selected_period = 'monthly'
+
+    agg = aggregate_family_financial_period(
+        current_user.family_id,
+        period_type=selected_period,
+        year=selected_year,
+        month=selected_month,
+        quarter=selected_quarter
+    )
+
+    categories = Category.query.filter_by(family_id=current_user.family_id).all()
+
+    return render_template('financial_advisor.html',
+                           aggregated=agg,
+                           categories=categories,
+                           selected_period=selected_period,
+                           selected_month=selected_month,
+                           selected_year=selected_year,
+                           selected_quarter=selected_quarter,
+                           year_range=range(2024, now.year + 3))
+
+
+@app.route('/api/financial_advisor/analyze', methods=['POST'])
+@login_required
+def api_financial_advisor_analyze():
+    payload = request.get_json(silent=True) or {}
+    period_type = payload.get('period_type', 'monthly')
+    year = payload.get('year')
+    month = payload.get('month')
+    quarter = payload.get('quarter')
+    custom_goal = payload.get('custom_goal', '').strip()
+
+    agg = aggregate_family_financial_period(
+        current_user.family_id,
+        period_type=period_type,
+        year=year,
+        month=month,
+        quarter=quarter
+    )
+
+    analysis = generate_fallback_advisor_analysis(agg, custom_goal)
+
+    if gemini_configured():
+        try:
+            prompt = (
+                f"You are the VaultSync AI Financial Advisor. Analyze this family's financial patterns for {agg['period_label']}.\n"
+                f"Financial Data Summary:\n"
+                f"- Total Spent: Rs. {agg['total_spent']:,.2f}\n"
+                f"- Total Income: Rs. {agg['total_income']:,.2f}\n"
+                f"- Net Savings: Rs. {agg['net_savings']:,.2f} (Savings Rate: {agg['savings_rate']}%)\n"
+                f"- Discretionary Spend: Rs. {agg['discretionary_spent']:,.2f} ({agg['discretionary_pct']}% of total)\n"
+                f"- Essential Spend: Rs. {agg['essential_spent']:,.2f}\n"
+                f"- Weekday vs Weekend: Weekday Rs. {agg['weekday_spent']:,.2f} ({agg['weekday_pct']}%) vs Weekend Rs. {agg['weekend_spent']:,.2f} ({agg['weekend_pct']}%)\n"
+                f"- Category Breakdown: {[{c['name']: c['spent']} for c in agg['categories'] if c['spent'] > 0]}\n"
+                f"- Spenders: {agg['spenders']}\n"
+                f"- User Custom Goal: {custom_goal or 'Maximize household savings and eliminate leakage'}\n\n"
+                f"Provide: (1) executive summary diagnosis of spending patterns, (2) financial health grade, "
+                f"(3) estimated leakage amount in Rs., (4) potential annual savings in Rs., "
+                f"(5) 3-4 specific actionable savings tips with estimated Rs. monthly savings, "
+                f"(6) exactly 3 Antigravity-style decision-making questions with realistic tradeoffs, multiple choice options (including one marked is_recommended=True with calculated projected_savings_rs)."
+            )
+            gemini_res = call_gemini_json(prompt, financial_advisor_schema())
+            if gemini_res and isinstance(gemini_res, dict) and gemini_res.get('decision_questions'):
+                analysis = gemini_res
+        except Exception as exc:
+            app.logger.warning(f"Gemini Financial Advisor call failed, using deterministic engine: {exc}")
+
+    return jsonify({
+        'success': True,
+        'aggregated': agg,
+        'analysis': analysis
+    })
+
+
+@app.route('/api/financial_advisor/refine', methods=['POST'])
+@login_required
+def api_financial_advisor_refine():
+    payload = request.get_json(silent=True) or {}
+    agg = payload.get('aggregated')
+    answers = payload.get('answers') or {}
+
+    if not agg:
+        period_type = payload.get('period_type', 'monthly')
+        year = payload.get('year')
+        month = payload.get('month')
+        quarter = payload.get('quarter')
+        agg = aggregate_family_financial_period(
+            current_user.family_id,
+            period_type=period_type,
+            year=year,
+            month=month,
+            quarter=quarter
+        )
+
+    refinement = refine_advisor_decisions(current_user.family_id, agg, answers)
+    return jsonify({
+        'success': True,
+        'refinement': refinement
+    })
+
+
+@app.route('/api/financial_advisor/apply_caps', methods=['POST'])
+@login_required
+def api_financial_advisor_apply_caps():
+    if not is_family_manager(current_user):
+        return jsonify({'error': 'Only family managers can update category limits'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    caps = payload.get('category_caps') or {}
+    if not caps:
+        return jsonify({'error': 'No category limits provided'}), 400
+
+    updated = 0
+    for cat_id_str, new_lim in caps.items():
+        try:
+            cat_id = int(cat_id_str)
+            cat = Category.query.filter_by(id=cat_id, family_id=current_user.family_id).first()
+            if cat:
+                cat.monthly_limit = max(float(new_lim), 0.0)
+                updated += 1
+        except (ValueError, TypeError):
+            continue
+
+    if updated > 0:
+        db.session.commit()
+        return jsonify({'success': True, 'updated_count': updated, 'message': f'Updated {updated} category limits successfully!'})
+
+    return jsonify({'error': 'No valid categories found to update'}), 400
+
 
 @app.route('/admin_panel', methods=['GET', 'POST'])
 @login_required

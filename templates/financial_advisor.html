@@ -1,0 +1,829 @@
+{% extends "_layout.html" %}
+{% block title %}AI Financial Advisor · VaultSync{% endblock %}
+
+{% block content %}
+<!-- Top Header -->
+<div class="vs-page-header">
+    <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1">
+            <i class="fas fa-brain-circuit text-[11px]"></i>
+            <span>Intelligent Financial Strategy Studio</span>
+        </div>
+        <h1 class="vs-page-title">AI Financial Advisor</h1>
+        <p class="vs-page-subtitle">
+            Deep multi-period pattern analysis (Monthly, Quarterly, Annually), tailored cost-cutting strategies, and interactive Antigravity decision prompts.
+        </p>
+    </div>
+
+    <div class="vs-page-actions">
+        <a href="{{ url_for('financial_reports') }}" class="vs-btn vs-btn-secondary" title="View historical cashflow and trend charts">
+            <i class="fas fa-chart-line text-indigo-500"></i>
+            <span>Analytics Charts</span>
+        </a>
+        <a href="{{ url_for('ai_budget') }}" class="vs-btn vs-btn-secondary" title="Simulate and test monthly category budgets">
+            <i class="fas fa-wand-magic-sparkles text-amber-500"></i>
+            <span>Budget Studio</span>
+        </a>
+    </div>
+</div>
+
+<!-- Period Selection & Goal Bar -->
+<section class="vs-card mb-6" aria-labelledby="advisor-control-heading">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div>
+            <h2 id="advisor-control-heading" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Select Analysis Horizon &amp; Focus</span>
+                <span class="vs-badge vs-badge-primary">Interactive AI</span>
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Switch between monthly, quarterly, or annual timeframes to detect seasonal patterns and spending leakages.
+            </p>
+        </div>
+
+        <!-- Period Mode Switcher -->
+        <div class="vs-tabs" role="tablist" aria-label="Analysis timeframe type">
+            <button type="button" class="vs-tab {% if selected_period == 'monthly' %}active{% endif %}" data-period-type="monthly">
+                <i class="fas fa-calendar-day"></i>
+                <span>Monthly</span>
+            </button>
+            <button type="button" class="vs-tab {% if selected_period == 'quarterly' %}active{% endif %}" data-period-type="quarterly">
+                <i class="fas fa-chart-pie"></i>
+                <span>Quarterly</span>
+            </button>
+            <button type="button" class="vs-tab {% if selected_period == 'annually' %}active{% endif %}" data-period-type="annually">
+                <i class="fas fa-calendar"></i>
+                <span>Annually</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Period Parameters Form -->
+    <form id="advisorParamsForm" class="pt-4 space-y-3.5">
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            <!-- Dynamic Selectors based on Period -->
+            <div class="sm:col-span-3" id="monthSelectWrap">
+                <label class="vs-label" for="paramMonth">Month</label>
+                <select id="paramMonth" name="month" class="vs-select text-xs">
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
+                        {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][m-1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="sm:col-span-3 hidden" id="quarterSelectWrap">
+                <label class="vs-label" for="paramQuarter">Quarter</label>
+                <select id="paramQuarter" name="quarter" class="vs-select text-xs">
+                    <option value="Q1" {% if selected_quarter == 'Q1' %}selected{% endif %}>Q1 (Jan - Mar)</option>
+                    <option value="Q2" {% if selected_quarter == 'Q2' %}selected{% endif %}>Q2 (Apr - Jun)</option>
+                    <option value="Q3" {% if selected_quarter == 'Q3' %}selected{% endif %}>Q3 (Jul - Sep)</option>
+                    <option value="Q4" {% if selected_quarter == 'Q4' %}selected{% endif %}>Q4 (Oct - Dec)</option>
+                </select>
+            </div>
+
+            <div class="sm:col-span-2" id="yearSelectWrap">
+                <label class="vs-label" for="paramYear">Year</label>
+                <select id="paramYear" name="year" class="vs-select text-xs">
+                    {% for y in year_range %}
+                    <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Custom Strategic Goal -->
+            <div class="sm:col-span-5" id="goalInputWrap">
+                <label class="vs-label" for="paramGoal">
+                    <span>Strategic Objective (Optional)</span>
+                    <span class="text-[10px] text-slate-400 font-normal">e.g. Save for vacation, cut food delivery</span>
+                </label>
+                <input type="text" id="paramGoal" placeholder="e.g., Build emergency fund, curb weekend impulse spending..." class="vs-input text-xs py-2">
+            </div>
+
+            <div class="sm:col-span-2">
+                <button type="submit" id="btnRunAnalysis" class="vs-btn vs-btn-primary w-full py-2 text-xs">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <span>Analyze</span>
+                </button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<!-- Loading State -->
+<div id="advisorLoading" class="hidden text-center py-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 mb-6">
+    <div class="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center mx-auto mb-3 animate-spin">
+        <i class="fas fa-brain-circuit text-xl"></i>
+    </div>
+    <h3 class="text-sm font-bold text-slate-900 dark:text-white">Analyzing Financial Patterns &amp; Velocity...</h3>
+    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+        Evaluating category leakages, weekday vs weekend surges, and formulating interactive decision options.
+    </p>
+</div>
+
+<!-- Main Analysis Results Container -->
+<div id="advisorResults" class="space-y-6">
+
+    <!-- 4 KPI Headline Cards -->
+    <div class="vs-kpi-grid">
+        <div class="vs-kpi-card">
+            <div>
+                <div class="vs-kpi-top">
+                    <span class="vs-kpi-label">Period Total Spent</span>
+                    <span class="vs-kpi-icon bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+                        <i class="fas fa-receipt"></i>
+                    </span>
+                </div>
+                <div class="vs-kpi-value" id="kpiTotalSpent">Rs. {{ "{:,.0f}".format(aggregated.total_spent) }}</div>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                    Daily average: <strong class="text-slate-700 dark:text-slate-200" id="kpiDailyAvg">Rs. {{ "{:,.0f}".format(aggregated.daily_avg) }}</strong>/day
+                </p>
+            </div>
+            <div class="vs-kpi-meta">
+                <span id="kpiTxCount">{{ aggregated.expense_count }} logged transactions</span>
+                <span id="kpiPeriodLabel">{{ aggregated.period_label }}</span>
+            </div>
+        </div>
+
+        <div class="vs-kpi-card">
+            <div>
+                <div class="vs-kpi-top">
+                    <span class="vs-kpi-label">Net Savings Rate</span>
+                    <span class="vs-kpi-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                        <i class="fas fa-piggy-bank"></i>
+                    </span>
+                </div>
+                <div class="vs-kpi-value text-emerald-600 dark:text-emerald-400" id="kpiSavingsRate">
+                    {{ "{:.1f}".format(aggregated.savings_rate) }}%
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                    Net saved: <strong class="text-slate-700 dark:text-slate-200" id="kpiNetSavings">Rs. {{ "{:,.0f}".format(aggregated.net_savings) }}</strong>
+                </p>
+            </div>
+            <div class="vs-kpi-meta">
+                <span>Income: <strong id="kpiTotalIncome">Rs. {{ "{:,.0f}".format(aggregated.total_income) }}</strong></span>
+                <span class="vs-badge vs-badge-success" id="kpiHealthBadge">Evaluating...</span>
+            </div>
+        </div>
+
+        <div class="vs-kpi-card">
+            <div>
+                <div class="vs-kpi-top">
+                    <span class="vs-kpi-label">Identified Leakage</span>
+                    <span class="vs-kpi-icon bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+                        <i class="fas fa-filter-circle-dollar"></i>
+                    </span>
+                </div>
+                <div class="vs-kpi-value text-amber-600 dark:text-amber-400" id="kpiLeakageEstimate">
+                    Rs. 0
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                    Discretionary flexible spend: <strong class="text-slate-700 dark:text-slate-200" id="kpiDiscretionarySpend">Rs. {{ "{:,.0f}".format(aggregated.discretionary_spent) }}</strong>
+                </p>
+            </div>
+            <div class="vs-kpi-meta">
+                <span id="kpiDiscretionaryPct">{{ "{:.1f}".format(aggregated.discretionary_pct) }}% of total spend</span>
+                <span class="text-amber-600 dark:text-amber-400 font-semibold">Optimization Room</span>
+            </div>
+        </div>
+
+        <div class="vs-kpi-card">
+            <div>
+                <div class="vs-kpi-top">
+                    <span class="vs-kpi-label">Potential Annual Savings</span>
+                    <span class="vs-kpi-icon bg-purple-50 text-purple-600 dark:bg-purple-500/15 dark:text-purple-400">
+                        <i class="fas fa-coins"></i>
+                    </span>
+                </div>
+                <div class="vs-kpi-value text-purple-600 dark:text-purple-400" id="kpiAnnualSavings">
+                    Rs. 0
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-0">
+                    Reclaimable without sacrificing essentials
+                </p>
+            </div>
+            <div class="vs-kpi-meta">
+                <span>Based on decision roadmap</span>
+                <span class="text-purple-600 dark:text-purple-400 font-semibold">12-Month Impact</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Executive Pattern Diagnosis -->
+    <section class="vs-card" aria-labelledby="diagnosis-heading">
+        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-magnifying-glass-chart"></i>
+                </div>
+                <div>
+                    <h2 id="diagnosis-heading" class="text-base font-bold text-slate-900 dark:text-white">Executive Pattern Diagnosis</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Holistic diagnosis of household spending velocity and cash-flow health</p>
+                </div>
+            </div>
+            <span class="vs-badge vs-badge-primary" id="diagnosisGradePill">Grade B+</span>
+        </div>
+        <p class="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed m-0" id="diagnosisSummaryText">
+            Loading analysis...
+        </p>
+    </section>
+
+    <!-- 2-Column Patterns: Category Breakdown + Behavioral Dynamics -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- Left: Category Leakages & Limits -->
+        <section class="lg:col-span-7 vs-card space-y-4" aria-labelledby="category-patterns-heading">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <h3 id="category-patterns-heading" class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <i class="fas fa-tags text-indigo-500"></i>
+                    <span>Category Spending Share &amp; Variance</span>
+                </h3>
+                <span class="text-xs text-slate-500 dark:text-slate-400" id="categoryCountLabel">{{ aggregated.categories|length }} categories</span>
+            </div>
+
+            <div class="space-y-3 max-h-[360px] overflow-y-auto pr-1" id="categoryPatternsList">
+                {% for cat in aggregated.categories %}
+                {% if cat.spent > 0 %}
+                <div class="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40">
+                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="w-3 h-3 rounded-full shrink-0" style="background-color: {{ cat.color }};"></span>
+                            <span class="text-xs font-bold text-slate-900 dark:text-white truncate">{{ cat.name }}</span>
+                            {% if cat.is_discretionary %}
+                            <span class="vs-badge vs-badge-neutral text-[10px] py-0 px-1.5">Flexible</span>
+                            {% else %}
+                            <span class="vs-badge vs-badge-primary text-[10px] py-0 px-1.5">Essential</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-right whitespace-nowrap">
+                            <span class="text-xs font-bold text-slate-900 dark:text-white tabular-nums">Rs. {{ "{:,.0f}".format(cat.spent) }}</span>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400">({{ cat.pct_of_total }}%)</span>
+                        </div>
+                    </div>
+                    <div class="vs-progress h-1.5 mb-1">
+                        <div class="vs-progress-fill" style="width: {{ cat.pct_of_total }}%; background-color: {{ cat.color }};"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                        <span>{{ cat.count }} transactions</span>
+                        {% if cat.period_limit > 0 %}
+                            {% if cat.is_over_limit %}
+                            <span class="text-rose-500 font-semibold">+Rs. {{ "{:,.0f}".format(cat.variance) }} over limit</span>
+                            {% else %}
+                            <span class="text-emerald-500 font-semibold">Within limit (Rs. {{ "{:,.0f}".format(cat.period_limit) }})</span>
+                            {% endif %}
+                        {% else %}
+                            <span>No limit set</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Right: Behavioral Dynamics (Weekend surge & Spender shares) -->
+        <section class="lg:col-span-5 vs-card space-y-4" aria-labelledby="behavioral-heading">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <h3 id="behavioral-heading" class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <i class="fas fa-users-viewfinder text-purple-500"></i>
+                    <span>Behavioral Patterns</span>
+                </h3>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Timing &amp; Members</span>
+            </div>
+
+            <!-- Weekday vs Weekend Split -->
+            <div class="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200 mb-2">
+                    <span><i class="fas fa-calendar-week text-indigo-500 mr-1.5"></i>Weekday vs. Weekend</span>
+                    <span id="weekendPctLabel">{{ aggregated.weekend_pct }}% on Weekends</span>
+                </div>
+                <div class="flex h-2.5 rounded-full overflow-hidden mb-2 bg-slate-200 dark:bg-slate-800">
+                    <div class="bg-indigo-600" id="barWeekday" style="width: {{ aggregated.weekday_pct }}%;" title="Weekday: Rs. {{ '{:,.0f}'.format(aggregated.weekday_spent) }}"></div>
+                    <div class="bg-amber-500" id="barWeekend" style="width: {{ aggregated.weekend_pct }}%;" title="Weekend: Rs. {{ '{:,.0f}'.format(aggregated.weekend_spent) }}"></div>
+                </div>
+                <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <span class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-indigo-600"></span>
+                        Mon-Fri: <strong class="text-slate-700 dark:text-slate-300" id="lblWeekdaySpent">Rs. {{ "{:,.0f}".format(aggregated.weekday_spent) }}</strong>
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                        Sat-Sun: <strong class="text-slate-700 dark:text-slate-300" id="lblWeekendSpent">Rs. {{ "{:,.0f}".format(aggregated.weekend_spent) }}</strong>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Spender Distribution -->
+            <div>
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                    Household Spender Contributions
+                </div>
+                <div class="space-y-2" id="spendersList">
+                    {% for sp in aggregated.spenders %}
+                    <div class="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 text-xs">
+                        <span class="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <i class="fas fa-user-circle text-indigo-400"></i>
+                            {{ sp.username }}
+                        </span>
+                        <div class="text-right">
+                            <strong class="text-slate-900 dark:text-white tabular-nums">Rs. {{ "{:,.0f}".format(sp.spent) }}</strong>
+                            <span class="text-[11px] text-slate-400 ml-1">({{ sp.pct_of_total }}%)</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Top Single Purchases -->
+            <div>
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                    Peak Outlays
+                </div>
+                <div class="space-y-1.5" id="topPurchasesList">
+                    {% for tx in aggregated.top_expenses[:3] %}
+                    <div class="flex items-center justify-between text-xs py-1 border-b border-slate-100 dark:border-slate-800">
+                        <div class="min-w-0 pr-2">
+                            <div class="font-semibold text-slate-800 dark:text-slate-200 truncate">{{ tx.item_name }}</div>
+                            <div class="text-[10px] text-slate-400">{{ tx.date }} · {{ tx.spender }}</div>
+                        </div>
+                        <div class="font-bold text-slate-900 dark:text-white whitespace-nowrap tabular-nums">
+                            Rs. {{ "{:,.0f}".format(tx.amount) }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Tailored Tips & Savings Recommendations -->
+    <section class="vs-card space-y-4" aria-labelledby="savings-tips-heading">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-lightbulb"></i>
+                </div>
+                <div>
+                    <h2 id="savings-tips-heading" class="text-base font-bold text-slate-900 dark:text-white">Tailored Savings Tips &amp; Strategies</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Actionable cutback targets categorized by impact level</p>
+                </div>
+            </div>
+            <span class="vs-badge vs-badge-success" id="tipsCountBadge">3 Strategies</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="savingsTipsContainer">
+            <!-- Dynamic Tip Cards will populate here via JS -->
+        </div>
+    </section>
+
+    <!-- Antigravity-Style Decision Studio -->
+    <section class="vs-card space-y-5" aria-labelledby="decision-studio-heading" style="border: 2px solid rgba(129, 140, 248, 0.35);">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-500/20">
+                    <i class="fas fa-robot text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h2 id="decision-studio-heading" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                            Interactive Decision Studio
+                        </h2>
+                        <span class="vs-badge vs-badge-primary">Antigravity Mode</span>
+                    </div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Answer these trade-off questions to calibrate your family's savings plan. Select your preferred options below:
+                    </p>
+                </div>
+            </div>
+
+            <!-- Dynamic Live Savings Meter -->
+            <div class="vs-savings-meter flex items-center gap-3">
+                <i class="fas fa-wallet text-emerald-600 dark:text-emerald-400 text-lg"></i>
+                <div>
+                    <div class="text-[11px] font-bold text-emerald-900 dark:text-emerald-200 uppercase tracking-wider">Projected Savings Unlocked</div>
+                    <div class="text-base sm:text-lg font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums" id="liveSavingsMeterVal">
+                        Rs. 0 / month
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Decision Questions Cards Container -->
+        <div class="space-y-4" id="decisionQuestionsContainer">
+            <!-- Dynamic Question Cards generated here -->
+        </div>
+
+        <!-- Optional Custom Family Note -->
+        <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/50">
+            <label class="vs-label" for="decisionCustomNote">
+                <i class="fas fa-comment-pen text-indigo-500 mr-1"></i> Additional Family Instructions or Exceptions
+            </label>
+            <input type="text" id="decisionCustomNote" placeholder="e.g. Arish will eat at home weekdays; protect birthday budget next month..." class="vs-input text-xs py-2">
+        </div>
+
+        <!-- Submit Decisions CTA -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <i class="fas fa-shield-check text-emerald-500"></i>
+                <span>Your answers adjust category targets and generate an implementation roadmap.</span>
+            </div>
+            <button type="button" id="btnSubmitDecisions" class="vs-btn vs-btn-primary py-2.5 px-5 font-bold shadow-md shadow-indigo-500/25">
+                <i class="fas fa-check-double"></i>
+                <span>Finalize Decision Plan</span>
+            </button>
+        </div>
+    </section>
+
+    <!-- Finalized Action Roadmap & Category Limit Sync (Revealed after decision submission) -->
+    <section id="roadmapCard" class="vs-card hidden space-y-4" aria-labelledby="roadmap-heading" style="border: 2px solid rgba(16, 185, 129, 0.4);">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-100 dark:border-emerald-950">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <i class="fas fa-bullseye text-base"></i>
+                </div>
+                <div>
+                    <h3 id="roadmap-heading" class="text-base font-bold text-slate-900 dark:text-white">Finalized Strategy &amp; Implementation Roadmap</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Calibrated directly from your decision answers</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <span class="text-xs text-slate-500 dark:text-slate-400">Total Monthly Savings:</span>
+                <span class="text-base font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums ml-1" id="roadmapSavingsMonthly">Rs. 0/mo</span>
+            </div>
+        </div>
+
+        <div class="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-900 dark:text-emerald-200 leading-relaxed" id="roadmapSummaryText">
+            Summary will appear here.
+        </div>
+
+        <!-- Proposed Category Limits Table -->
+        <div id="roadmapCapsTableWrap" class="space-y-2">
+            <div class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                <span>Proposed Category Monthly Limits to Lock in Savings:</span>
+                <span class="text-[11px] text-slate-400">Click Apply to update</span>
+            </div>
+            <div class="vs-table-wrap">
+                <table class="vs-table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th class="text-right">Current Limit</th>
+                            <th class="text-right">Proposed New Cap</th>
+                            <th class="text-right">Monthly Savings</th>
+                        </tr>
+                    </thead>
+                    <tbody id="roadmapCapsTableBody">
+                        <!-- Rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if is_manager %}
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button type="button" id="btnApplyNewCaps" class="vs-btn vs-btn-primary">
+                <i class="fas fa-floppy-disk"></i>
+                <span>Apply New Limits to Family Categories</span>
+            </button>
+        </div>
+        {% endif %}
+    </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    let currentAggregated = {{ aggregated | tojson | safe }};
+    let currentAnalysis = null;
+    let selectedPeriodType = '{{ selected_period }}';
+    let proposedCapsToApply = {};
+
+    const formatCurrency = (val) => `Rs. ${Math.round(val || 0).toLocaleString('en-IN')}`;
+
+    // Elements
+    const tabs = document.querySelectorAll('[data-period-type]');
+    const monthSelectWrap = document.getElementById('monthSelectWrap');
+    const quarterSelectWrap = document.getElementById('quarterSelectWrap');
+    const yearSelectWrap = document.getElementById('yearSelectWrap');
+    const advisorForm = document.getElementById('advisorParamsForm');
+    const loadingEl = document.getElementById('advisorLoading');
+    const resultsEl = document.getElementById('advisorResults');
+
+    // Tab Switcher
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            selectedPeriodType = tab.dataset.periodType;
+
+            if (selectedPeriodType === 'monthly') {
+                monthSelectWrap.classList.remove('hidden');
+                quarterSelectWrap.classList.add('hidden');
+            } else if (selectedPeriodType === 'quarterly') {
+                monthSelectWrap.classList.add('hidden');
+                quarterSelectWrap.classList.remove('hidden');
+            } else { // annually
+                monthSelectWrap.classList.add('hidden');
+                quarterSelectWrap.classList.add('hidden');
+            }
+        });
+    });
+
+    // Form Submission
+    advisorForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await runAnalysis();
+    });
+
+    async function runAnalysis() {
+        loadingEl.classList.remove('hidden');
+        resultsEl.classList.add('opacity-40', 'pointer-events-none');
+
+        const monthVal = document.getElementById('paramMonth').value;
+        const quarterVal = document.getElementById('paramQuarter').value;
+        const yearVal = document.getElementById('paramYear').value;
+        const goalVal = document.getElementById('paramGoal').value;
+
+        try {
+            const resp = await fetch('/api/financial_advisor/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    period_type: selectedPeriodType,
+                    month: monthVal,
+                    quarter: quarterVal,
+                    year: yearVal,
+                    custom_goal: goalVal
+                })
+            });
+
+            const res = await resp.json();
+            if (res.success) {
+                currentAggregated = res.aggregated;
+                currentAnalysis = res.analysis;
+                renderAnalysis(res.aggregated, res.analysis);
+            } else {
+                alert(res.error || 'Failed to analyze period.');
+            }
+        } catch (err) {
+            console.error('Analysis error:', err);
+            alert('Failed to connect to AI Financial Advisor.');
+        } finally {
+            loadingEl.classList.add('hidden');
+            resultsEl.classList.remove('opacity-40', 'pointer-events-none');
+        }
+    }
+
+    function renderAnalysis(agg, analysis) {
+        // Update KPIs
+        document.getElementById('kpiTotalSpent').textContent = formatCurrency(agg.total_spent);
+        document.getElementById('kpiDailyAvg').textContent = formatCurrency(agg.daily_avg);
+        document.getElementById('kpiTxCount').textContent = `${agg.expense_count} logged transactions`;
+        document.getElementById('kpiPeriodLabel').textContent = agg.period_label;
+
+        document.getElementById('kpiSavingsRate').textContent = `${agg.savings_rate.toFixed(1)}%`;
+        document.getElementById('kpiNetSavings').textContent = formatCurrency(agg.net_savings);
+        document.getElementById('kpiTotalIncome').textContent = formatCurrency(agg.total_income);
+
+        const healthGrade = analysis.health_grade || 'B+';
+        const healthBadge = document.getElementById('kpiHealthBadge');
+        healthBadge.textContent = `Grade ${healthGrade}`;
+        document.getElementById('diagnosisGradePill').textContent = `Grade ${healthGrade}`;
+
+        document.getElementById('kpiLeakageEstimate').textContent = formatCurrency(analysis.leakage_total_estimate || 0);
+        document.getElementById('kpiDiscretionarySpend').textContent = formatCurrency(agg.discretionary_spent);
+        document.getElementById('kpiDiscretionaryPct').textContent = `${agg.discretionary_pct.toFixed(1)}% of total spend`;
+
+        document.getElementById('kpiAnnualSavings').textContent = formatCurrency(analysis.potential_annual_savings || 0);
+
+        // Diagnosis Summary Text
+        document.getElementById('diagnosisSummaryText').textContent = analysis.summary_diagnosis || 'Pattern analysis complete.';
+
+        // Render Tips
+        const tipsContainer = document.getElementById('savingsTipsContainer');
+        tipsContainer.innerHTML = '';
+        (analysis.savings_tips || []).forEach(tip => {
+            const badgeClass = tip.type === 'quick_win' ? 'vs-badge-success' : (tip.type === 'high_impact' ? 'vs-badge-danger' : 'vs-badge-primary');
+            const typeLabel = tip.type === 'quick_win' ? 'Quick Win' : (tip.type === 'high_impact' ? 'High Impact' : 'Lifestyle Habit');
+
+            const tipCard = document.createElement('div');
+            tipCard.className = 'vs-tip-card';
+            tipCard.innerHTML = `
+                <div>
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <span class="vs-badge ${badgeClass}">${typeLabel}</span>
+                        <span class="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                            +${formatCurrency(tip.estimated_monthly_savings)}/mo
+                        </span>
+                    </div>
+                    <h4 class="text-sm font-bold text-slate-900 dark:text-white mb-1">${tip.title}</h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-3">${tip.recommendation}</p>
+                </div>
+                ${tip.action_steps ? `
+                <div class="pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
+                    <strong class="text-slate-700 dark:text-slate-300">Action:</strong> ${tip.action_steps}
+                </div>` : ''}
+            `;
+            tipsContainer.appendChild(tipCard);
+        });
+        document.getElementById('tipsCountBadge').textContent = `${(analysis.savings_tips || []).length} Strategies`;
+
+        // Render Antigravity Decision Questions
+        renderDecisionQuestions(analysis.decision_questions || []);
+
+        // Hide old roadmap card on re-analysis
+        document.getElementById('roadmapCard').classList.add('hidden');
+    }
+
+    function renderDecisionQuestions(questions) {
+        const container = document.getElementById('decisionQuestionsContainer');
+        container.innerHTML = '';
+
+        if (!questions.length) {
+            container.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">No decision questions available for this period.</p>';
+            return;
+        }
+
+        questions.forEach((q, qIndex) => {
+            const qCard = document.createElement('div');
+            qCard.className = 'vs-decision-card space-y-3';
+            qCard.innerHTML = `
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="vs-badge vs-badge-primary font-bold">Decision ${qIndex + 1}</span>
+                            <h3 class="text-sm font-bold text-slate-900 dark:text-white">${q.title}</h3>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 m-0">${q.context}</p>
+                    </div>
+                </div>
+
+                <div class="p-2.5 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/80 dark:border-indigo-500/20 text-xs font-semibold text-indigo-950 dark:text-indigo-200">
+                    <i class="fas fa-circle-question mr-1.5 text-indigo-500"></i> ${q.question}
+                </div>
+
+                <div class="space-y-2" data-question-id="${q.id}">
+                    ${q.options.map(opt => `
+                        <label class="vs-option-card ${opt.is_recommended ? 'selected' : ''}">
+                            <input type="${q.is_multi_select ? 'checkbox' : 'radio'}" 
+                                   name="answer_${q.id}" 
+                                   value="${opt.id}" 
+                                   data-savings="${opt.projected_savings_rs || 0}"
+                                   ${opt.is_recommended ? 'checked' : ''}
+                                   class="mt-1 text-indigo-600 rounded">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs font-bold text-slate-900 dark:text-white leading-snug">
+                                        ${opt.label}
+                                    </span>
+                                    ${opt.projected_savings_rs > 0 ? `
+                                    <span class="vs-badge vs-badge-success shrink-0 tabular-nums">
+                                        +${formatCurrency(opt.projected_savings_rs)}/mo
+                                    </span>` : ''}
+                                </div>
+                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                    ${opt.impact_description}
+                                </div>
+                            </div>
+                        </label>
+                    `).join('')}
+                </div>
+            `;
+            container.appendChild(qCard);
+        });
+
+        // Attach change listeners to options to update the live savings meter
+        container.querySelectorAll('input[name^="answer_"]').forEach(input => {
+            input.addEventListener('change', () => {
+                // Update selected class on label
+                const parentGroup = input.closest('[data-question-id]');
+                parentGroup.querySelectorAll('.vs-option-card').forEach(card => {
+                    const inp = card.querySelector('input');
+                    card.classList.toggle('selected', inp.checked);
+                });
+                updateLiveSavingsMeter();
+            });
+        });
+
+        updateLiveSavingsMeter();
+    }
+
+    function updateLiveSavingsMeter() {
+        let totalMonthly = 0;
+        document.querySelectorAll('input[name^="answer_"]:checked').forEach(inp => {
+            totalMonthly += parseFloat(inp.dataset.savings || 0);
+        });
+
+        const meter = document.getElementById('liveSavingsMeterVal');
+        if (meter) {
+            meter.textContent = `${formatCurrency(totalMonthly)} / month`;
+        }
+    }
+
+    // Submit Decisions & Finalize Plan
+    document.getElementById('btnSubmitDecisions').addEventListener('click', async () => {
+        const answers = {};
+        document.querySelectorAll('input[name^="answer_"]:checked').forEach(inp => {
+            const qId = inp.name.replace('answer_', '');
+            answers[qId] = inp.value;
+        });
+        answers['custom_note'] = document.getElementById('decisionCustomNote').value;
+
+        try {
+            const resp = await fetch('/api/financial_advisor/refine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    aggregated: currentAggregated,
+                    answers: answers
+                })
+            });
+
+            const res = await resp.json();
+            if (res.success && res.refinement) {
+                renderRoadmap(res.refinement);
+            } else {
+                alert('Could not finalize decision plan.');
+            }
+        } catch (err) {
+            console.error('Refine error:', err);
+            alert('Failed to refine decision plan.');
+        }
+    });
+
+    function renderRoadmap(ref) {
+        const roadmapCard = document.getElementById('roadmapCard');
+        roadmapCard.classList.remove('hidden');
+
+        document.getElementById('roadmapSavingsMonthly').textContent = `${formatCurrency(ref.selected_savings_monthly)}/mo (${formatCurrency(ref.selected_savings_annual)}/yr)`;
+        document.getElementById('roadmapSummaryText').innerHTML = `
+            <strong>Decisions Confirmed:</strong> Strategy: <em>${ref.strategy_chosen}</em> · Allocation: <em>${ref.destination_chosen}</em>.
+            <br><span class="mt-1 block text-slate-700 dark:text-slate-300">${ref.action_summary}</span>
+        `;
+
+        const capsTableBody = document.getElementById('roadmapCapsTableBody');
+        capsTableBody.innerHTML = '';
+        proposedCapsToApply = {};
+
+        const recs = ref.category_recommendations || {};
+        const catIds = Object.keys(recs);
+
+        if (!catIds.length) {
+            capsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-xs text-slate-400">No category limit adjustments required.</td></tr>';
+            document.getElementById('btnApplyNewCaps')?.classList.add('hidden');
+        } else {
+            catIds.forEach(id => {
+                const item = recs[id];
+                proposedCapsToApply[id] = item.proposed_limit;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="font-bold text-slate-900 dark:text-white text-xs">${item.name}</td>
+                    <td class="text-right text-xs tabular-nums text-slate-500">${formatCurrency(item.current_limit)}</td>
+                    <td class="text-right text-xs font-bold tabular-nums text-indigo-600 dark:text-indigo-400">${formatCurrency(item.proposed_limit)}</td>
+                    <td class="text-right text-xs font-bold tabular-nums text-emerald-600 dark:text-emerald-400">+${formatCurrency(item.monthly_savings)}/mo</td>
+                `;
+                capsTableBody.appendChild(tr);
+            });
+            document.getElementById('btnApplyNewCaps')?.classList.remove('hidden');
+        }
+
+        // Smooth scroll down to roadmap
+        roadmapCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Apply New Caps to Category Database
+    const applyCapsBtn = document.getElementById('btnApplyNewCaps');
+    if (applyCapsBtn) {
+        applyCapsBtn.addEventListener('click', async () => {
+            if (!confirm('Apply these recommended monthly limits directly to your family categories?')) return;
+
+            try {
+                const resp = await fetch('/api/financial_advisor/apply_caps', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category_caps: proposedCapsToApply })
+                });
+
+                const res = await resp.json();
+                if (res.success) {
+                    alert(res.message || 'Category limits updated successfully!');
+                    applyCapsBtn.disabled = true;
+                    applyCapsBtn.innerHTML = '<i class="fas fa-check"></i> Applied to Categories';
+                    applyCapsBtn.classList.remove('vs-btn-primary');
+                    applyCapsBtn.classList.add('vs-btn-secondary');
+                } else {
+                    alert(res.error || 'Failed to apply category limits.');
+                }
+            } catch (err) {
+                console.error('Apply caps error:', err);
+                alert('Failed to connect to server.');
+            }
+        });
+    }
+
+    // Initial Trigger on Page Load
+    runAnalysis();
+})();
+</script>
+{% endblock %}

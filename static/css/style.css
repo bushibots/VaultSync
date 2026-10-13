@@ -1460,3 +1460,66 @@ body.dark-mode .bg-purple-50 {
     font-weight: 600;
     cursor: pointer;
 }
+
+/* ============================================================================
+   AI Financial Advisor & Antigravity Decision Studio Styles
+   ============================================================================ */
+.vs-decision-card {
+    background: var(--vs-surface);
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-lg);
+    padding: 1.25rem;
+    box-shadow: var(--vs-shadow-xs);
+    transition: all 0.2s ease;
+}
+
+.vs-decision-card:hover {
+    border-color: var(--vs-border-strong);
+}
+
+.vs-option-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 0.9rem 1rem;
+    border-radius: 12px;
+    border: 1.5px solid var(--vs-border);
+    background: var(--vs-surface);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.vs-option-card:hover {
+    border-color: var(--vs-primary-soft);
+    background: var(--vs-surface-hover);
+}
+
+.vs-option-card.selected,
+.vs-option-card:has(input:checked) {
+    border-color: var(--vs-primary);
+    background: rgba(79, 70, 229, 0.06);
+    box-shadow: 0 0 0 1px var(--vs-primary);
+}
+
+body.dark-mode .vs-option-card.selected,
+body.dark-mode .vs-option-card:has(input:checked) {
+    background: rgba(79, 70, 229, 0.15);
+}
+
+.vs-tip-card {
+    background: var(--vs-surface);
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-lg);
+    padding: 1.15rem;
+    box-shadow: var(--vs-shadow-xs);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.vs-savings-meter {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.08) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+}
