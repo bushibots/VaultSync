@@ -7297,26 +7297,33 @@ def extract_utr_tokens(text):
     return tokens
 
 
-def extract_google_sheet_csv_url(url):
+def extract_google_sheet_urls(url):
     """
-    Convert any public or viewable Google Sheets URL into a direct CSV export URL.
-    Supports:
-    - https://docs.google.com/spreadsheets/d/{ID}/edit#gid={GID}
-    - https://docs.google.com/spreadsheets/d/{ID}/pubhtml
-    - https://docs.google.com/spreadsheets/d/{ID}/preview
+    Extract spreadsheet ID and optional tab GID from Google Sheets link.
+    Returns: (sheet_id, gid, xlsx_url, csv_url)
     """
     if not url:
-        return None
+        return None, None, None, None
     url = url.strip()
     m_id = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
     if not m_id:
-        return None
+        return None, None, None, None
     sheet_id = m_id.group(1)
 
     m_gid = re.search(r'[#&?]gid=([0-9]+)', url)
-    gid = m_gid.group(1) if m_gid else '0'
+    gid = m_gid.group(1) if m_gid else None
 
-    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    xlsx_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    if gid:
+        csv_url += f"&gid={gid}"
+
+    return sheet_id, gid, xlsx_url, csv_url
+
+
+def extract_google_sheet_csv_url(url):
+    _, _, _, csv_url = extract_google_sheet_urls(url)
+    return csv_url
 
 
 def implement_parsed_book(parsed_data, family_id, default_user, apply_budgets=True, sync_members=True, skip_transfers=True):
@@ -7824,12 +7831,13 @@ def api_sync_google_sheet_pull():
     if not family:
         return jsonify({'success': False, 'error': 'Please join a family first.'}), 400
 
-    sheet_url = (request.form.get('sheet_url') or family.google_sheet_url or '').strip()
+    payload = request.get_json(silent=True) or {}
+    sheet_url = (request.form.get('sheet_url') or payload.get('sheet_url') or family.google_sheet_url or '').strip()
     if not sheet_url:
         return jsonify({'success': False, 'error': 'Please provide a valid Google Sheet URL.'}), 400
 
-    csv_url = extract_google_sheet_csv_url(sheet_url)
-    if not csv_url:
+    sheet_id, gid, xlsx_url, csv_url = extract_google_sheet_urls(sheet_url)
+    if not sheet_id:
         return jsonify({'success': False, 'error': 'Invalid Google Sheet URL. Please paste a link like https://docs.google.com/spreadsheets/d/.../edit'}), 400
 
     try:
@@ -7837,27 +7845,50 @@ def api_sync_google_sheet_pull():
         import csv
         import io
 
-        req = urllib.request.Request(
-            csv_url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VaultSync-GoogleSheetBridge/1.0'}
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            content_bytes = resp.read()
+        parsed_data = None
+        last_fetch_error = None
 
-        csv_text = content_bytes.decode('utf-8-sig', errors='replace')
-        if not csv_text or '<html' in csv_text.lower()[:300]:
+        # 1. First try downloading as full XLSX workbook (reads Transactions, Dashboard caps & Settings members)
+        try:
+            req_xlsx = urllib.request.Request(
+                xlsx_url,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VaultSync-Bridge/1.0'}
+            )
+            with urllib.request.urlopen(req_xlsx, timeout=15) as resp:
+                content_bytes = resp.read()
+
+            if content_bytes and content_bytes[:4] == b'PK\x03\x04':
+                xlsx_rows = parse_xlsx_rows(content_bytes)
+                candidate = extract_structured_book_data(xlsx_rows) if xlsx_rows else None
+                if candidate and (candidate.get('transactions') or candidate.get('category_budgets')):
+                    parsed_data = candidate
+        except Exception as e:
+            last_fetch_error = str(e)
+
+        # 2. If XLSX export wasn't successful, fall back to direct CSV export
+        if not parsed_data or (not parsed_data.get('transactions') and not parsed_data.get('category_budgets')):
+            try:
+                req_csv = urllib.request.Request(
+                    csv_url,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VaultSync-Bridge/1.0'}
+                )
+                with urllib.request.urlopen(req_csv, timeout=15) as resp:
+                    content_bytes = resp.read()
+
+                csv_text = content_bytes.decode('utf-8-sig', errors='replace')
+                if csv_text and '<html' not in csv_text.lower()[:300]:
+                    csv_rows = list(csv.reader(io.StringIO(csv_text)))
+                    candidate = extract_structured_book_data(csv_rows) if csv_rows else None
+                    if candidate and (candidate.get('transactions') or candidate.get('category_budgets')):
+                        parsed_data = candidate
+            except Exception as e:
+                last_fetch_error = str(e)
+
+        if not parsed_data or (not parsed_data.get('transactions') and not parsed_data.get('category_budgets')):
+            err_detail = f" ({last_fetch_error})" if last_fetch_error else ""
             return jsonify({
                 'success': False,
-                'error': 'Could not read Google Sheet as CSV. Please ensure your Google Sheet is shared with "Anyone with the link can view", or use File -> Share -> Publish to web.'
-            }), 400
-
-        rows = list(csv.reader(io.StringIO(csv_text)))
-        parsed_data = extract_structured_book_data(rows) if rows else {'transactions': [], 'category_budgets': {}}
-
-        if not parsed_data.get('transactions') and not parsed_data.get('category_budgets'):
-            return jsonify({
-                'success': False,
-                'error': 'No readable transaction or category budget rows found in this sheet. Ensure column headers include Date, Item/Description, and Amount.'
+                'error': f'Could not read transactions from Google Sheet{err_detail}. Please ensure your Google Sheet is shared with "Anyone with the link can view".'
             }), 400
 
         result = implement_parsed_book(
